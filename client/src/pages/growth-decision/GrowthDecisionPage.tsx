@@ -1,0 +1,510 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Bot,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  Database,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  X,
+} from 'lucide-react';
+
+import type {
+  GrowthDashboardResponse,
+  GrowthDecisionCase,
+  GrowthDashboardSummary,
+  GrowthProduct,
+  UpdateDecisionRequest,
+} from '@shared/api.interface';
+
+import { growthDecision } from '@/api';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { Progress } from '@/components/ui/progress';
+
+interface StatCardProps {
+  label: string;
+  value: string;
+  note: string;
+  tone: 'neutral' | 'warning' | 'success' | 'info';
+}
+
+const REJECTION_REASONS: string[] = [
+  '样本量不足，继续观察',
+  '调整风险高于预期收益',
+  '已有其他投放调整正在进行',
+  '原因分析与业务实际不符',
+];
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: '待决策',
+  accepted: '已采纳',
+  rejected: '未采纳',
+  observing: '观察中',
+  completed: '已完成',
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  critical: '紧急',
+};
+
+const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
+  const toneClass: Record<StatCardProps['tone'], string> = {
+    neutral: 'bg-slate-100 text-slate-700',
+    warning: 'bg-amber-50 text-amber-700',
+    success: 'bg-emerald-50 text-emerald-700',
+    info: 'bg-blue-50 text-blue-700',
+  };
+
+  return (
+    <Card className="border-slate-200 bg-white shadow-none" data-ai-section-type="card-stat">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-slate-500">{label}</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+              {value}
+            </p>
+          </div>
+          <span className={`rounded-lg px-2 py-1 text-[11px] font-medium ${toneClass[tone]}`}>
+            {note}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const GrowthDecisionPage: React.FC = () => {
+  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(null);
+  const [selectedCase, setSelectedCase] = useState<GrowthDecisionCase | null>(null);
+  const [rejectingCase, setRejectingCase] = useState<GrowthDecisionCase | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+
+  useEffect((): void => {
+    void loadDashboard();
+  }, []);
+
+  const loadDashboard = async (): Promise<void> => {
+    setLoading(true);
+    setError('');
+    try {
+      const response: GrowthDashboardResponse = await growthDecision.getDashboard();
+      setDashboard(response);
+    } catch (requestError: unknown) {
+      setError(requestError instanceof Error ? requestError.message : '工作台加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDecision = async (
+    item: GrowthDecisionCase,
+    action: UpdateDecisionRequest['action'],
+    reason: string,
+  ): Promise<void> => {
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.updateDecision(item.id, { action, reason });
+      setSelectedCase(null);
+      setRejectingCase(null);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(requestError instanceof Error ? requestError.message : '决策保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pendingCases: GrowthDecisionCase[] = useMemo(
+    (): GrowthDecisionCase[] =>
+      dashboard?.cases.filter(
+        (item: GrowthDecisionCase): boolean => item.status === 'pending',
+      ) || [],
+    [dashboard],
+  );
+  const activeCases: GrowthDecisionCase[] = useMemo(
+    (): GrowthDecisionCase[] =>
+      dashboard?.cases.filter(
+        (item: GrowthDecisionCase): boolean => item.status !== 'pending',
+      ) || [],
+    [dashboard],
+  );
+  const summary: GrowthDashboardSummary | undefined = dashboard?.summary;
+
+  if (loading && !dashboard) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center gap-3 text-sm text-slate-500">
+        <RefreshCw className="size-4 animate-spin" />正在加载增长决策工作台
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-[1540px] px-5 py-6 lg:px-8">
+      <section className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-blue-700">
+            <Sparkles className="size-3.5" />AI GROWTH CONTROL CENTER
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950 lg:text-3xl">
+            从异常发现到业务结果，一条链路闭环
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            每小时同步投放与产品数据，生成可追踪建议；人工确认后自动进入实验观察与每周复盘。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700">
+            <span className="size-1.5 rounded-full bg-emerald-500" />本地链路正常
+          </Badge>
+          <Button variant="outline" onClick={() => void loadDashboard()} disabled={loading}>
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />刷新
+          </Button>
+        </div>
+      </section>
+
+      {error ? (
+        <Alert variant="destructive" className="mb-5">
+          <AlertTriangle className="size-4" />
+          <AlertTitle>操作未完成</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="待处理异常"
+          value={String(summary?.pendingDecisions || 0)}
+          note="目标 ≤ 2h"
+          tone="warning"
+        />
+        <StatCard
+          label="已采纳建议"
+          value={String(summary?.acceptedRecommendations || 0)}
+          note="闭环追踪"
+          tone="info"
+        />
+        <StatCard
+          label="完成实验"
+          value={String(summary?.completedExperiments || 0)}
+          note="实验数据库"
+          tone="neutral"
+        />
+        <StatCard
+          label="预期改善率"
+          value={`${summary?.expectedImprovementRate || 0}%`}
+          note="KR3 ≥ 50%"
+          tone="success"
+        />
+      </section>
+
+      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-5">
+          <Card className="border-slate-200 bg-white shadow-none">
+            <CardHeader className="flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">待人工决策</CardTitle>
+                <CardDescription className="mt-1">
+                  每条建议均绑定渠道、Campaign、人群与素材层级
+                </CardDescription>
+              </div>
+              <Badge variant="secondary">{pendingCases.length} 条</Badge>
+            </CardHeader>
+            <CardContent>
+              {pendingCases.length ? (
+                <div className="space-y-3" data-ai-section-type="card-list">
+                  {pendingCases.map((item: GrowthDecisionCase) => (
+                    <article
+                      key={item.id}
+                      className="rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300"
+                    >
+                      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.severity === 'critical' || item.severity === 'high'
+                                  ? 'border-red-200 bg-red-50 text-red-700'
+                                  : 'border-amber-200 bg-amber-50 text-amber-700'
+                              }
+                            >
+                              {SEVERITY_LABELS[item.severity] || item.severity}风险
+                            </Badge>
+                            <span className="text-xs text-slate-500">{item.productName}</span>
+                            <span className="text-xs text-slate-300">/</span>
+                            <span className="truncate text-xs text-slate-500">
+                              {item.campaignName || item.campaignId || 'Campaign 未命名'}
+                            </span>
+                          </div>
+                          <h2 className="mt-3 text-sm font-semibold text-slate-950">
+                            {item.anomalyType} · {item.targetMetric.toUpperCase()}
+                            {typeof item.deviationPct === 'number'
+                              ? ` ${item.deviationPct > 0 ? '+' : ''}${item.deviationPct}%`
+                              : ''}
+                          </h2>
+                          <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
+                            {item.rootCause}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                            <span className="flex items-center gap-1.5">
+                              <Bot className="size-3.5" />原因置信度 {item.confidence}%
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <Target className="size-3.5" />{item.expectedImpact}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button variant="outline" onClick={() => setSelectedCase(item)}>
+                            查看依据<ChevronRight className="size-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setRejectingCase(item)}
+                          >
+                            <X className="size-4" />不采纳
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              void handleDecision(item, 'accepted', '接受 Agent 建议')
+                            }
+                            disabled={saving}
+                          >
+                            <Check className="size-4" />采纳建议
+                          </Button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <Empty className="min-h-64">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><Database className="size-5" /></EmptyMedia>
+                    <EmptyTitle>等待首批 Doris 数据</EmptyTitle>
+                    <EmptyDescription>
+                      接入产品与广告数据后，异常和建议会自动进入这里等待人工确认。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base">实验与结果追踪</CardTitle>
+              <CardDescription>已决策建议的观察状态和业务结果</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {activeCases.length ? (
+                <div className="divide-y divide-slate-100">
+                  {activeCases.slice(0, 8).map((item: GrowthDecisionCase) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-4 py-3 text-left"
+                      onClick={() => setSelectedCase(item)}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {item.productName} · {item.recommendation}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.campaignName || item.campaignId || '未指定 Campaign'}
+                        </p>
+                      </div>
+                      <Badge variant="outline">{STATUS_LABELS[item.status] || item.status}</Badge>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-8 text-center text-sm text-slate-500">暂无已决策实验</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <aside className="space-y-5">
+          <Card className="border-slate-200 bg-slate-950 text-white shadow-none">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base text-white">
+                <ShieldCheck className="size-4 text-emerald-400" />KR 进度
+              </CardTitle>
+              <CardDescription className="text-slate-400">基于当前真实记录计算</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div>
+                <div className="mb-2 flex justify-between text-xs">
+                  <span className="text-slate-300">全链路覆盖</span>
+                  <span>{dashboard?.products.length ? '1 / 1 产品' : '0 / 1 产品'}</span>
+                </div>
+                <Progress value={dashboard?.products.length ? 100 : 12} className="bg-slate-800" />
+              </div>
+              <div>
+                <div className="mb-2 flex justify-between text-xs">
+                  <span className="text-slate-300">建议可追踪率</span>
+                  <span>{dashboard?.cases.length ? '100%' : '0%'}</span>
+                </div>
+                <Progress value={dashboard?.cases.length ? 100 : 0} className="bg-slate-800" />
+              </div>
+              <div>
+                <div className="mb-2 flex justify-between text-xs">
+                  <span className="text-slate-300">建议改善率</span>
+                  <span>{summary?.expectedImprovementRate || 0}% / 50%</span>
+                </div>
+                <Progress value={Math.min(100, (summary?.expectedImprovementRate || 0) * 2)} className="bg-slate-800" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base">数据与 Skill</CardTitle>
+              <CardDescription>产品级运行配置</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {dashboard?.products.length ? (
+                dashboard.products.map((product: GrowthProduct) => (
+                  <div key={product.id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-900">{product.name}</p>
+                      <Badge variant="outline">{product.skillVersion}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                      <span>目标：{product.targetMetric.toUpperCase()}</span>
+                      <span>延迟：{product.dataDelayMinutes} 分钟</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+                  尚未配置产品。通过产品接入接口写入首个产品后即可开始运行。
+                </div>
+              )}
+              <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+                <div className="flex items-center gap-2 font-medium"><Clock3 className="size-3.5" />自动化节奏</div>
+                <p className="mt-1">每小时与每周一触发器已创建，发布验证后可由管理员启用。</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700">
+                  <CheckCircle2 className="size-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">下一次周复盘</p>
+                  <p className="text-xs text-slate-500">周一 10:00 · 自动汇总实验结果</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
+
+      <Dialog open={Boolean(selectedCase)} onOpenChange={(open: boolean) => !open && setSelectedCase(null)}>
+        <DialogContent className="max-h-[86vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedCase?.anomalyType || '建议详情'}</DialogTitle>
+            <DialogDescription>
+              {selectedCase?.productName} · {selectedCase?.campaignName || selectedCase?.campaignId || '广告对象'}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedCase ? (
+            <div className="space-y-5 text-sm">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">当前值</p>
+                  <p className="mt-1 font-semibold">{selectedCase.currentValue ?? '—'}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">基线值</p>
+                  <p className="mt-1 font-semibold">{selectedCase.baselineValue ?? '—'}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">变化幅度</p>
+                  <p className="mt-1 flex items-center gap-1 font-semibold">
+                    {(selectedCase.deviationPct || 0) >= 0 ? <ArrowUpRight className="size-4 text-red-500" /> : <ArrowDownRight className="size-4 text-emerald-500" />}
+                    {selectedCase.deviationPct ?? '—'}%
+                  </p>
+                </div>
+              </div>
+              <div><p className="text-xs font-medium text-slate-500">数据证据</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.evidence}</p></div>
+              <div><p className="text-xs font-medium text-slate-500">原因分析 · 置信度 {selectedCase.confidence}%</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.rootCause}</p></div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <p className="text-xs font-medium text-blue-700">行动建议</p>
+                <p className="mt-1 font-medium leading-6 text-blue-950">{selectedCase.recommendation}</p>
+                <p className="mt-2 text-xs text-blue-800">预期：{selectedCase.expectedImpact}</p>
+              </div>
+              {selectedCase.riskNote ? <div><p className="text-xs font-medium text-slate-500">风险与回滚条件</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.riskNote}</p></div> : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(rejectingCase)} onOpenChange={(open: boolean) => !open && setRejectingCase(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>选择不采纳原因</DialogTitle>
+            <DialogDescription>原因会写入实验数据库，用于每周复盘和 Skill 改进。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {REJECTION_REASONS.map((reason: string) => (
+              <Button
+                key={reason}
+                variant="outline"
+                className="h-auto justify-start whitespace-normal py-3 text-left"
+                disabled={saving || !rejectingCase}
+                onClick={() => rejectingCase && void handleDecision(rejectingCase, 'rejected', reason)}
+              >
+                {reason}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default GrowthDecisionPage;

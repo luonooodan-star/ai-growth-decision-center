@@ -1,0 +1,4 @@
+interface:
+  display_name: "Facebook 增长决策"
+  short_description: "发现投放异常，生成建议并追踪实验结果"
+  default_prompt: "Use $fb-growth-decision to review the latest Facebook advertising and product metrics for one product."

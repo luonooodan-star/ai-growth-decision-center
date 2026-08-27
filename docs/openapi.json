@@ -1,0 +1,118 @@
+{
+  "paths": {
+    "/openapi/growth-decision/products": {
+      "post": {
+        "operationId": "createProduct",
+        "summary": "创建需要监控的广告产品",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "targetMetric", "channel"],
+                "properties": {
+                  "name": { "type": "string", "description": "产品名称", "example": "Product A" },
+                  "targetMetric": { "type": "string", "description": "主要优化指标", "example": "cpa" },
+                  "channel": { "type": "string", "description": "广告渠道", "example": "facebook" },
+                  "accountId": { "type": "string", "description": "渠道账户 ID", "example": "act_123456" },
+                  "dorisSource": { "type": "string", "description": "Doris 数据集标识", "example": "growth.product_a_hourly" },
+                  "dataDelayMinutes": { "type": "integer", "description": "数据预计延迟分钟数", "example": 60 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "创建后的产品配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": "2e37d29d-2ec7-4c55-a764-129f5ccbb435",
+                    "name": "Product A",
+                    "status": "active",
+                    "targetMetric": "cpa",
+                    "channel": "facebook",
+                    "dataDelayMinutes": 60,
+                    "skillVersion": "v0.1.0"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi/growth-decision/cases": {
+      "post": {
+        "operationId": "ingestCase",
+        "summary": "写入异常、原因分析和行动建议",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productId", "anomalyType", "severity", "channel",
+                  "targetMetric", "evidence", "rootCause", "confidence",
+                  "recommendation", "recommendedAction", "expectedImpact"
+                ],
+                "properties": {
+                  "productId": { "type": "string", "description": "产品配置 ID", "example": "2e37d29d-2ec7-4c55-a764-129f5ccbb435" },
+                  "anomalyType": { "type": "string", "description": "异常类型", "example": "CPA 突然上升" },
+                  "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"], "description": "异常严重度", "example": "high" },
+                  "channel": { "type": "string", "description": "广告渠道", "example": "facebook" },
+                  "campaignId": { "type": "string", "description": "Campaign ID", "example": "238512345678" },
+                  "campaignName": { "type": "string", "description": "Campaign 名称", "example": "US_iOS_Prospecting" },
+                  "adsetId": { "type": "string", "description": "Ad Set ID", "example": "238512345679" },
+                  "adsetName": { "type": "string", "description": "Ad Set 名称", "example": "US_Broad_25-44" },
+                  "audienceId": { "type": "string", "description": "人群 ID", "example": "aud_us_broad" },
+                  "audienceName": { "type": "string", "description": "人群名称", "example": "US Broad 25-44" },
+                  "adId": { "type": "string", "description": "广告 ID", "example": "238512345680" },
+                  "adName": { "type": "string", "description": "广告名称", "example": "Video_UGC_07" },
+                  "creativeId": { "type": "string", "description": "素材 ID", "example": "creative_07" },
+                  "creativeName": { "type": "string", "description": "素材名称", "example": "UGC Hook 07" },
+                  "targetMetric": { "type": "string", "description": "发生异常的核心指标", "example": "cpa" },
+                  "currentValue": { "type": "number", "description": "指标当前值", "example": 42.8 },
+                  "baselineValue": { "type": "number", "description": "对照基线值", "example": 31.2 },
+                  "deviationPct": { "type": "number", "description": "相对基线变化百分比", "example": 37.2 },
+                  "evidence": { "type": "string", "description": "异常检测证据", "example": "过去 3 小时消耗 560 美元，转化 14 个，CPA 较七日同时段上升 37.2%。" },
+                  "rootCause": { "type": "string", "description": "原因分析结论", "example": "CTR 连续三天下降且 Frequency 升至 4.9，素材疲劳概率较高。" },
+                  "confidence": { "type": "number", "description": "原因判断置信度百分比", "example": 78 },
+                  "recommendation": { "type": "string", "description": "可执行行动建议", "example": "暂停疲劳素材并启用两条新 UGC 素材，预算暂不调整。" },
+                  "recommendedAction": { "type": "object", "description": "结构化执行参数", "example": { "actionType": "rotate_creative", "targetLevel": "ad", "targetId": "238512345680" } },
+                  "expectedImpact": { "type": "string", "description": "预期业务改善", "example": "72 小时内 CPA 下降至少 10%，转化量下降不超过 15%。" },
+                  "riskNote": { "type": "string", "description": "风险和回滚条件", "example": "若 24 小时内转化量下降超过 15%，恢复原素材。" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "进入待决策队列的案例",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": "8dd23410-61df-44df-9d3c-164933134da5",
+                    "productId": "2e37d29d-2ec7-4c55-a764-129f5ccbb435",
+                    "productName": "Product A",
+                    "status": "pending",
+                    "anomalyType": "CPA 突然上升",
+                    "confidence": 78
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
