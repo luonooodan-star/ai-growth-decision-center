@@ -3,7 +3,6 @@ import { Route, Routes } from 'react-router-dom';
 
 import Layout from './components/Layout';
 import GrowthDecisionPage from './pages/growth-decision/GrowthDecisionPage';
-import NotFound from './pages/NotFound/NotFound';
 
 const RoutesComponent = () => {
   return (
@@ -11,7 +10,7 @@ const RoutesComponent = () => {
       <Route element={<Layout />}>
         <Route index element={<GrowthDecisionPage />} />
       </Route>
-      <Route path="*" element={<NotFound />} />
+      <Route path="*" element={<GrowthDecisionPage />} />
     </Routes>
   );
 };
