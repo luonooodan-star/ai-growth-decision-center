@@ -113,6 +113,120 @@
           }
         }
       }
+    },
+    "/openapi/growth-decision/judgments": {
+      "post": {
+        "operationId": "ingestJudgment",
+        "summary": "写入异常、第一波分析和初步判断",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productId", "anomalyType", "severity", "channel",
+                  "targetMetric", "evidence", "rootCause", "confidence",
+                  "preliminaryJudgment"
+                ],
+                "properties": {
+                  "productId": { "type": "string", "description": "产品配置 ID", "example": "579150cc-4ebe-4f27-891d-2dbc375d7889" },
+                  "anomalyType": { "type": "string", "description": "异常类型", "example": "D0 ROAS 明显下降" },
+                  "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"], "description": "异常严重度", "example": "high" },
+                  "channel": { "type": "string", "description": "广告渠道", "example": "facebook" },
+                  "campaignId": { "type": "string", "description": "Campaign ID", "example": "238512345678" },
+                  "campaignName": { "type": "string", "description": "Campaign 名称", "example": "IN_Android_Broad" },
+                  "adsetId": { "type": "string", "description": "Ad Set ID", "example": "238512345679" },
+                  "adsetName": { "type": "string", "description": "Ad Set 名称", "example": "IN_Broad" },
+                  "audienceId": { "type": "string", "description": "人群 ID", "example": "aud_in_broad" },
+                  "audienceName": { "type": "string", "description": "人群名称", "example": "IN Broad" },
+                  "adId": { "type": "string", "description": "广告 ID", "example": "238512345680" },
+                  "adName": { "type": "string", "description": "广告名称", "example": "WL_Video_07" },
+                  "creativeId": { "type": "string", "description": "素材 ID", "example": "creative_07" },
+                  "creativeName": { "type": "string", "description": "素材名称", "example": "WL Hook 07" },
+                  "targetMetric": { "type": "string", "description": "发生异常的核心指标", "example": "d0_roas" },
+                  "currentValue": { "type": "number", "description": "指标当前值", "example": 0.18 },
+                  "baselineValue": { "type": "number", "description": "对照基线值", "example": 0.24 },
+                  "deviationPct": { "type": "number", "description": "相对基线变化百分比", "example": -25 },
+                  "evidence": { "type": "string", "description": "异常检测证据", "example": "成熟 cohort 的 D0 ROAS 较七日同小时基线下降 25%。" },
+                  "rootCause": { "type": "string", "description": "第一波原因分析", "example": "CTR 稳定但安装后收入下降，问题更可能位于产品转化侧。" },
+                  "confidence": { "type": "number", "description": "判断置信度百分比", "example": 76 },
+                  "preliminaryJudgment": { "type": "string", "description": "等待人工确认的初步判断", "example": "异常真实，暂不归因于素材疲劳。" },
+                  "skillRuleCandidate": { "type": "string", "description": "可进入周复盘的 Skill 候选规则", "example": "CTR 稳定而 D0 ROAS 下降时优先检查产品收入链路。" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "进入人工判断队列的异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": "8dd23410-61df-44df-9d3c-164933134da5",
+                    "productName": "Wingslite",
+                    "status": "judgment_pending",
+                    "preliminaryJudgment": "异常真实，暂不归因于素材疲劳。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi/growth-decision/judgments/{id}/recommendations": {
+      "post": {
+        "operationId": "createRecommendationFromJudgment",
+        "summary": "基于已确认判断创建调整建议",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "已确认的异常判断 ID",
+            "example": "8dd23410-61df-44df-9d3c-164933134da5"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["recommendation", "recommendedAction", "expectedImpact"],
+                "properties": {
+                  "recommendation": { "type": "string", "description": "可执行调整建议", "example": "保持预算不变，先排查产品收入事件与 cohort 回传。" },
+                  "recommendedAction": { "type": "object", "description": "结构化执行参数", "example": { "actionType": "investigate_tracking", "targetLevel": "campaign", "targetId": "238512345678" } },
+                  "expectedImpact": { "type": "string", "description": "预期结果与观察窗口", "example": "24 小时内确认收入回传完整性，再决定是否调整预算。" },
+                  "riskNote": { "type": "string", "description": "风险与回滚条件", "example": "排查期间不改变预算，避免把数据问题误判为投放问题。" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "进入建议审核队列的调整建议",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "example": {
+                    "id": "5c29ce5d-3348-4277-8630-3d39e974770c",
+                    "status": "pending",
+                    "recommendation": "保持预算不变，先排查产品收入事件与 cohort 回传。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

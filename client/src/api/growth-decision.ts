@@ -4,6 +4,8 @@ import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBac
 import type {
   GrowthDashboardResponse,
   GrowthDecisionCase,
+  GrowthJudgment,
+  ReviewJudgmentRequest,
   UpdateDecisionRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
@@ -17,6 +19,23 @@ async function getDashboard(): Promise<GrowthDashboardResponse> {
     return response.data as GrowthDashboardResponse;
   } catch (error: unknown) {
     logger.error('加载增长决策工作台失败', error);
+    throw error;
+  }
+}
+
+async function reviewJudgment(
+  id: string,
+  request: ReviewJudgmentRequest,
+): Promise<GrowthJudgment> {
+  try {
+    const response = await axiosForBackend({
+      url: `/api/growth-decision/judgments/${id}/review`,
+      method: 'PATCH',
+      data: request,
+    });
+    return response.data as GrowthJudgment;
+  } catch (error: unknown) {
+    logger.error('更新异常判断失败', error);
     throw error;
   }
 }
@@ -55,4 +74,4 @@ async function updateResult(
   }
 }
 
-export { getDashboard, updateDecision, updateResult };
+export { getDashboard, reviewJudgment, updateDecision, updateResult };

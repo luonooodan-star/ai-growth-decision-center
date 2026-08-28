@@ -4,10 +4,14 @@ import type { Request } from 'express';
 
 import type {
   CreateProductRequest,
+  CreateRecommendationFromJudgmentRequest,
   GrowthDashboardResponse,
   GrowthDecisionCase,
+  GrowthJudgment,
   GrowthProduct,
   IngestDecisionCaseRequest,
+  IngestJudgmentRequest,
+  ReviewJudgmentRequest,
   UpdateDecisionRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
@@ -18,6 +22,7 @@ import { GrowthDecisionService } from './growth-decision.service';
 export class GrowthDecisionController {
   constructor(private readonly growthDecisionService: GrowthDecisionService) {}
 
+  @NeedLogin()
   @Get('dashboard')
   async getDashboard(): Promise<GrowthDashboardResponse> {
     return this.growthDecisionService.getDashboard();
@@ -30,6 +35,43 @@ export class GrowthDecisionController {
     @Body() request: CreateProductRequest,
   ): Promise<GrowthProduct> {
     return this.growthDecisionService.createProduct(
+      request,
+      req.userContext.userId,
+    );
+  }
+
+  @NeedLogin()
+  @Post('judgments/ingest')
+  async ingestJudgment(
+    @Req() req: Request,
+    @Body() request: IngestJudgmentRequest,
+  ): Promise<GrowthJudgment> {
+    return this.growthDecisionService.ingestJudgment(
+      request,
+      req.userContext.userId,
+    );
+  }
+
+  @NeedLogin()
+  @Patch('judgments/:id/review')
+  async reviewJudgment(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() request: ReviewJudgmentRequest,
+  ): Promise<GrowthJudgment> {
+    const actor: string = req.userContext.userName || req.userContext.userId;
+    return this.growthDecisionService.reviewJudgment(id, request, actor);
+  }
+
+  @NeedLogin()
+  @Post('judgments/:id/recommendations')
+  async createRecommendationFromJudgment(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() request: CreateRecommendationFromJudgmentRequest,
+  ): Promise<GrowthDecisionCase> {
+    return this.growthDecisionService.createRecommendationFromJudgment(
+      id,
       request,
       req.userContext.userId,
     );

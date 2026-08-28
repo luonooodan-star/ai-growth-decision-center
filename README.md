@@ -56,8 +56,12 @@ npm run build:prod
 运行时应用不直接调用 MCP。建议由 Codex、数据任务或现有调度器每小时：
 
 1. 通过 Doris MCP 拉取 FB 前端和产品后台数据。
-2. 完成数据成熟度检查、异常检测和原因分析。
-3. 使用妙搭 OpenAPI Key 调用下面两个接口。
+2. 完成数据成熟度检查、异常检测、第一波原因分析和初步判断。
+3. 写入判断队列，人工选择“确认 / 待定 / 否决”并记录原因。
+4. 仅对已确认判断生成独立调整建议，再进入采纳与实验闭环。
+
+异常判断和调整建议是两类独立记录。判断结果用于迭代 Skill，但不进入
+建议采纳率的分子或分母。
 
 ### 创建产品
 
@@ -68,8 +72,8 @@ npm run build:prod
   "name": "Product A",
   "targetMetric": "cpa",
   "channel": "facebook",
-  "accountId": "act_123456",
-  "dorisSource": "growth.product_a_hourly",
+  "accountIds": ["act_123456", "act_789012"],
+  "dorisSource": "bi_ads.ads_paid_acquisition_daily",
   "dataDelayMinutes": 60
 }
 ```

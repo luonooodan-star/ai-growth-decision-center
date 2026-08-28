@@ -1,0 +1,261 @@
+import React, { useMemo, useState } from 'react';
+import { Bot, Check, Clock3, SearchCheck, X } from 'lucide-react';
+
+import type {
+  GrowthJudgment,
+  ReviewJudgmentRequest,
+} from '@shared/api.interface';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+
+interface JudgmentQueueProps {
+  judgments: GrowthJudgment[];
+  saving: boolean;
+  onReview: (
+    id: string,
+    request: ReviewJudgmentRequest,
+  ) => Promise<void>;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  judgment_pending: '待判断',
+  judgment_deferred: '待定',
+  judgment_confirmed: '判断成立',
+  judgment_rejected: '判断否决',
+};
+
+const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
+  confirmed: '确认判断',
+  deferred: '暂时待定',
+  rejected: '否决判断',
+};
+
+const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
+  judgments,
+  saving,
+  onReview,
+}) => {
+  const [selected, setSelected] = useState<GrowthJudgment | null>(null);
+  const [reviewAction, setReviewAction] =
+    useState<ReviewJudgmentRequest['action'] | null>(null);
+  const [reason, setReason] = useState<string>('');
+  const [ruleCandidate, setRuleCandidate] = useState<string>('');
+
+  const orderedJudgments: GrowthJudgment[] = useMemo(
+    (): GrowthJudgment[] =>
+      [...judgments].sort((left: GrowthJudgment, right: GrowthJudgment) => {
+        const leftOpen: boolean =
+          left.status === 'judgment_pending' ||
+          left.status === 'judgment_deferred';
+        const rightOpen: boolean =
+          right.status === 'judgment_pending' ||
+          right.status === 'judgment_deferred';
+        return Number(rightOpen) - Number(leftOpen);
+      }),
+    [judgments],
+  );
+
+  const openReview = (
+    item: GrowthJudgment,
+    action: ReviewJudgmentRequest['action'],
+  ): void => {
+    setSelected(item);
+    setReviewAction(action);
+    setReason('');
+    setRuleCandidate(item.skillRuleCandidate || '');
+  };
+
+  const closeReview = (): void => {
+    setSelected(null);
+    setReviewAction(null);
+    setReason('');
+    setRuleCandidate('');
+  };
+
+  const submitReview = async (): Promise<void> => {
+    if (!selected || !reviewAction || !reason.trim()) {
+      return;
+    }
+    await onReview(selected.id, {
+      action: reviewAction,
+      reason: reason.trim(),
+      skillRuleCandidate: ruleCandidate.trim() || undefined,
+    });
+    closeReview();
+  };
+
+  return (
+    <>
+      <Card className="border-slate-200 bg-white shadow-none">
+        <CardHeader className="flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">异常判断队列</CardTitle>
+            <CardDescription className="mt-1">
+              先确认异常与原因是否成立，再进入调整建议阶段
+            </CardDescription>
+          </div>
+          <Badge variant="secondary">{judgments.length} 条</Badge>
+        </CardHeader>
+        <CardContent>
+          {orderedJudgments.length ? (
+            <div className="space-y-3" data-ai-section-type="card-list">
+              {orderedJudgments.map((item: GrowthJudgment) => {
+                const canReview: boolean =
+                  item.status === 'judgment_pending' ||
+                  item.status === 'judgment_deferred';
+                return (
+                  <article
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex flex-col justify-between gap-4 lg:flex-row">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            {STATUS_LABELS[item.status] || item.status}
+                          </Badge>
+                          <span className="text-xs text-slate-500">
+                            {item.productName}
+                          </span>
+                          <span className="truncate text-xs text-slate-500">
+                            {item.campaignName || item.campaignId || '产品级'}
+                          </span>
+                        </div>
+                        <h2 className="mt-3 text-sm font-semibold text-slate-950">
+                          {item.anomalyType} · {item.targetMetric.toUpperCase()}
+                          {typeof item.deviationPct === 'number'
+                            ? ` ${item.deviationPct > 0 ? '+' : ''}${item.deviationPct}%`
+                            : ''}
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          {item.preliminaryJudgment}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
+                          <span className="flex items-center gap-1.5">
+                            <Bot className="size-3.5" />
+                            判断置信度 {item.confidence}%
+                          </span>
+                          {item.skillRuleCandidate ? (
+                            <span className="flex items-center gap-1.5">
+                              <SearchCheck className="size-3.5" />
+                              已生成 Skill 候选规则
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      {canReview ? (
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => openReview(item, 'deferred')}
+                          >
+                            <Clock3 className="size-4" />
+                            待定
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => openReview(item, 'rejected')}
+                          >
+                            <X className="size-4" />
+                            否决
+                          </Button>
+                          <Button
+                            onClick={() => openReview(item, 'confirmed')}
+                          >
+                            <Check className="size-4" />
+                            确认判断
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
+              <SearchCheck className="mx-auto size-5 text-slate-400" />
+              <p className="mt-3 text-sm font-medium text-slate-800">
+                暂无异常判断
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Doris 发现异常后，第一波分析会先进入这里。
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={Boolean(reviewAction)} onOpenChange={closeReview}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {reviewAction ? ACTION_LABELS[reviewAction] : '审核判断'}
+            </DialogTitle>
+            <DialogDescription>
+              {selected?.anomalyType} · {selected?.preliminaryJudgment}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-slate-800">
+                判断依据 / 原因
+              </label>
+              <Textarea
+                className="mt-2 min-h-24"
+                value={reason}
+                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setReason(event.target.value)
+                }
+                placeholder="说明为什么确认、待定或否决；该信息会进入复盘。"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-800">
+                Skill 候选规则（可选）
+              </label>
+              <Textarea
+                className="mt-2 min-h-20"
+                value={ruleCandidate}
+                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setRuleCandidate(event.target.value)
+                }
+                placeholder="例如：数据延迟超过 120 分钟时只报数据质量异常。"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeReview}>
+              取消
+            </Button>
+            <Button
+              onClick={() => void submitReview()}
+              disabled={saving || !reason.trim()}
+            >
+              保存判断
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
+
+export { JudgmentQueue };

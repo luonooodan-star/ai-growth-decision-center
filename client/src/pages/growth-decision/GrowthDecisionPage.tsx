@@ -21,6 +21,7 @@ import type {
   GrowthDecisionCase,
   GrowthDashboardSummary,
   GrowthProduct,
+  ReviewJudgmentRequest,
   UpdateDecisionRequest,
 } from '@shared/api.interface';
 
@@ -50,6 +51,8 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Progress } from '@/components/ui/progress';
+
+import { JudgmentQueue } from './JudgmentQueue';
 
 interface StatCardProps {
   label: string;
@@ -89,7 +92,10 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
   };
 
   return (
-    <Card className="border-slate-200 bg-white shadow-none" data-ai-section-type="card-stat">
+    <Card
+      className="border-slate-200 bg-white shadow-none"
+      data-ai-section-type="card-stat"
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -98,7 +104,9 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
               {value}
             </p>
           </div>
-          <span className={`rounded-lg px-2 py-1 text-[11px] font-medium ${toneClass[tone]}`}>
+          <span
+            className={`rounded-lg px-2 py-1 text-[11px] font-medium ${toneClass[tone]}`}
+          >
             {note}
           </span>
         </div>
@@ -108,9 +116,15 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
 };
 
 const GrowthDecisionPage: React.FC = () => {
-  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(null);
-  const [selectedCase, setSelectedCase] = useState<GrowthDecisionCase | null>(null);
-  const [rejectingCase, setRejectingCase] = useState<GrowthDecisionCase | null>(null);
+  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
+    null,
+  );
+  const [selectedCase, setSelectedCase] = useState<GrowthDecisionCase | null>(
+    null,
+  );
+  const [rejectingCase, setRejectingCase] = useState<GrowthDecisionCase | null>(
+    null,
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -123,10 +137,13 @@ const GrowthDecisionPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const response: GrowthDashboardResponse = await growthDecision.getDashboard();
+      const response: GrowthDashboardResponse =
+        await growthDecision.getDashboard();
       setDashboard(response);
     } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : '工作台加载失败');
+      setError(
+        requestError instanceof Error ? requestError.message : '工作台加载失败',
+      );
     } finally {
       setLoading(false);
     }
@@ -145,7 +162,27 @@ const GrowthDecisionPage: React.FC = () => {
       setRejectingCase(null);
       await loadDashboard();
     } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : '决策保存失败');
+      setError(
+        requestError instanceof Error ? requestError.message : '决策保存失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleJudgmentReview = async (
+    id: string,
+    request: ReviewJudgmentRequest,
+  ): Promise<void> => {
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.reviewJudgment(id, request);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error ? requestError.message : '判断保存失败',
+      );
     } finally {
       setSaving(false);
     }
@@ -170,7 +207,8 @@ const GrowthDecisionPage: React.FC = () => {
   if (loading && !dashboard) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center gap-3 text-sm text-slate-500">
-        <RefreshCw className="size-4 animate-spin" />正在加载增长决策工作台
+        <RefreshCw className="size-4 animate-spin" />
+        正在加载增长决策工作台
       </div>
     );
   }
@@ -180,21 +218,31 @@ const GrowthDecisionPage: React.FC = () => {
       <section className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-blue-700">
-            <Sparkles className="size-3.5" />AI GROWTH CONTROL CENTER
+            <Sparkles className="size-3.5" />
+            AI GROWTH CONTROL CENTER
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950 lg:text-3xl">
             从异常发现到业务结果，一条链路闭环
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            每小时同步投放与产品数据，生成可追踪建议；人工确认后自动进入实验观察与每周复盘。
+            每小时同步投放与产品数据，先判断异常是否成立；确认后再生成调整建议并进入实验观察。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700">
-            <span className="size-1.5 rounded-full bg-emerald-500" />本地链路正常
+          <Badge
+            variant="outline"
+            className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700"
+          >
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            本地链路正常
           </Badge>
-          <Button variant="outline" onClick={() => void loadDashboard()} disabled={loading}>
-            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />刷新
+          <Button
+            variant="outline"
+            onClick={() => void loadDashboard()}
+            disabled={loading}
+          >
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新
           </Button>
         </div>
       </section>
@@ -209,8 +257,8 @@ const GrowthDecisionPage: React.FC = () => {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="待处理异常"
-          value={String(summary?.pendingDecisions || 0)}
+          label="待判断异常"
+          value={String(summary?.pendingJudgments || 0)}
           note="目标 ≤ 2h"
           tone="warning"
         />
@@ -236,12 +284,18 @@ const GrowthDecisionPage: React.FC = () => {
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
+          <JudgmentQueue
+            judgments={dashboard?.judgments || []}
+            saving={saving}
+            onReview={handleJudgmentReview}
+          />
+
           <Card className="border-slate-200 bg-white shadow-none">
             <CardHeader className="flex-row items-center justify-between gap-4">
               <div>
-                <CardTitle className="text-base">待人工决策</CardTitle>
+                <CardTitle className="text-base">待确认调整建议</CardTitle>
                 <CardDescription className="mt-1">
-                  每条建议均绑定渠道、Campaign、人群与素材层级
+                  仅由已确认的异常判断生成，并绑定到具体投放对象
                 </CardDescription>
               </div>
               <Badge variant="secondary">{pendingCases.length} 条</Badge>
@@ -260,21 +314,28 @@ const GrowthDecisionPage: React.FC = () => {
                             <Badge
                               variant="outline"
                               className={
-                                item.severity === 'critical' || item.severity === 'high'
+                                item.severity === 'critical' ||
+                                item.severity === 'high'
                                   ? 'border-red-200 bg-red-50 text-red-700'
                                   : 'border-amber-200 bg-amber-50 text-amber-700'
                               }
                             >
-                              {SEVERITY_LABELS[item.severity] || item.severity}风险
+                              {SEVERITY_LABELS[item.severity] || item.severity}
+                              风险
                             </Badge>
-                            <span className="text-xs text-slate-500">{item.productName}</span>
+                            <span className="text-xs text-slate-500">
+                              {item.productName}
+                            </span>
                             <span className="text-xs text-slate-300">/</span>
                             <span className="truncate text-xs text-slate-500">
-                              {item.campaignName || item.campaignId || 'Campaign 未命名'}
+                              {item.campaignName ||
+                                item.campaignId ||
+                                'Campaign 未命名'}
                             </span>
                           </div>
                           <h2 className="mt-3 text-sm font-semibold text-slate-950">
-                            {item.anomalyType} · {item.targetMetric.toUpperCase()}
+                            {item.anomalyType} ·{' '}
+                            {item.targetMetric.toUpperCase()}
                             {typeof item.deviationPct === 'number'
                               ? ` ${item.deviationPct > 0 ? '+' : ''}${item.deviationPct}%`
                               : ''}
@@ -284,30 +345,42 @@ const GrowthDecisionPage: React.FC = () => {
                           </p>
                           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
                             <span className="flex items-center gap-1.5">
-                              <Bot className="size-3.5" />原因置信度 {item.confidence}%
+                              <Bot className="size-3.5" />
+                              原因置信度 {item.confidence}%
                             </span>
                             <span className="flex items-center gap-1.5">
-                              <Target className="size-3.5" />{item.expectedImpact}
+                              <Target className="size-3.5" />
+                              {item.expectedImpact}
                             </span>
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
-                          <Button variant="outline" onClick={() => setSelectedCase(item)}>
-                            查看依据<ChevronRight className="size-4" />
+                          <Button
+                            variant="outline"
+                            onClick={() => setSelectedCase(item)}
+                          >
+                            查看依据
+                            <ChevronRight className="size-4" />
                           </Button>
                           <Button
                             variant="outline"
                             onClick={() => setRejectingCase(item)}
                           >
-                            <X className="size-4" />不采纳
+                            <X className="size-4" />
+                            不采纳
                           </Button>
                           <Button
                             onClick={() =>
-                              void handleDecision(item, 'accepted', '接受 Agent 建议')
+                              void handleDecision(
+                                item,
+                                'accepted',
+                                '接受 Agent 建议',
+                              )
                             }
                             disabled={saving}
                           >
-                            <Check className="size-4" />采纳建议
+                            <Check className="size-4" />
+                            采纳建议
                           </Button>
                         </div>
                       </div>
@@ -317,10 +390,12 @@ const GrowthDecisionPage: React.FC = () => {
               ) : (
                 <Empty className="min-h-64">
                   <EmptyHeader>
-                    <EmptyMedia variant="icon"><Database className="size-5" /></EmptyMedia>
-                    <EmptyTitle>等待首批 Doris 数据</EmptyTitle>
+                    <EmptyMedia variant="icon">
+                      <Database className="size-5" />
+                    </EmptyMedia>
+                    <EmptyTitle>暂无调整建议</EmptyTitle>
                     <EmptyDescription>
-                      接入产品与广告数据后，异常和建议会自动进入这里等待人工确认。
+                      异常判断确认成立后，Agent 才会生成第一条调整建议。
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -348,15 +423,21 @@ const GrowthDecisionPage: React.FC = () => {
                           {item.productName} · {item.recommendation}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {item.campaignName || item.campaignId || '未指定 Campaign'}
+                          {item.campaignName ||
+                            item.campaignId ||
+                            '未指定 Campaign'}
                         </p>
                       </div>
-                      <Badge variant="outline">{STATUS_LABELS[item.status] || item.status}</Badge>
+                      <Badge variant="outline">
+                        {STATUS_LABELS[item.status] || item.status}
+                      </Badge>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="py-8 text-center text-sm text-slate-500">暂无已决策实验</p>
+                <p className="py-8 text-center text-sm text-slate-500">
+                  暂无已决策实验
+                </p>
               )}
             </CardContent>
           </Card>
@@ -366,31 +447,48 @@ const GrowthDecisionPage: React.FC = () => {
           <Card className="border-slate-200 bg-slate-950 text-white shadow-none">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-white">
-                <ShieldCheck className="size-4 text-emerald-400" />KR 进度
+                <ShieldCheck className="size-4 text-emerald-400" />
+                KR 进度
               </CardTitle>
-              <CardDescription className="text-slate-400">基于当前真实记录计算</CardDescription>
+              <CardDescription className="text-slate-400">
+                基于当前真实记录计算
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div>
                 <div className="mb-2 flex justify-between text-xs">
                   <span className="text-slate-300">全链路覆盖</span>
-                  <span>{dashboard?.products.length ? '1 / 1 产品' : '0 / 1 产品'}</span>
+                  <span>
+                    {dashboard?.products.length ? '1 / 1 产品' : '0 / 1 产品'}
+                  </span>
                 </div>
-                <Progress value={dashboard?.products.length ? 100 : 12} className="bg-slate-800" />
+                <Progress
+                  value={dashboard?.products.length ? 100 : 12}
+                  className="bg-slate-800"
+                />
               </div>
               <div>
                 <div className="mb-2 flex justify-between text-xs">
                   <span className="text-slate-300">建议可追踪率</span>
                   <span>{dashboard?.cases.length ? '100%' : '0%'}</span>
                 </div>
-                <Progress value={dashboard?.cases.length ? 100 : 0} className="bg-slate-800" />
+                <Progress
+                  value={dashboard?.cases.length ? 100 : 0}
+                  className="bg-slate-800"
+                />
               </div>
               <div>
                 <div className="mb-2 flex justify-between text-xs">
                   <span className="text-slate-300">建议改善率</span>
                   <span>{summary?.expectedImprovementRate || 0}% / 50%</span>
                 </div>
-                <Progress value={Math.min(100, (summary?.expectedImprovementRate || 0) * 2)} className="bg-slate-800" />
+                <Progress
+                  value={Math.min(
+                    100,
+                    (summary?.expectedImprovementRate || 0) * 2,
+                  )}
+                  className="bg-slate-800"
+                />
               </div>
             </CardContent>
           </Card>
@@ -403,14 +501,23 @@ const GrowthDecisionPage: React.FC = () => {
             <CardContent className="space-y-3">
               {dashboard?.products.length ? (
                 dashboard.products.map((product: GrowthProduct) => (
-                  <div key={product.id} className="rounded-xl border border-slate-200 p-3">
+                  <div
+                    key={product.id}
+                    className="rounded-xl border border-slate-200 p-3"
+                  >
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900">{product.name}</p>
-                      <Badge variant="outline">{product.skillVersion}</Badge>
+                      <p className="text-sm font-medium text-slate-900">
+                        {product.name}
+                      </p>
+                      <Badge variant="outline">
+                        产品 Skill {product.skillVersion}
+                      </Badge>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
                       <span>目标：{product.targetMetric.toUpperCase()}</span>
                       <span>延迟：{product.dataDelayMinutes} 分钟</span>
+                      <span>账户：{product.accountIds.length} 个</span>
+                      <span>渠道：{product.channel.toUpperCase()}</span>
                     </div>
                   </div>
                 ))
@@ -420,8 +527,13 @@ const GrowthDecisionPage: React.FC = () => {
                 </div>
               )}
               <div className="rounded-xl bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-                <div className="flex items-center gap-2 font-medium"><Clock3 className="size-3.5" />自动化节奏</div>
-                <p className="mt-1">每小时与每周一触发器已创建，发布验证后可由管理员启用。</p>
+                <div className="flex items-center gap-2 font-medium">
+                  <Clock3 className="size-3.5" />
+                  自动化节奏
+                </div>
+                <p className="mt-1">
+                  每小时与每周一触发器已创建，发布验证后可由管理员启用。
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -433,8 +545,12 @@ const GrowthDecisionPage: React.FC = () => {
                   <CheckCircle2 className="size-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-900">下一次周复盘</p>
-                  <p className="text-xs text-slate-500">周一 10:00 · 自动汇总实验结果</p>
+                  <p className="text-sm font-medium text-slate-900">
+                    下一次周复盘
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    周一 10:00 · 自动汇总实验结果
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -442,12 +558,18 @@ const GrowthDecisionPage: React.FC = () => {
         </aside>
       </div>
 
-      <Dialog open={Boolean(selectedCase)} onOpenChange={(open: boolean) => !open && setSelectedCase(null)}>
+      <Dialog
+        open={Boolean(selectedCase)}
+        onOpenChange={(open: boolean) => !open && setSelectedCase(null)}
+      >
         <DialogContent className="max-h-[86vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedCase?.anomalyType || '建议详情'}</DialogTitle>
             <DialogDescription>
-              {selectedCase?.productName} · {selectedCase?.campaignName || selectedCase?.campaignId || '广告对象'}
+              {selectedCase?.productName} ·{' '}
+              {selectedCase?.campaignName ||
+                selectedCase?.campaignId ||
+                '广告对象'}
             </DialogDescription>
           </DialogHeader>
           {selectedCase ? (
@@ -455,38 +577,76 @@ const GrowthDecisionPage: React.FC = () => {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">当前值</p>
-                  <p className="mt-1 font-semibold">{selectedCase.currentValue ?? '—'}</p>
+                  <p className="mt-1 font-semibold">
+                    {selectedCase.currentValue ?? '—'}
+                  </p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">基线值</p>
-                  <p className="mt-1 font-semibold">{selectedCase.baselineValue ?? '—'}</p>
+                  <p className="mt-1 font-semibold">
+                    {selectedCase.baselineValue ?? '—'}
+                  </p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">变化幅度</p>
                   <p className="mt-1 flex items-center gap-1 font-semibold">
-                    {(selectedCase.deviationPct || 0) >= 0 ? <ArrowUpRight className="size-4 text-red-500" /> : <ArrowDownRight className="size-4 text-emerald-500" />}
+                    {(selectedCase.deviationPct || 0) >= 0 ? (
+                      <ArrowUpRight className="size-4 text-red-500" />
+                    ) : (
+                      <ArrowDownRight className="size-4 text-emerald-500" />
+                    )}
                     {selectedCase.deviationPct ?? '—'}%
                   </p>
                 </div>
               </div>
-              <div><p className="text-xs font-medium text-slate-500">数据证据</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.evidence}</p></div>
-              <div><p className="text-xs font-medium text-slate-500">原因分析 · 置信度 {selectedCase.confidence}%</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.rootCause}</p></div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">数据证据</p>
+                <p className="mt-1 leading-6 text-slate-700">
+                  {selectedCase.evidence}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">
+                  原因分析 · 置信度 {selectedCase.confidence}%
+                </p>
+                <p className="mt-1 leading-6 text-slate-700">
+                  {selectedCase.rootCause}
+                </p>
+              </div>
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
                 <p className="text-xs font-medium text-blue-700">行动建议</p>
-                <p className="mt-1 font-medium leading-6 text-blue-950">{selectedCase.recommendation}</p>
-                <p className="mt-2 text-xs text-blue-800">预期：{selectedCase.expectedImpact}</p>
+                <p className="mt-1 font-medium leading-6 text-blue-950">
+                  {selectedCase.recommendation}
+                </p>
+                <p className="mt-2 text-xs text-blue-800">
+                  预期：{selectedCase.expectedImpact}
+                </p>
               </div>
-              {selectedCase.riskNote ? <div><p className="text-xs font-medium text-slate-500">风险与回滚条件</p><p className="mt-1 leading-6 text-slate-700">{selectedCase.riskNote}</p></div> : null}
+              {selectedCase.riskNote ? (
+                <div>
+                  <p className="text-xs font-medium text-slate-500">
+                    风险与回滚条件
+                  </p>
+                  <p className="mt-1 leading-6 text-slate-700">
+                    {selectedCase.riskNote}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(rejectingCase)} onOpenChange={(open: boolean) => !open && setRejectingCase(null)}>
+      <Dialog
+        open={Boolean(rejectingCase)}
+        onOpenChange={(open: boolean) => !open && setRejectingCase(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>选择不采纳原因</DialogTitle>
-            <DialogDescription>原因会写入实验数据库，用于每周复盘和 Skill 改进。</DialogDescription>
+            <DialogDescription>
+              原因会写入实验数据库，用于每周复盘和 Skill 改进。
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             {REJECTION_REASONS.map((reason: string) => (
@@ -495,7 +655,10 @@ const GrowthDecisionPage: React.FC = () => {
                 variant="outline"
                 className="h-auto justify-start whitespace-normal py-3 text-left"
                 disabled={saving || !rejectingCase}
-                onClick={() => rejectingCase && void handleDecision(rejectingCase, 'rejected', reason)}
+                onClick={() =>
+                  rejectingCase &&
+                  void handleDecision(rejectingCase, 'rejected', reason)
+                }
               >
                 {reason}
               </Button>

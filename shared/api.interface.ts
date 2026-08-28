@@ -5,6 +5,7 @@ export interface GrowthProduct {
   targetMetric: string;
   channel: string;
   accountId?: string;
+  accountIds: string[];
   dataDelayMinutes: number;
   skillVersion: string;
   dorisSource?: string;
@@ -61,6 +62,8 @@ export interface GrowthDecisionCase {
 
 export interface GrowthDashboardSummary {
   openAnomalies: number;
+  pendingJudgments: number;
+  confirmedJudgments: number;
   pendingDecisions: number;
   acceptedRecommendations: number;
   completedExperiments: number;
@@ -72,7 +75,41 @@ export interface GrowthDashboardSummary {
 export interface GrowthDashboardResponse {
   summary: GrowthDashboardSummary;
   products: GrowthProduct[];
+  judgments: GrowthJudgment[];
   cases: GrowthDecisionCase[];
+}
+
+export interface GrowthJudgment {
+  id: string;
+  productId: string;
+  productName: string;
+  anomalyType: string;
+  severity: string;
+  status: string;
+  channel: string;
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  audienceId?: string;
+  audienceName?: string;
+  adId?: string;
+  adName?: string;
+  creativeId?: string;
+  creativeName?: string;
+  targetMetric: string;
+  currentValue?: number;
+  baselineValue?: number;
+  deviationPct?: number;
+  evidence: string;
+  rootCause: string;
+  confidence: number;
+  preliminaryJudgment: string;
+  skillRuleCandidate?: string;
+  reviewReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
 }
 
 export interface UpdateDecisionRequest {
@@ -91,6 +128,7 @@ export interface CreateProductRequest {
   targetMetric: string;
   channel: string;
   accountId?: string;
+  accountIds?: string[];
   dorisSource?: string;
   dataDelayMinutes?: number;
 }
@@ -117,6 +155,45 @@ export interface IngestDecisionCaseRequest {
   evidence: string;
   rootCause: string;
   confidence: number;
+  recommendation: string;
+  recommendedAction: RecommendedAction;
+  expectedImpact: string;
+  riskNote?: string;
+}
+
+export interface IngestJudgmentRequest {
+  productId: string;
+  anomalyType: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  channel: string;
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  audienceId?: string;
+  audienceName?: string;
+  adId?: string;
+  adName?: string;
+  creativeId?: string;
+  creativeName?: string;
+  targetMetric: string;
+  currentValue?: number;
+  baselineValue?: number;
+  deviationPct?: number;
+  evidence: string;
+  rootCause: string;
+  confidence: number;
+  preliminaryJudgment: string;
+  skillRuleCandidate?: string;
+}
+
+export interface ReviewJudgmentRequest {
+  action: 'confirmed' | 'deferred' | 'rejected';
+  reason: string;
+  skillRuleCandidate?: string;
+}
+
+export interface CreateRecommendationFromJudgmentRequest {
   recommendation: string;
   recommendedAction: RecommendedAction;
   expectedImpact: string;

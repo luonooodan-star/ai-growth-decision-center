@@ -1,0 +1,3 @@
+interface:
+  display_name: "Wingslite 投放决策"
+  short_description: "按 Wingslite 产品标准分析 Facebook 与 Doris 数据"
