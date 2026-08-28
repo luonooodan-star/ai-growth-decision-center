@@ -24,6 +24,9 @@ scope:
   excluded_product_names: ['WingsAI']
 
 sources:
+  connection_status: 'verified_read_only'
+  verified_at: '2026-08-28'
+  media_source_value: 'facebook'
   delivery: 'bi_ads.ads_paid_acquisition_daily'
   cohort_revenue: 'bi_ads.ads_paid_acquisition_cohort_metric'
   facebook_campaign: 'bi_dwd.dwd_facebook_campaign_daily'
@@ -32,6 +35,16 @@ sources:
   expected_delay_minutes: 60
   stale_after_minutes: 120
   cohort_maturity_hours: 72
+
+source_scope:
+  app_name: 'WingsLite(Android)'
+  media_source: 'facebook'
+  country_codes: ['IN', 'PK']
+  latest_verified_complete_date: '2026-08-27'
+  notes:
+    - 'media_source matching is case-sensitive; use lowercase facebook'
+    - 'PK had no material paid spend in the verified 2026-08-20 through 2026-08-27 window'
+    - 'do not silently add buyer_alias or producer_alias filters for paid_manager scope'
 
 product_line_standard:
   primary_metric: 'd0_roas'

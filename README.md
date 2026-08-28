@@ -53,6 +53,11 @@ npm run build:prod
 
 ## Doris MCP 接入
 
+Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
+`app_name=WingsLite(Android)`、`media_source=facebook`，并覆盖 IN / PK；
+详细数据集、字段和成熟度约束见
+`skills/wingslite-facebook-decision/references/doris-query-contract.md`。
+
 运行时应用不直接调用 MCP。建议由 Codex、数据任务或现有调度器每小时：
 
 1. 通过 Doris MCP 拉取 FB 前端和产品后台数据。

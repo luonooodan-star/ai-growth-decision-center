@@ -6,9 +6,9 @@ description: Apply Wingslite-specific Facebook growth standards using Doris deli
 # Wingslite Facebook Decision
 
 Use this Skill only for `WingsLite(Android)` and the explicitly maintained
-Facebook account IDs. Always read
-[the decision standards](references/decision-standards.md) before analyzing data
-or producing a judgment.
+Facebook account IDs. Before analyzing data or producing a judgment, always
+read both [the decision standards](references/decision-standards.md) and the
+[Doris query contract](references/doris-query-contract.md).
 
 ## Required sequence
 
