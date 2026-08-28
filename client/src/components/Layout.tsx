@@ -1,11 +1,12 @@
 import { useAppInfo } from '@lark-apaas/client-toolkit/hooks/useAppInfo';
 import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 import { Activity, Database, FlaskConical, Sparkles } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const Layout = () => {
   const appInfo = useAppInfo();
   const userInfo = useCurrentUserProfile();
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-slate-50 text-foreground">
@@ -23,9 +24,12 @@ const Layout = () => {
             </div>
           </div>
           <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 md:flex">
-            <span className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-medium text-slate-950 shadow-sm">
-              <Activity className="size-3.5" />工作台
-            </span>
+            <Link
+              to="/"
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${location.pathname === '/' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+            >
+              <Activity className="size-3.5" />产品中心
+            </Link>
             <span className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
               <Database className="size-3.5" />实验库
             </span>

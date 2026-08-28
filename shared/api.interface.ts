@@ -10,6 +10,7 @@ export interface GrowthProduct {
   skillVersion: string;
   dorisSource?: string;
   lastSyncAt?: string;
+  thresholds: Record<string, number | string | boolean | null>;
 }
 
 export interface RecommendedAction {

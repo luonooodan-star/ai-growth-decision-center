@@ -544,6 +544,10 @@ export class GrowthDecisionService {
       skillVersion: product.skillVersion,
       dorisSource: product.dorisSource || undefined,
       lastSyncAt: product.lastSyncAt?.toISOString(),
+      thresholds: (product.thresholds || {}) as Record<
+        string,
+        number | string | boolean | null
+      >,
     };
   }
 

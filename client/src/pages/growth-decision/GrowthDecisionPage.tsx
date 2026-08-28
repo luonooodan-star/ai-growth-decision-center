@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowDownRight,
   ArrowUpRight,
   Bot,
@@ -15,6 +16,7 @@ import {
   Target,
   X,
 } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
 
 import type {
   GrowthDashboardResponse,
@@ -116,7 +118,8 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
 };
 
 const GrowthDecisionPage: React.FC = () => {
-  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
+  const { productId = '' } = useParams<{ productId: string }>();
+  const [dashboardData, setDashboardData] = useState<GrowthDashboardResponse | null>(
     null,
   );
   const [selectedCase, setSelectedCase] = useState<GrowthDecisionCase | null>(
@@ -139,7 +142,7 @@ const GrowthDecisionPage: React.FC = () => {
     try {
       const response: GrowthDashboardResponse =
         await growthDecision.getDashboard();
-      setDashboard(response);
+      setDashboardData(response);
     } catch (requestError: unknown) {
       setError(
         requestError instanceof Error ? requestError.message : '工作台加载失败',
@@ -148,6 +151,33 @@ const GrowthDecisionPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const dashboard: GrowthDashboardResponse | null = useMemo(() => {
+    if (!dashboardData) return null;
+    const products = dashboardData.products.filter((product) => product.id === productId);
+    const judgments = dashboardData.judgments.filter((item) => item.productId === productId);
+    const cases = dashboardData.cases.filter((item) => item.productId === productId);
+    const accepted = cases.filter((item) => item.status === 'accepted' || item.status === 'observing' || item.status === 'completed');
+    const completed = cases.filter((item) => item.status === 'completed');
+    const improved = completed.filter((item) => item.resultClassification === 'expected' || item.resultClassification === 'partial');
+    return {
+      products,
+      judgments,
+      cases,
+      summary: {
+        openAnomalies: judgments.length,
+        pendingJudgments: judgments.filter((item) => item.status === 'judgment_pending' || item.status === 'judgment_deferred').length,
+        confirmedJudgments: judgments.filter((item) => item.status === 'judgment_confirmed').length,
+        pendingDecisions: cases.filter((item) => item.status === 'pending').length,
+        acceptedRecommendations: accepted.length,
+        completedExperiments: completed.length,
+        expectedImprovementRate: completed.length ? Math.round((improved.length / completed.length) * 100) : 0,
+        medianDecisionMinutes: dashboardData.summary.medianDecisionMinutes,
+        lastDataSyncAt: products[0]?.lastSyncAt,
+      },
+    };
+  }, [dashboardData, productId]);
+  const selectedProduct: GrowthProduct | undefined = dashboard?.products[0];
 
   const handleDecision = async (
     item: GrowthDecisionCase,
@@ -204,7 +234,7 @@ const GrowthDecisionPage: React.FC = () => {
   );
   const summary: GrowthDashboardSummary | undefined = dashboard?.summary;
 
-  if (loading && !dashboard) {
+  if (loading && !dashboardData) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center gap-3 text-sm text-slate-500">
         <RefreshCw className="size-4 animate-spin" />
@@ -213,19 +243,24 @@ const GrowthDecisionPage: React.FC = () => {
     );
   }
 
+  if (!loading && dashboardData && !selectedProduct) {
+    return <div className="mx-auto max-w-3xl px-5 py-20 text-center"><Database className="mx-auto size-7 text-slate-400" /><h1 className="mt-4 text-xl font-semibold text-slate-900">产品页面不存在</h1><p className="mt-2 text-sm text-slate-500">该产品可能尚未接入或已停用。</p><Button asChild variant="outline" className="mt-5"><Link to="/">返回产品中心</Link></Button></div>;
+  }
+
   return (
     <div className="mx-auto max-w-[1540px] px-5 py-6 lg:px-8">
       <section className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
+          <Link to="/" className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft className="size-3.5" />返回产品中心</Link>
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-blue-700">
             <Sparkles className="size-3.5" />
-            AI GROWTH CONTROL CENTER
+            {selectedProduct?.name.toUpperCase()} · PRODUCT DECISION PAGE
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950 lg:text-3xl">
-            从异常发现到业务结果，一条链路闭环
+            {selectedProduct?.name} 增长判断与投放决策
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            每小时同步投放与产品数据，先判断异常是否成立；确认后再生成调整建议并进入实验观察。
+            本页面只使用 {selectedProduct?.name} 的 Doris 数据、Facebook 账户和产品 Skill；先判断异常是否成立，确认后再生成调整建议。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -459,7 +494,7 @@ const GrowthDecisionPage: React.FC = () => {
                 <div className="mb-2 flex justify-between text-xs">
                   <span className="text-slate-300">全链路覆盖</span>
                   <span>
-                    {dashboard?.products.length ? '1 / 1 产品' : '0 / 1 产品'}
+                    {dashboard?.products.length ? '已覆盖' : '未覆盖'}
                   </span>
                 </div>
                 <Progress
@@ -519,6 +554,41 @@ const GrowthDecisionPage: React.FC = () => {
                       <span>账户：{product.accountIds.length} 个</span>
                       <span>渠道：{product.channel.toUpperCase()}</span>
                     </div>
+                    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">达标标准</span>
+                        <span className="font-medium text-slate-800">
+                          {Object.keys(product.thresholds || {}).length
+                            ? `${Object.keys(product.thresholds).length} 项已配置`
+                            : '待产品负责人校准'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">异常规则</span>
+                        <span className="font-medium text-slate-800">
+                          产品独立维护
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">最近取数</span>
+                        <span className="font-medium text-slate-800">
+                          {product.lastSyncAt
+                            ? new Date(product.lastSyncAt).toLocaleString(
+                                'zh-CN',
+                                { hour12: false },
+                              )
+                            : '尚未同步'}
+                        </span>
+                      </div>
+                    </div>
+                    {product.dorisSource ? (
+                      <p
+                        className="mt-3 line-clamp-3 rounded-lg bg-slate-50 p-2 text-[11px] leading-5 text-slate-500"
+                        title={product.dorisSource}
+                      >
+                        Doris：{product.dorisSource}
+                      </p>
+                    ) : null}
                   </div>
                 ))
               ) : (
