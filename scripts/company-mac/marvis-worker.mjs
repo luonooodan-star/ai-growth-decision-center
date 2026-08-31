@@ -6,9 +6,11 @@ import { userInfo } from 'node:os';
 
 const ACCESS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-access';
 const MARVIS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-mavis-mcp';
-const MCP_URL = process.env.AI_GROWTH_MCP_URL ||
-  'http://127.0.0.1:8081/mcp/growth-decision';
-const DEFAULT_WORKER_ID = 'marvis-company-mac';
+const REMOTE_URL_SERVICE = 'ai-growth-decision-center-marvis-remote-url';
+const REMOTE_USER_SERVICE = 'ai-growth-decision-center-marvis-remote-user';
+const REMOTE_PASSWORD_SERVICE = 'ai-growth-decision-center-marvis-remote-password';
+const REMOTE_TOKEN_SERVICE = 'ai-growth-decision-center-marvis-remote-token';
+const DEFAULT_WORKER_ID = 'marvis-analysis-mac';
 
 function secret(service) {
   return execFileSync(
@@ -25,24 +27,63 @@ function secret(service) {
   ).trim();
 }
 
-async function callMcp(method, params = undefined) {
-  let accessPassword;
-  let marvisToken;
+function optionalSecret(service) {
   try {
-    accessPassword = secret(ACCESS_KEYCHAIN_SERVICE);
-    marvisToken = secret(MARVIS_KEYCHAIN_SERVICE);
+    return secret(service);
   } catch {
-    throw new Error('Keychain 凭据缺失，请先运行公司 Mac setup.sh');
+    return '';
+  }
+}
+
+function connectionConfig() {
+  const remoteUrl = optionalSecret(REMOTE_URL_SERVICE);
+  if (remoteUrl) {
+    const username = optionalSecret(REMOTE_USER_SERVICE) || 'growth';
+    const password = optionalSecret(REMOTE_PASSWORD_SERVICE);
+    const token = optionalSecret(REMOTE_TOKEN_SERVICE);
+    if (!password || !token) {
+      throw new Error(
+        '远程 Marvis 凭据不完整，请运行 configure-marvis-remote.sh setup',
+      );
+    }
+    return {
+      url: process.env.AI_GROWTH_MCP_URL || remoteUrl,
+      username,
+      password,
+      token,
+      mode: 'remote',
+    };
   }
 
-  const basic = Buffer.from(`growth:${accessPassword}`).toString('base64');
-  const response = await fetch(MCP_URL, {
+  const password = optionalSecret(ACCESS_KEYCHAIN_SERVICE);
+  const token = optionalSecret(MARVIS_KEYCHAIN_SERVICE);
+  if (!password || !token) {
+    throw new Error(
+      '未找到本机或远程 Keychain 凭据，请运行 configure-marvis-remote.sh setup',
+    );
+  }
+  return {
+    url: process.env.AI_GROWTH_MCP_URL ||
+      'http://127.0.0.1:8081/mcp/growth-decision',
+    username: 'growth',
+    password,
+    token,
+    mode: 'local',
+  };
+}
+
+async function callMcp(method, params = undefined) {
+  const connection = connectionConfig();
+  const basic = Buffer.from(
+    `${connection.username}:${connection.password}`,
+  ).toString('base64');
+  const response = await fetch(connection.url, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       Authorization: `Basic ${basic}`,
       'Content-Type': 'application/json',
-      'X-Marvis-Token': marvisToken,
+      'X-Marvis-Token': connection.token,
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -72,10 +113,12 @@ function printJson(value) {
 async function main() {
   const command = process.argv[2] || 'claim';
   if (command === 'check') {
+    const connection = connectionConfig();
     const result = await callMcp('tools/list');
     printJson({
       ok: true,
-      mcpUrl: MCP_URL,
+      mode: connection.mode,
+      mcpUrl: connection.url,
       tools: (result?.tools || []).map((tool) => tool.name),
     });
     return;

@@ -104,6 +104,7 @@ mkdir -p "$launch_agents_dir" "$logs_dir"
 start_script="$project_dir/scripts/company-mac/start-local.sh"
 chmod +x \
   "$start_script" \
+  "$project_dir/scripts/company-mac/configure-marvis-remote.sh" \
   "$project_dir/scripts/company-mac/configure-mavis.sh" \
   "$project_dir/scripts/company-mac/marvis-worker.mjs" \
   "$project_dir/scripts/company-mac/prepare-marvis-integration.sh" \

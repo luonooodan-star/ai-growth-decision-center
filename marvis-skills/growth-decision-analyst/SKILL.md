@@ -5,7 +5,7 @@ description: 领取 AI 增长决策中心的广告异常任务，结合产品指
 
 # 增长异常判断
 
-通过本机安全代理调用 `ai-growth-decision-center` MCP，处理一个等待中的异常任务。代理位于 `$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs`，只从 macOS Keychain 读取认证信息，不得要求用户把密码或 Token 写进提示词。判断与调整建议是两个阶段：本 Skill 只完成异常是否成立、初步原因和下一步核查建议，不把判断结果计入建议采纳率。
+通过分析 Mac 上的安全代理调用公司 Mac 托管的 `ai-growth-decision-center` MCP，处理一个等待中的异常任务。代理位于 `$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs`，只从当前 Mac 的 Keychain 读取远程认证信息，不得要求用户把密码或 Token 写进提示词。判断与调整建议是两个阶段：本 Skill 只完成异常是否成立、初步原因和下一步核查建议，不把判断结果计入建议采纳率。
 
 ## 工作流
 

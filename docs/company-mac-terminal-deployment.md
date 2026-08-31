@@ -76,18 +76,34 @@ MCP 客户端需同时使用页面 HTTP Basic 登录，并通过独立的
 zsh scripts/company-mac/configure-mavis.sh external
 ```
 
-生成可导入 Marvis 的 Skill 和自动任务提示词：
+### 双 Mac 部署：公司 Mac 托管，另一台 Mac 运行 Marvis
+
+公司 Mac 不需要安装 Marvis，只运行网页、Doris 抓取、SQLite 和分析任务队列。
+先在公司 Mac 查看局域网 MCP 地址与 Token，并切到外部 Worker 模式：
+
+```bash
+zsh scripts/company-mac/configure-mavis.sh status
+zsh scripts/company-mac/configure-mavis.sh external
+```
+
+在能运行 Marvis 的分析 Mac 上生成 Skill、自动任务提示词和安全代理：
 
 ```bash
 zsh scripts/company-mac/prepare-marvis-integration.sh
 ```
 
-脚本会把 Skill、提示词和本地安全代理生成到 `~/Downloads/ai-growth-marvis/`。
-安全代理仅从 macOS Keychain 读取页面密码和 Marvis Token，不会把凭据写入 Skill。
-可先运行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" check` 做无副作用连接检查。
+脚本会把接入包生成到 `~/Downloads/ai-growth-marvis/`。然后在分析 Mac 执行：
+
+```bash
+zsh "$HOME/Downloads/ai-growth-marvis/configure-marvis-remote.sh" setup
+```
+
+按提示输入公司 Mac 的局域网页面地址、页面访问密码和 `X-Marvis-Token`。
+安全代理只把认证信息存入分析 Mac 的 Keychain，不会写入 Skill 或提示词；配置完成会自动执行无副作用连接检查。
 在 Marvis 中导入生成的 `growth-decision-analyst.zip`，再创建每 1 分钟运行一次的
 自动任务并粘贴生成的提示词。网页点击“使用 Marvis 分析”后，任务会先进入本地队列，
-Marvis 在下一次轮询中领取、分析并回写，通常等待不超过 1 分钟。当前 Marvis 桌面版
+分析 Mac 上的 Marvis 在下一次轮询中通过局域网领取、分析并回写，通常等待不超过 1 分钟。
+两台 Mac 必须能互相访问公司 Mac 的 8081 端口；跨网络使用时应通过公司 VPN，不把该端口直接暴露到公网。当前 Marvis 桌面版
 没有公开的外部对话唤醒接口，因此不使用易失效的界面模拟点击方案。
 
 如果需要恢复内置闭环测试模式：
