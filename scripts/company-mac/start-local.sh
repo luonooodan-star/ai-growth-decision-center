@@ -3,7 +3,8 @@ set -euo pipefail
 
 readonly KEYCHAIN_SERVICE="ai-growth-doris-superset-mcp"
 readonly ACCESS_KEYCHAIN_SERVICE="ai-growth-decision-center-access"
-readonly GEMINI_KEYCHAIN_SERVICE="ai-growth-decision-center-gemini"
+readonly MAVIS_KEYCHAIN_SERVICE="ai-growth-decision-center-mavis-mcp"
+readonly MAVIS_MODE_KEYCHAIN_SERVICE="ai-growth-decision-center-mavis-mode"
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h:h}"
@@ -24,10 +25,18 @@ access_password="$(security find-generic-password \
   exit 1
 }
 
-gemini_api_key="$(security find-generic-password \
+mavis_mcp_token="$(security find-generic-password \
   -a "$USER" \
-  -s "$GEMINI_KEYCHAIN_SERVICE" \
-  -w 2>/dev/null)" || gemini_api_key=""
+  -s "$MAVIS_KEYCHAIN_SERVICE" \
+  -w 2>/dev/null)" || {
+  print -u2 "Mavis MCP Token 不存在，请重新运行 setup.sh。"
+  exit 1
+}
+
+mavis_worker_mode="$(security find-generic-password \
+  -a "$USER" \
+  -s "$MAVIS_MODE_KEYCHAIN_SERVICE" \
+  -w 2>/dev/null)" || mavis_worker_mode="skill_simulation"
 
 cd "$project_dir"
 
@@ -36,7 +45,8 @@ export DORIS_MCP_URL="${DORIS_MCP_URL:-http://192.168.3.102:8766/mcp}"
 export SUPERSET_MCP_URL="${SUPERSET_MCP_URL:-http://192.168.3.102:8767/mcp}"
 export DORIS_SUPERSET_MCP_TOKEN="$token"
 export GROWTH_BASIC_AUTH_PASSWORD="$access_password"
-[[ -n "$gemini_api_key" ]] && export GEMINI_API_KEY="$gemini_api_key"
+export MAVIS_MCP_TOKEN="$mavis_mcp_token"
+export MAVIS_WORKER_MODE="${MAVIS_WORKER_MODE:-$mavis_worker_mode}"
 export SERVER_HOST="0.0.0.0"
 export SERVER_PORT="8081"
 export GROWTH_DATABASE_PATH="$project_dir/runtime/ai-growth.sqlite"

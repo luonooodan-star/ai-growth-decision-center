@@ -193,7 +193,7 @@ export interface GrowthJudgment {
 export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
 
 export interface GrowthAiAnalysis {
-  provider: 'gemini' | 'product_skill';
+  provider: 'mavis' | 'product_skill';
   model: string;
   judgment: GrowthAiJudgment;
   summary: string;
@@ -209,15 +209,76 @@ export interface GrowthAiAnalysis {
 }
 
 export interface GrowthAiProviderStatus {
-  provider: 'gemini';
+  provider: 'mavis';
   model: string;
   configured: boolean;
+  runtimeMode: 'external_worker' | 'skill_simulation';
+  mcpConfigured: boolean;
+  queuedJobs: number;
+  runningJobs: number;
   fallbackProvider: 'product_skill';
   fallbackAvailable: true;
 }
 
 export interface AnalyzeJudgmentRequest {
-  mode?: 'default' | 'gemini_only';
+  mode?: 'default' | 'external_only';
+}
+
+export type GrowthMavisJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface GrowthMavisJob {
+  id: string;
+  judgmentId: string;
+  productId: string;
+  productName: string;
+  jobType: 'anomaly_assessment';
+  trigger: 'automatic' | 'manual';
+  status: GrowthMavisJobStatus;
+  workerId?: string;
+  skillVersion: string;
+  attempt: number;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface GrowthMavisJobListResponse {
+  items: GrowthMavisJob[];
+}
+
+export interface ClaimGrowthMavisJobRequest {
+  workerId: string;
+}
+
+export interface GrowthMavisJobContext {
+  job: GrowthMavisJob;
+  product: GrowthProduct;
+  judgment: GrowthJudgment;
+  metricStandards: GrowthMetricDefinition[];
+  outputContract: {
+    judgment: GrowthAiJudgment[];
+    confidenceRange: [number, number];
+    observationHoursRange: [number, number];
+  };
+}
+
+export interface CompleteGrowthMavisJobRequest {
+  workerId: string;
+  model: string;
+  analysis: Omit<
+    GrowthAiAnalysis,
+    'provider' | 'model' | 'generatedAt' | 'fallbackReason'
+  >;
+}
+
+export interface FailGrowthMavisJobRequest {
+  workerId: string;
+  error: string;
 }
 
 export interface UpdateDecisionRequest {

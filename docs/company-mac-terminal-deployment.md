@@ -58,14 +58,29 @@ zsh scripts/company-mac/setup.sh
 5. 执行类型检查和生产构建。
 6. 创建本地 SQLite 数据库，安装 `launchd` 服务并开机自启。
 
-要启用默认 Gemini 3.7 Flash 深度分析，首次部署完成后执行：
+首次部署完成后，可查看供 Mavis 使用的 MCP 地址和 Token：
 
 ```bash
-zsh scripts/company-mac/configure-gemini.sh
+zsh scripts/company-mac/configure-mavis.sh
 ```
 
-脚本会把 Key 单独保存在 macOS Keychain、验证模型可用并重启服务。
-未配置或 Gemini 请求失败时，异常分析会自动降级为产品 Skill。
+MCP Token 由部署脚本自动生成并单独保存在 macOS Keychain。当前第一版
+默认使用产品 Skill 模拟 Mavis Worker，先验证“创建任务 → 读取上下文 →
+结构化分析 → 回写页面”的完整闭环，不需要任何第三方模型 API Key。
+MCP 客户端需同时使用页面 HTTP Basic 登录，并通过独立的
+`X-Mavis-Token` 请求头传入 Mavis Token。
+
+接入真实 Mavis Worker 后切换模式：
+
+```bash
+zsh scripts/company-mac/configure-mavis.sh external
+```
+
+如果需要恢复内置闭环测试模式：
+
+```bash
+zsh scripts/company-mac/configure-mavis.sh simulation
+```
 
 部署后本机访问：
 
@@ -131,5 +146,5 @@ Doris MCP 是 `192.168.3.102` 局域网地址，公司 Mac 必须在对应公司
 - 页面与所有 API 均受独立访问密码保护，并拒绝跨站写入。
 - 定时扫描只能写入“待判断异常”，不能直接调整广告。
 - 判断的确认/待定/否决与调整建议的采纳率分开计算。
-- Gemini 只接收单条异常所需的聚合指标、人工阈值和产品 Skill 上下文，不接收
-  Doris 凭据，也不在前端暴露 Gemini Key。
+- Mavis MCP 只开放异常任务领取、上下文读取、结构化分析回写和失败记录，
+  不开放 Shell、文件删除、Doris 凭据或广告账户写操作。

@@ -11,6 +11,7 @@ import type {
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
   GrowthJudgment,
+  GrowthMavisJobListResponse,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
@@ -23,14 +24,14 @@ import type {
 
 import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthDataFetchService } from './growth-data-fetch.service';
-import { GrowthAiAnalysisService } from './growth-ai-analysis.service';
+import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 
 @Controller('api/growth-decision')
 export class GrowthDecisionController {
   constructor(
     private readonly growthDecisionService: GrowthDecisionService,
     private readonly growthDataFetchService: GrowthDataFetchService,
-    private readonly growthAiAnalysisService: GrowthAiAnalysisService,
+    private readonly growthMavisAnalysisService: GrowthMavisAnalysisService,
   ) {}
 
   @Get('dashboard')
@@ -43,9 +44,16 @@ export class GrowthDecisionController {
     return this.growthDataFetchService.getHistory();
   }
 
-  @Get('ai/status')
+  @Get('mavis/status')
   getAiStatus(): GrowthAiProviderStatus {
-    return this.growthAiAnalysisService.getStatus();
+    return this.growthMavisAnalysisService.getStatus();
+  }
+
+  @Get('judgments/:id/mavis-jobs')
+  getMavisJobs(
+    @Param('id') id: string,
+  ): GrowthMavisJobListResponse {
+    return this.growthMavisAnalysisService.listJobs(id);
   }
 
   @Get('records/:id/history')
@@ -110,14 +118,15 @@ export class GrowthDecisionController {
     );
   }
 
-  @Post('judgments/:id/ai-analysis')
+  @Post('judgments/:id/mavis-analysis')
   async analyzeJudgment(
     @Param('id') id: string,
     @Body() request?: AnalyzeJudgmentRequest,
   ): Promise<GrowthJudgment> {
-    return this.growthAiAnalysisService.analyzeJudgment(
+    return this.growthMavisAnalysisService.analyzeJudgment(
       id,
       request?.mode || 'default',
+      'manual',
     );
   }
 

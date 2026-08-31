@@ -9,6 +9,7 @@ import type {
   GrowthDecisionActivity,
   GrowthFetchRun,
   GrowthJudgment,
+  GrowthMavisJob,
   GrowthMetricDefinition,
   GrowthProduct,
 } from '@shared/api.interface';
@@ -205,6 +206,80 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(run.id, run.productId || null, run.status, run.startedAt, JSON.stringify(run));
   }
 
+  listMavisJobs(judgmentId?: string, limit = 100): GrowthMavisJob[] {
+    const rows: Record<string, unknown>[] = judgmentId
+      ? this.database
+          .prepare(
+            `SELECT payload FROM growth_mavis_job
+             WHERE judgment_id = ? ORDER BY created_at DESC LIMIT ?`,
+          )
+          .all(judgmentId, limit)
+      : this.database
+          .prepare(
+            'SELECT payload FROM growth_mavis_job ORDER BY created_at DESC LIMIT ?',
+          )
+          .all(limit);
+    return rows.map(
+      (row: Record<string, unknown>): GrowthMavisJob =>
+        this.parsePayload<GrowthMavisJob>(row.payload),
+    );
+  }
+
+  getMavisJob(id: string): GrowthMavisJob | undefined {
+    const row: Record<string, unknown> | undefined = this.database
+      .prepare('SELECT payload FROM growth_mavis_job WHERE id = ?')
+      .get(id);
+    return row ? this.parsePayload<GrowthMavisJob>(row.payload) : undefined;
+  }
+
+  saveMavisJob(job: GrowthMavisJob): void {
+    this.database
+      .prepare(
+        `INSERT INTO growth_mavis_job (
+           id, judgment_id, product_id, status, created_at, payload
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           judgment_id = excluded.judgment_id,
+           product_id = excluded.product_id,
+           status = excluded.status,
+           payload = excluded.payload`,
+      )
+      .run(
+        job.id,
+        job.judgmentId,
+        job.productId,
+        job.status,
+        job.createdAt,
+        JSON.stringify(job),
+      );
+  }
+
+  claimNextMavisJob(workerId: string): GrowthMavisJob | undefined {
+    const row: Record<string, unknown> | undefined = this.database
+      .prepare(
+        `SELECT payload FROM growth_mavis_job
+         WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get();
+    if (!row) return undefined;
+    const queued: GrowthMavisJob =
+      this.parsePayload<GrowthMavisJob>(row.payload);
+    const claimed: GrowthMavisJob = {
+      ...queued,
+      status: 'running',
+      workerId,
+      attempt: queued.attempt + 1,
+      startedAt: new Date().toISOString(),
+    };
+    const result = this.database
+      .prepare(
+        `UPDATE growth_mavis_job SET status = ?, payload = ?
+         WHERE id = ? AND status = 'queued'`,
+      )
+      .run(claimed.status, JSON.stringify(claimed), claimed.id);
+    return result.changes === 1 ? claimed : undefined;
+  }
+
   private initializeSchema(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS growth_product (
@@ -255,6 +330,21 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
       CREATE INDEX IF NOT EXISTS idx_growth_fetch_product
         ON growth_fetch_run(product_id, started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS growth_mavis_job (
+        id TEXT PRIMARY KEY,
+        judgment_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (product_id) REFERENCES growth_product(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_growth_mavis_job_status
+        ON growth_mavis_job(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_growth_mavis_job_judgment
+        ON growth_mavis_job(judgment_id, created_at DESC);
     `);
   }
 

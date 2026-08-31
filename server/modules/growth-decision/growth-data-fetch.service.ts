@@ -21,7 +21,7 @@ import type {
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
-import { GrowthAiAnalysisService } from './growth-ai-analysis.service';
+import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import {
   dorisNumber,
   dorisString,
@@ -44,7 +44,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly database: LocalDatabaseService,
     private readonly growthDecisionService: GrowthDecisionService,
-    private readonly growthAiAnalysisService: GrowthAiAnalysisService,
+    private readonly growthMavisAnalysisService: GrowthMavisAnalysisService,
   ) {}
 
   onModuleInit(): void {
@@ -424,8 +424,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         },
         'hourly_doris_threshold_compare',
       );
-    void this.growthAiAnalysisService
-      .analyzeJudgment(judgment.id)
+    void this.growthMavisAnalysisService
+      .analyzeJudgment(judgment.id, 'default', 'automatic')
       .catch((error: unknown): void => {
         this.logger.error(
           `异常 ${judgment.id} 的第一波分析失败：` +

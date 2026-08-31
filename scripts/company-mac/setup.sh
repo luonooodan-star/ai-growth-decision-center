@@ -3,6 +3,8 @@ set -euo pipefail
 
 readonly KEYCHAIN_SERVICE="ai-growth-doris-superset-mcp"
 readonly ACCESS_KEYCHAIN_SERVICE="ai-growth-decision-center-access"
+readonly MAVIS_KEYCHAIN_SERVICE="ai-growth-decision-center-mavis-mcp"
+readonly MAVIS_MODE_KEYCHAIN_SERVICE="ai-growth-decision-center-mavis-mode"
 readonly LAUNCH_AGENT_LABEL="com.luonooodan.ai-growth-decision-center"
 
 script_dir="${0:A:h}"
@@ -27,6 +29,7 @@ require_command node "需要 Node.js 22 或更高版本。"
 require_command npm "需要随 Node.js 安装 npm。"
 require_command security "macOS Keychain 不可用。"
 require_command launchctl "macOS launchd 不可用。"
+require_command openssl "macOS OpenSSL 不可用。"
 
 node_supported="$(node -p '
   const [major, minor] = process.versions.node.split(".").map(Number);
@@ -70,6 +73,22 @@ security add-generic-password \
   -U >/dev/null
 unset mcp_token
 
+mavis_mcp_token="$(security find-generic-password \
+  -a "$USER" \
+  -s "$MAVIS_KEYCHAIN_SERVICE" \
+  -w 2>/dev/null)" || mavis_mcp_token="$(openssl rand -hex 32)"
+security add-generic-password -a "$USER" -s "$MAVIS_KEYCHAIN_SERVICE" \
+  -w "$mavis_mcp_token" -U >/dev/null
+unset mavis_mcp_token
+
+mavis_worker_mode="$(security find-generic-password \
+  -a "$USER" \
+  -s "$MAVIS_MODE_KEYCHAIN_SERVICE" \
+  -w 2>/dev/null)" || mavis_worker_mode="skill_simulation"
+security add-generic-password -a "$USER" -s "$MAVIS_MODE_KEYCHAIN_SERVICE" \
+  -w "$mavis_worker_mode" -U >/dev/null
+unset mavis_worker_mode
+
 print "[4/6] 校验 Doris 只读连接"
 export DORIS_SUPERSET_MCP_TOKEN="$(security find-generic-password \
   -a "$USER" \
@@ -85,7 +104,7 @@ mkdir -p "$launch_agents_dir" "$logs_dir"
 start_script="$project_dir/scripts/company-mac/start-local.sh"
 chmod +x \
   "$start_script" \
-  "$project_dir/scripts/company-mac/configure-glm.sh" \
+  "$project_dir/scripts/company-mac/configure-mavis.sh" \
   "$project_dir/scripts/company-mac/update.sh"
 
 escaped_start_script="${start_script//&/&amp;}"
@@ -150,8 +169,9 @@ for attempt in {1..30}; do
     print "本机页面：http://localhost:8081/（用户名 growth）"
     [[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/（同一公司网络内访问）"
     print "Doris 验证：node scripts/company-mac/mcp-whoami.mjs"
-    print "默认 Gemini 3.7 Flash：zsh scripts/company-mac/configure-gemini.sh"
-    print "未配置 Gemini 时会自动使用产品 Skill 规则。"
+    print "Mavis 状态：http://localhost:8081/api/growth-decision/mavis/status"
+    print "Mavis MCP 配置：zsh scripts/company-mac/configure-mavis.sh"
+    print "当前默认使用产品 Skill 模拟 Mavis，验证任务闭环。"
     exit 0
   fi
   sleep 2

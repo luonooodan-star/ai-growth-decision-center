@@ -43,8 +43,10 @@ interface JudgmentQueueProps {
   onReview: (id: string, request: ReviewJudgmentRequest) => Promise<void>;
   onGenerateRecommendation: (id: string) => Promise<void>;
   onAnalyze: (id: string) => Promise<void>;
-  aiConfigured: boolean;
-  aiModel: string;
+  mavisConfigured: boolean;
+  mavisModel: string;
+  mavisRuntimeMode: 'external_worker' | 'skill_simulation';
+  mavisQueuedJobs: number;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -61,9 +63,9 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
 };
 
 const AI_JUDGMENT_LABELS: Record<string, string> = {
-  confirmed: 'AI 判断成立',
-  uncertain: 'AI 判断待定',
-  rejected: 'AI 判断不成立',
+  confirmed: 'Mavis 判断成立',
+  uncertain: 'Mavis 判断待定',
+  rejected: 'Mavis 判断不成立',
 };
 
 const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
@@ -94,8 +96,10 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   onReview,
   onGenerateRecommendation,
   onAnalyze,
-  aiConfigured,
-  aiModel,
+  mavisConfigured,
+  mavisModel,
+  mavisRuntimeMode,
+  mavisQueuedJobs,
 }) => {
   const [selected, setSelected] = useState<GrowthJudgment | null>(null);
   const [reviewAction, setReviewAction] = useState<
@@ -158,10 +162,17 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={aiConfigured ? 'secondary' : 'outline'}>
-              Gemini Flash {aiConfigured ? '已连接' : '未配置'}
+            <Badge variant={mavisConfigured ? 'secondary' : 'outline'}>
+              Mavis {mavisConfigured ? '任务桥已启用' : '未启用'}
             </Badge>
-            <Badge variant="outline">产品 Skill 自动降级</Badge>
+            <Badge variant="outline">
+              {mavisRuntimeMode === 'external_worker'
+                ? '外部 Mavis Worker'
+                : '产品 Skill 模拟运行'}
+            </Badge>
+            {mavisQueuedJobs > 0 ? (
+              <Badge variant="outline">排队 {mavisQueuedJobs}</Badge>
+            ) : null}
             <Badge variant="secondary">{judgments.length} 条</Badge>
           </div>
         </CardHeader>
@@ -242,7 +253,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         </div>
                         {item.aiAnalysisStatus === 'running' ? (
                           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
-                            Gemini 正在完成第一波分析…
+                            Mavis 正在完成第一波分析…
                           </div>
                         ) : null}
                         {item.aiAnalysis ? (
@@ -264,7 +275,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                                   variant="outline"
                                   className="border-amber-200 bg-amber-50 text-amber-700"
                                 >
-                                  Gemini 不可用，已用 Skill
+                                  已使用产品 Skill 兜底
                                 </Badge>
                               ) : null}
                             </div>
@@ -307,21 +318,21 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           onClick={() => void onAnalyze(item.id)}
                           disabled={
                             saving ||
-                            !aiConfigured ||
+                            !mavisConfigured ||
                             item.aiAnalysisStatus === 'running'
                           }
                           title={
-                            aiConfigured
-                              ? `只使用 ${aiModel} 重新分析，失败时保留原结果`
-                              : '请先在公司 Mac 配置 Gemini API Key'
+                            mavisConfigured
+                              ? `创建 ${mavisModel} 分析任务并记录完整过程`
+                              : 'Mavis 任务桥尚未启用'
                           }
                         >
                           <BrainCircuit className="size-4" />
                           {item.aiAnalysisStatus === 'running'
-                            ? 'Gemini 分析中'
-                            : item.aiAnalysis?.provider === 'gemini'
-                              ? '刷新 Gemini 分析'
-                              : '用 Gemini 重新分析'}
+                            ? 'Mavis 分析中'
+                            : item.aiAnalysis?.provider === 'mavis'
+                              ? '重新运行 Mavis'
+                              : '使用 Mavis 分析'}
                         </Button>
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (

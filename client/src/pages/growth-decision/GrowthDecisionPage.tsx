@@ -434,8 +434,12 @@ const GrowthDecisionPage: React.FC = () => {
             onReview={handleJudgmentReview}
             onGenerateRecommendation={handleGenerateRecommendation}
             onAnalyze={handleAiAnalysis}
-            aiConfigured={Boolean(aiStatus?.configured)}
-            aiModel={aiStatus?.model || 'gemini-3.7-flash'}
+            mavisConfigured={Boolean(aiStatus?.configured)}
+            mavisModel={aiStatus?.model || 'Mavis Growth Analyst'}
+            mavisRuntimeMode={
+              aiStatus?.runtimeMode || 'skill_simulation'
+            }
+            mavisQueuedJobs={aiStatus?.queuedJobs || 0}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">

@@ -8,6 +8,7 @@ import type {
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthJudgment,
+  GrowthMavisJobListResponse,
   GrowthProduct,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
@@ -17,7 +18,7 @@ import type {
 
 async function getAiStatus(): Promise<GrowthAiProviderStatus> {
   const response = await axios.get<GrowthAiProviderStatus>(
-    '/api/growth-decision/ai/status',
+    '/api/growth-decision/mavis/status',
   );
   return response.data;
 }
@@ -71,8 +72,15 @@ async function reviewJudgment(
 
 async function analyzeJudgment(id: string): Promise<GrowthJudgment> {
   const response = await axios.post<GrowthJudgment>(
-    `/api/growth-decision/judgments/${id}/ai-analysis`,
-    { mode: 'gemini_only' },
+    `/api/growth-decision/judgments/${id}/mavis-analysis`,
+    { mode: 'default' },
+  );
+  return response.data;
+}
+
+async function getMavisJobs(id: string): Promise<GrowthMavisJobListResponse> {
+  const response = await axios.get<GrowthMavisJobListResponse>(
+    `/api/growth-decision/judgments/${id}/mavis-jobs`,
   );
   return response.data;
 }
@@ -122,6 +130,7 @@ export {
   generateRecommendation,
   getDecisionHistory,
   getFetchHistory,
+  getMavisJobs,
   reviewJudgment,
   triggerFetch,
   updateDecision,

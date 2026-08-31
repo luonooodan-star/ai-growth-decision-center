@@ -1,22 +1,24 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
-
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionController } from './growth-decision.controller';
 import { GrowthDataFetchService } from './growth-data-fetch.service';
 import { GrowthDecisionOpenApiController } from './growth-decision.openapi.controller';
 import { GrowthDecisionService } from './growth-decision.service';
-import { GrowthAiAnalysisService } from './growth-ai-analysis.service';
+import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
+import { GrowthMavisMcpController } from './growth-mavis-mcp.controller';
 
 @Module({
-  imports: [HttpModule],
-  controllers: [GrowthDecisionController, GrowthDecisionOpenApiController],
+  controllers: [
+    GrowthDecisionController,
+    GrowthDecisionOpenApiController,
+    GrowthMavisMcpController,
+  ],
   providers: [
     LocalDatabaseService,
     GrowthDecisionService,
     GrowthDataFetchService,
-    GrowthAiAnalysisService,
+    GrowthMavisAnalysisService,
   ],
   exports: [GrowthDecisionService],
 })
