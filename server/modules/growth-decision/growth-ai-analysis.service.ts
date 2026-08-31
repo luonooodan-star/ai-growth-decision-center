@@ -143,6 +143,11 @@ export class GrowthAiAnalysisService {
       } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
         this.logger.warn(`GLM 第 ${attempt} 次分析失败：${lastError.message}`);
+        if (attempt < 2) {
+          await new Promise<void>((resolve: () => void): void => {
+            setTimeout(resolve, 3_000);
+          });
+        }
       }
     }
     throw lastError || new Error('GLM 分析失败');
