@@ -51,6 +51,9 @@ npm run eslint
 npm run build:prod
 ```
 
+另一台公司 Mac 的终端部署与 Doris/Superset MCP 只读接入，见
+[`docs/company-mac-terminal-deployment.md`](docs/company-mac-terminal-deployment.md)。
+
 ## Doris MCP 接入
 
 Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用

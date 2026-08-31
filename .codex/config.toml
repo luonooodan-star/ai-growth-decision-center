@@ -1,0 +1,34 @@
+[mcp_servers.doris]
+url = "http://192.168.3.102:8766/mcp"
+bearer_token_env_var = "DORIS_SUPERSET_MCP_TOKEN"
+enabled = true
+required = true
+enabled_tools = [
+  "whoami",
+  "list_datasets",
+  "list_metrics",
+  "query_metric",
+  "resolve_entity",
+]
+default_tools_approval_mode = "auto"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.superset]
+url = "http://192.168.3.102:8767/mcp"
+bearer_token_env_var = "DORIS_SUPERSET_MCP_TOKEN"
+enabled = true
+required = false
+enabled_tools = [
+  "whoami",
+  "list_viz_types",
+  "list_datasets",
+  "list_dashboards",
+  "list_charts",
+  "get_dashboard_url",
+  "list_static_reports",
+  "list_feishu_report_routes",
+]
+default_tools_approval_mode = "auto"
+startup_timeout_sec = 20
+tool_timeout_sec = 120
