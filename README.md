@@ -15,8 +15,8 @@
 ## 技术结构
 
 ```text
-Doris MCP / 外部 Agent
-        ↓ OpenAPI
+Doris MCP → 公司 Mac 只读分析服务
+                         ↓
 NestJS 服务 → PostgreSQL / Drizzle
         ↓
 React 决策工作台
@@ -61,7 +61,8 @@ Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
 详细数据集、字段和成熟度约束见
 `skills/wingslite-facebook-decision/references/doris-query-contract.md`。
 
-运行时应用不直接调用 MCP。建议由 Codex、数据任务或现有调度器每小时：
+公司 Mac 服务端通过 HTTP MCP 直连 Doris，不依赖 ChatGPT 或 Codex。
+当前部署脚本已完成 Keychain 密钥保管和 `whoami` 连接校验。每小时分析链路将：
 
 1. 通过 Doris MCP 拉取 FB 前端和产品后台数据。
 2. 完成数据成熟度检查、异常检测、第一波原因分析和初步判断。
