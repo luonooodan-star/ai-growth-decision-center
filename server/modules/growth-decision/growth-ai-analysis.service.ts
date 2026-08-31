@@ -1,5 +1,11 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { execFileSync } from 'node:child_process';
 import { lastValueFrom } from 'rxjs';
 
@@ -55,7 +61,10 @@ export class GrowthAiAnalysisService {
     };
   }
 
-  async analyzeJudgment(id: string): Promise<GrowthJudgment> {
+  async analyzeJudgment(
+    id: string,
+    mode: 'default' | 'glm_only' = 'default',
+  ): Promise<GrowthJudgment> {
     const record: DecisionRecord | undefined =
       this.database.getDecisionRecord(id);
     if (!record || !('preliminaryJudgment' in record)) {
@@ -69,6 +78,11 @@ export class GrowthAiAnalysisService {
     this.saveAnalysisStatus(record, 'running');
     const apiKey: string = this.apiKey();
     if (!apiKey) {
+      if (mode === 'glm_only') {
+        const message: string = 'GLM API Key 未配置';
+        this.saveAnalysisFailure(record, message);
+        throw new ServiceUnavailableException(message);
+      }
       return this.saveSkillFallback(record, product, 'GLM API Key 未配置');
     }
 
@@ -91,6 +105,11 @@ export class GrowthAiAnalysisService {
     } catch (error: unknown) {
       const message: string =
         error instanceof Error ? error.message : String(error);
+      if (mode === 'glm_only') {
+        const friendlyMessage: string = this.friendlyGlmError(message);
+        this.saveAnalysisFailure(record, friendlyMessage);
+        throw new BadGatewayException(friendlyMessage);
+      }
       this.logger.warn(`GLM 不可用，已降级到产品 Skill：${message}`);
       return this.saveSkillFallback(record, product, message);
     }
@@ -231,6 +250,36 @@ export class GrowthAiAnalysisService {
     status: GrowthJudgment['aiAnalysisStatus'],
   ): void {
     this.database.saveDecisionRecord({ ...judgment, aiAnalysisStatus: status });
+  }
+
+  private saveAnalysisFailure(judgment: GrowthJudgment, message: string): void {
+    const currentRecord: DecisionRecord | undefined =
+      this.database.getDecisionRecord(judgment.id);
+    const currentJudgment: GrowthJudgment =
+      currentRecord && 'preliminaryJudgment' in currentRecord
+        ? currentRecord
+        : judgment;
+    this.database.saveDecisionRecord({
+      ...currentJudgment,
+      aiAnalysisStatus: 'failed',
+    });
+    this.database.appendActivity({
+      caseId: judgment.id,
+      action: 'ai_analysis_failed',
+      actor: `GLM · ${this.model()}`,
+      detail: message,
+      metadata: { source: 'glm', mode: 'manual_refresh' },
+    });
+  }
+
+  private friendlyGlmError(message: string): string {
+    if (message.includes('429')) {
+      return 'GLM 当前访问量过大，原分析已保留，请稍后手动重试';
+    }
+    if (message.toLowerCase().includes('timeout')) {
+      return 'GLM 分析超时，原分析已保留，请稍后手动重试';
+    }
+    return `GLM 分析失败，原分析已保留：${message}`;
   }
 
   private analysisContext(

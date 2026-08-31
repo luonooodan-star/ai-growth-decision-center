@@ -29,7 +29,9 @@ async function getDashboard(): Promise<GrowthDashboardResponse> {
   return response.data;
 }
 
-async function getFetchHistory(productId?: string): Promise<GrowthFetchHistoryResponse> {
+async function getFetchHistory(
+  productId?: string,
+): Promise<GrowthFetchHistoryResponse> {
   const path = productId
     ? `/api/growth-decision/products/${productId}/fetch-history`
     : '/api/growth-decision/fetch-history';
@@ -70,6 +72,7 @@ async function reviewJudgment(
 async function analyzeJudgment(id: string): Promise<GrowthJudgment> {
   const response = await axios.post<GrowthJudgment>(
     `/api/growth-decision/judgments/${id}/ai-analysis`,
+    { mode: 'glm_only' },
   );
   return response.data;
 }

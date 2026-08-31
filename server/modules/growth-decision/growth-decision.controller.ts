@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 
 import type {
+  AnalyzeJudgmentRequest,
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
   GrowthAiProviderStatus,
@@ -112,8 +113,12 @@ export class GrowthDecisionController {
   @Post('judgments/:id/ai-analysis')
   async analyzeJudgment(
     @Param('id') id: string,
+    @Body() request?: AnalyzeJudgmentRequest,
   ): Promise<GrowthJudgment> {
-    return this.growthAiAnalysisService.analyzeJudgment(id);
+    return this.growthAiAnalysisService.analyzeJudgment(
+      id,
+      request?.mode || 'default',
+    );
   }
 
   @Post('judgments/:id/recommendations')

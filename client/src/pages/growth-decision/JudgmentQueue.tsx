@@ -302,21 +302,27 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           recordId={item.id}
                           title={`${item.productName} · ${item.anomalyType}`}
                         />
-                        {canReview ? (
-                          <Button
-                            variant="outline"
-                            onClick={() => void onAnalyze(item.id)}
-                            disabled={saving}
-                            title={
-                              aiConfigured
-                                ? `使用 ${aiModel} 分析`
-                                : 'GLM 未配置，将使用产品 Skill 规则分析'
-                            }
-                          >
-                            <BrainCircuit className="size-4" />
-                            {item.aiAnalysis ? '重新深度分析' : 'AI 深度分析'}
-                          </Button>
-                        ) : null}
+                        <Button
+                          variant="outline"
+                          onClick={() => void onAnalyze(item.id)}
+                          disabled={
+                            saving ||
+                            !aiConfigured ||
+                            item.aiAnalysisStatus === 'running'
+                          }
+                          title={
+                            aiConfigured
+                              ? `只使用 ${aiModel} 重新分析，失败时保留原结果`
+                              : '请先在公司 Mac 配置 GLM API Key'
+                          }
+                        >
+                          <BrainCircuit className="size-4" />
+                          {item.aiAnalysisStatus === 'running'
+                            ? 'GLM 分析中'
+                            : item.aiAnalysis?.provider === 'glm'
+                              ? '刷新 GLM 分析'
+                              : '用 GLM 重新分析'}
+                        </Button>
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (
                             <Badge className="h-9 px-3" variant="secondary">

@@ -216,6 +216,10 @@ export interface GrowthAiProviderStatus {
   fallbackAvailable: true;
 }
 
+export interface AnalyzeJudgmentRequest {
+  mode?: 'default' | 'glm_only';
+}
+
 export interface UpdateDecisionRequest {
   action: 'accepted' | 'rejected' | 'observing';
   reason: string;

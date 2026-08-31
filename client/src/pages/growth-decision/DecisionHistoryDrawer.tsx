@@ -22,6 +22,7 @@ const ACTION_LABELS: Record<string, string> = {
   judgment_rejected: '人工否决判断',
   recommendation_created: '生成调整建议',
   ai_analysis_completed: 'GLM 深度分析完成',
+  ai_analysis_failed: 'GLM 手动刷新失败',
   skill_analysis_completed: '产品 Skill 降级分析完成',
   ingested: '建议进入队列',
   accepted: '采纳建议',
