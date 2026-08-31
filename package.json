@@ -18,7 +18,8 @@
     "build:prod": "npm run build:server && npm run build:client",
     "build:server": "NODE_ENV=production nest build",
     "build:client": "NODE_ENV=production vite build --config vite.config.ts",
-    "start": "NODE_ENV=production node main.js",
+    "start": "NODE_ENV=production node dist/server/standalone.js",
+    "start:standalone": "NODE_ENV=production node dist/server/standalone.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js",
@@ -202,7 +203,7 @@
     ]
   },
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.13.0",
     "npm": ">=10.0.0"
   }
 }

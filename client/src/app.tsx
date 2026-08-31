@@ -1,3 +1,4 @@
+/* eslint-disable @lark-apaas/require-app-container */
 import React from 'react';
 import { Route, Routes } from 'react-router-dom';
 

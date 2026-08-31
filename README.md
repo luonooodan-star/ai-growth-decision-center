@@ -8,7 +8,7 @@
 - 人工采纳、拒绝与原因记录
 - 实验观察窗口和结果分类
 - KR 工作台与实验统计
-- 每小时扫描、每周一复盘的自动化 Handler 和停用态触发器
+- 每小时扫描、每周一复盘的统计服务接口
 - 可供 Doris MCP 或外部 Agent 调用的 OpenAPI
 - 可版本化的 Facebook 增长决策 Skill
 
@@ -17,7 +17,7 @@
 ```text
 Doris MCP → 公司 Mac 只读分析服务
                          ↓
-NestJS 服务 → PostgreSQL / Drizzle
+NestJS 服务 → 公司 Mac SQLite
         ↓
 React 决策工作台
         ↓
@@ -25,23 +25,22 @@ React 决策工作台
 ```
 
 前端位于 `client/`，后端位于 `server/`，共享接口类型位于
-`shared/api.interface.ts`。数据库建表脚本位于
-`server/database/001_growth_decision.sql`。
+`shared/api.interface.ts`。独立版数据保存在
+`runtime/ai-growth.sqlite`，该目录不进入 Git。
 
 ## 本地启动
 
-要求 Node.js 22 或更高版本，并已完成 `lark-cli` 用户授权。
+独立版要求 Node.js 22.13 或更高版本，无需 `lark-cli`。
 
 ```bash
-npm install
-npm run dev:local
+npm ci
+CLIENT_BASE_PATH=/ npm run build:prod
+npm run start:standalone
 ```
 
-当前本机开发地址由 `.env.local` 控制。本项目在开发机上使用：
-
-```text
-http://localhost:8081/app/app_17cyvrepg1x/
-```
+默认访问地址为 `http://localhost:8081/`。独立部署必须设置
+`GROWTH_BASIC_AUTH_PASSWORD`，用户名固定为 `growth`。公司 Mac 安装脚本
+会将该密码保存到 macOS Keychain。
 
 常用检查：
 
@@ -125,13 +124,9 @@ Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
 
 ## 自动化状态
 
-已经创建两个妙搭触发器，并与代码 Handler 同名绑定：
-
-- `hourlyGrowthScan`：每小时整点运行
-- `weeklyGrowthReview`：每周一 10:00（Asia/Shanghai）运行
-
-两者当前保持 `disabled`。这是刻意的安全门禁：只有代码发布并完成线上验证后，
-再由管理员显式启用。
+妙搭触发器不再是运行依赖。公司 Mac 将由 macOS `launchd`
+执行每小时扫描和每周一复盘。当前仍只开放 Doris 连接验证，实际
+定时分析在首次真实查询和去重验证后再启用。
 
 ## 消息与广告执行集成
 
@@ -141,7 +136,7 @@ Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
 - 钉钉机器人：发送群组或个人异常提醒
 - 现有广告上传网页：接收已审批的结构化 `recommendedAction`
 
-接入时应把密钥保存在妙搭环境变量中，不提交到 Git。广告执行默认保持人工确认，
+接入时应把密钥保存在 macOS Keychain 中，不提交到 Git。广告执行默认保持人工确认，
 并保存执行前后参数快照。
 
 ## Skill

@@ -9,8 +9,8 @@
 ```
 
 两个项目仍是独立仓库、独立进程和独立页面，不合并代码。AI
-决策中心固定使用 `8081` 端口。公司 Mac 不需要安装 ChatGPT、Codex
-或 `gh`。
+决策中心固定使用 `8081` 端口。公司 Mac 不需要安装 ChatGPT、Codex、
+`gh`、`lark-cli`，也不需要授权妙搭 `apps` 权限。
 
 ## 1. GitHub 权限（只做一次）
 
@@ -40,13 +40,7 @@ clone，避免 Git 继续使用另一个无权限账号。
 
 ## 2. 首次部署
 
-要求 Node.js 22+ 和 `lark-cli`。没有 `lark-cli` 时先执行：
-
-```bash
-npm install -g --prefix "$HOME/.local" @larksuite/cli
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zprofile"
-source "$HOME/.zprofile"
-```
+要求 Node.js 22.13 或更高版本。无需配置飞书或妙搭 CLI。
 
 然后执行：
 
@@ -58,17 +52,22 @@ zsh scripts/company-mac/setup.sh
 脚本会依次：
 
 1. 安装锁定依赖。
-2. 完成一次飞书妙搭授权并拉取运行环境。
+2. 设置独立的页面访问密码，并存入 macOS Keychain。
 3. 把 `dmcp_...` Key 存入 macOS Keychain。
 4. 直接调用 Doris MCP `whoami` 校验只读连接。
 5. 执行类型检查和生产构建。
-6. 安装 `launchd` 服务并开机自启。
+6. 创建本地 SQLite 数据库，安装 `launchd` 服务并开机自启。
 
 部署后本机访问：
 
 ```text
-http://localhost:8081/app/app_17cyvrepg1x/
+http://localhost:8081/
 ```
+
+浏览器首次访问会要求 HTTP Basic Auth：
+
+- 用户名：`growth`
+- 密码：首次部署时设置的访问密码
 
 局域网其他电脑访问时，把 `localhost` 换成公司 Mac 的局域网 IP。
 
@@ -88,8 +87,16 @@ zsh scripts/company-mac/update.sh
 ```
 
 `update.sh` 仅允许 fast-forward，如果服务器上有未提交代码会立即停止，
-不会覆盖。代码、Skill 和产品标准都通过 Git 更新；`.env.local`、
-Doris Key 和日志只留在公司 Mac。
+不会覆盖。代码、Skill 和产品标准都通过 Git 更新；SQLite
+数据库、Doris Key 和日志只留在公司 Mac。
+
+业务数据位于：
+
+```text
+$HOME/Downloads/work/ai-growth-decision-center/runtime/ai-growth.sqlite
+```
+
+代码更新不会删除或覆盖该文件。请将 `runtime/` 加入公司 Mac 的定期备份。
 
 ## 4. 运维检查
 
@@ -112,5 +119,6 @@ Doris MCP 是 `192.168.3.102` 局域网地址，公司 Mac 必须在对应公司
 - Doris 仅开放 `whoami` / `list_datasets` / `list_metrics` /
   `query_metric` / `resolve_entity` 等只读能力。
 - Superset 暂不参与自动修改，即使账号存在写权限，也不使用。
+- 页面与所有 API 均受独立访问密码保护，并拒绝跨站写入。
 - 定时扫描只能写入“待判断异常”，不能直接调整广告。
 - 判断的确认/待定/否决与调整建议的采纳率分开计算。
