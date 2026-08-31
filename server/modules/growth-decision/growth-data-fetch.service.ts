@@ -21,15 +21,18 @@ import type {
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
+import { GrowthAiAnalysisService } from './growth-ai-analysis.service';
+import {
+  dorisNumber,
+  dorisString,
+  normalizeDorisQueryResult,
+  type DorisQueryResult,
+  type DorisRow,
+} from './doris-result-normalizer';
 
 const FETCH_INTERVAL_MS = 60 * 60 * 1000;
 const MCP_URL = process.env.DORIS_MCP_URL || 'http://192.168.3.102:8766/mcp';
 const KEYCHAIN_SERVICE = 'ai-growth-doris-superset-mcp';
-
-interface DorisQueryResult {
-  row_count?: number;
-  rows?: Array<Record<string, unknown>>;
-}
 
 @Injectable()
 export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
@@ -41,6 +44,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly database: LocalDatabaseService,
     private readonly growthDecisionService: GrowthDecisionService,
+    private readonly growthAiAnalysisService: GrowthAiAnalysisService,
   ) {}
 
   onModuleInit(): void {
@@ -48,7 +52,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     this.timer = setInterval(() => {
       this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
       void this.trigger('scheduled').catch((error: unknown) => {
-        this.logger.error(error instanceof Error ? error.message : String(error));
+        this.logger.error(
+          error instanceof Error ? error.message : String(error),
+        );
       });
     }, FETCH_INTERVAL_MS);
     this.timer.unref();
@@ -71,7 +77,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     productId?: string,
   ): Promise<GrowthFetchRun[]> {
     if (this.activeRun) {
-      if (trigger === 'manual') throw new ConflictException('已有抓取任务正在运行');
+      if (trigger === 'manual')
+        throw new ConflictException('已有抓取任务正在运行');
       return this.activeRun;
     }
     this.activeRun = this.runProducts(trigger, productId);
@@ -87,8 +94,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     productId?: string,
   ): Promise<GrowthFetchRun[]> {
     const products = productId
-      ? [this.database.getProduct(productId)].filter(Boolean) as GrowthProduct[]
-      : this.database.listProducts().filter((product) => product.status === 'active');
+      ? ([this.database.getProduct(productId)].filter(
+          Boolean,
+        ) as GrowthProduct[])
+      : this.database
+          .listProducts()
+          .filter((product) => product.status === 'active');
     if (!products.length) throw new Error('没有可抓取的产品');
 
     const results: GrowthFetchRun[] = [];
@@ -123,7 +134,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       start.setDate(start.getDate() - 8);
       const startDate = this.dateString(start);
       const filters = {
-        app_name: product.name.toLowerCase() === 'wingslite' ? 'WingsLite(Android)' : product.name,
+        app_name:
+          product.name.toLowerCase() === 'wingslite'
+            ? 'WingsLite(Android)'
+            : product.name,
         media_source: product.channel.toLowerCase(),
         country_code: product.thresholds.markets
           ? String(product.thresholds.markets).split(',')
@@ -133,11 +147,23 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const [delivery, cohort] = await Promise.all([
         this.queryMetric({
           dataset: 'bi_ads.ads_paid_acquisition_daily',
-          dimensions: ['report_date', 'campaign_id', 'campaign_name', 'adgroup_id', 'adgroup_name'],
+          dimensions: [
+            'report_date',
+            'campaign_id',
+            'campaign_name',
+            'adgroup_id',
+            'adgroup_name',
+          ],
           start_date: startDate,
           end_date: endDate,
           filters_json: JSON.stringify(filters),
-          metrics: ['spend', 'impressions', 'adjust_installs', 'adjust_revenue', 'cpi'],
+          metrics: [
+            'spend',
+            'impressions',
+            'adjust_installs',
+            'adjust_revenue',
+            'cpi',
+          ],
           limit: 1000,
         }),
         this.queryMetric({
@@ -145,14 +171,27 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           dimensions: ['install_date', 'campaign_id', 'campaign_name'],
           start_date: startDate,
           end_date: endDate,
-          filters_json: JSON.stringify({ ...filters, cohort_index: 0, observation_complete: true }),
+          filters_json: JSON.stringify({
+            ...filters,
+            cohort_index: 0,
+            observation_complete: true,
+          }),
           metrics: ['cohort_spend', 'd0_roas'],
           limit: 1000,
         }),
       ]);
 
-      const rowsFetched = Number(delivery.row_count || 0) + Number(cohort.row_count || 0);
-      const latestMetricValues = this.calculateLatestMetrics(delivery.rows || [], cohort.rows || []);
+      const rowsFetched =
+        Number(delivery.row_count || 0) + Number(cohort.row_count || 0);
+      const deliveryRows: DorisRow[] = delivery.rows || [];
+      const cohortRows: DorisRow[] = cohort.rows || [];
+      const spendRows: number = deliveryRows.filter(
+        (row: DorisRow): boolean => dorisNumber(row, 'spend') !== undefined,
+      ).length;
+      const latestMetricValues = this.calculateLatestMetrics(
+        deliveryRows,
+        cohortRows,
+      );
       const updatedProduct: GrowthProduct = {
         ...product,
         lastSyncAt: new Date().toISOString(),
@@ -161,18 +200,21 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       this.database.saveProduct(updatedProduct);
       const anomalyCount: number = await this.detectAnomalies(
         updatedProduct,
-        delivery.rows || [],
-        cohort.rows || [],
+        deliveryRows,
+        cohortRows,
       );
 
-      const isPartial = rowsFetched === 0;
+      const spendMissing: boolean = deliveryRows.length > 0 && spendRows === 0;
+      const isPartial: boolean = rowsFetched === 0 || spendMissing;
       Object.assign(run, {
         status: isPartial ? 'partial' : 'success',
         finishedAt: new Date().toISOString(),
         rowsFetched,
         anomalyCount,
         message: isPartial
-          ? '连接成功，但当前时间窗口没有返回可用数据'
+          ? spendMissing
+            ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
+            : '连接成功，但当前时间窗口没有返回可用数据'
           : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写上下界的指标不参与判断`,
       } satisfies Partial<GrowthFetchRun>);
     } catch (error: unknown) {
@@ -187,31 +229,52 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   }
 
   private calculateLatestMetrics(
-    deliveryRows: Array<Record<string, unknown>>,
-    cohortRows: Array<Record<string, unknown>>,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
   ): GrowthMetricValues {
     const latestDate = deliveryRows.reduce(
-      (latest, row) => String(row.report_date || '') > latest ? String(row.report_date) : latest,
+      (latest: string, row: DorisRow): string => {
+        const date: string = dorisString(row, 'report_date') || '';
+        return date > latest ? date : latest;
+      },
       '',
     );
-    const latestRows = deliveryRows.filter((row) => String(row.report_date || '') === latestDate);
-    const sum = (field: string): number => latestRows.reduce(
-      (total, row) => total + (Number(row[field]) || 0),
-      0,
+    const latestRows: DorisRow[] = deliveryRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'report_date') === latestDate,
     );
+    const sum = (field: string): number =>
+      latestRows.reduce(
+        (total: number, row: DorisRow): number =>
+          total + (dorisNumber(row, field) || 0),
+        0,
+      );
     const spend = sum('spend');
     const impressions = sum('impressions');
     const installs = sum('adjust_installs');
     const revenue = sum('adjust_revenue');
     const latestCohortDate = cohortRows.reduce(
-      (latest, row) => String(row.install_date || '') > latest ? String(row.install_date) : latest,
+      (latest: string, row: DorisRow): string => {
+        const date: string = dorisString(row, 'install_date') || '';
+        return date > latest ? date : latest;
+      },
       '',
     );
-    const latestCohorts = cohortRows.filter((row) => String(row.install_date || '') === latestCohortDate);
-    const cohortSpend = latestCohorts.reduce((total, row) => total + (Number(row.cohort_spend) || 0), 0);
+    const latestCohorts: DorisRow[] = cohortRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'install_date') === latestCohortDate,
+    );
+    const cohortSpend: number = latestCohorts.reduce(
+      (total: number, row: DorisRow): number =>
+        total + (dorisNumber(row, 'cohort_spend') || 0),
+      0,
+    );
     const weightedRoas = cohortSpend
       ? latestCohorts.reduce(
-          (total, row) => total + (Number(row.d0_roas) || 0) * (Number(row.cohort_spend) || 0),
+          (total: number, row: DorisRow): number =>
+            total +
+            (dorisNumber(row, 'd0_roas') || 0) *
+              (dorisNumber(row, 'cohort_spend') || 0),
           0,
         ) / cohortSpend
       : undefined;
@@ -224,19 +287,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
   private async detectAnomalies(
     product: GrowthProduct,
-    deliveryRows: Array<Record<string, unknown>>,
-    cohortRows: Array<Record<string, unknown>>,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
   ): Promise<number> {
     let createdCount = 0;
     const latestDeliveryDate: string = this.latestDate(
       deliveryRows,
       'report_date',
     );
-    const latestDeliveryRows: Array<Record<string, unknown>> =
-      deliveryRows.filter(
-        (row: Record<string, unknown>): boolean =>
-          String(row.report_date || '') === latestDeliveryDate,
-      );
+    const latestDeliveryRows: DorisRow[] = deliveryRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'report_date') === latestDeliveryDate,
+    );
     for (const row of latestDeliveryRows) {
       const values: GrowthMetricValues = this.deliveryMetricValues(row);
       for (const key of ['cpi', 'ecpm', 'arpu'] as GrowthMetricKey[]) {
@@ -259,12 +321,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       cohortRows,
       'install_date',
     );
-    const latestCohortRows: Array<Record<string, unknown>> = cohortRows.filter(
-      (row: Record<string, unknown>): boolean =>
-        String(row.install_date || '') === latestCohortDate,
+    const latestCohortRows: DorisRow[] = cohortRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'install_date') === latestCohortDate,
     );
     for (const row of latestCohortRows) {
-      const d0Roas: number | undefined = this.numeric(row.d0_roas);
+      const d0Roas: number | undefined = dorisNumber(row, 'd0_roas');
       if (
         await this.createAnomalyIfNeeded(
           product,
@@ -286,7 +348,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     key: GrowthMetricKey,
     currentValue: number | undefined,
     metricValues: GrowthMetricValues,
-    row: Record<string, unknown>,
+    row: DorisRow,
     dataDate: string,
   ): Promise<boolean> {
     const metric: GrowthMetricDefinition | undefined = product.metrics.find(
@@ -299,65 +361,78 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     ) {
       return false;
     }
-    const belowLower: boolean = metric.lowerBound !== undefined &&
-      currentValue < metric.lowerBound;
-    const aboveUpper: boolean = metric.upperBound !== undefined &&
-      currentValue > metric.upperBound;
+    const belowLower: boolean =
+      metric.lowerBound !== undefined && currentValue < metric.lowerBound;
+    const aboveUpper: boolean =
+      metric.upperBound !== undefined && currentValue > metric.upperBound;
     const isAnomaly: boolean = belowLower || aboveUpper;
     if (!isAnomaly) return false;
 
-    const campaignId: string | undefined = this.optionalString(row.campaign_id);
-    const adsetId: string | undefined = this.optionalString(row.adgroup_id);
+    const campaignId: string | undefined = dorisString(row, 'campaign_id');
+    const adsetId: string | undefined = dorisString(row, 'adgroup_id');
     if (this.hasRecentJudgment(product.id, key, campaignId, adsetId)) {
       return false;
     }
     const baselineValue: number =
-      metric.standardValue ?? (belowLower ? metric.lowerBound! : metric.upperBound!);
+      metric.standardValue ??
+      (belowLower ? metric.lowerBound! : metric.upperBound!);
     const deviationPct: number | undefined = baselineValue
-      ? Number((((currentValue - baselineValue) / baselineValue) * 100).toFixed(2))
+      ? Number(
+          (((currentValue - baselineValue) / baselineValue) * 100).toFixed(2),
+        )
       : undefined;
     const thresholdRelation: string = belowLower ? '低于下界' : '高于上界';
-    const triggeredBound: number = belowLower ? metric.lowerBound! : metric.upperBound!;
-    const entityDescription: string = [
-      this.optionalString(row.campaign_name) || campaignId,
-      this.optionalString(row.adgroup_name) || adsetId,
-    ].filter(Boolean).join(' / ') || '产品级';
+    const triggeredBound: number = belowLower
+      ? metric.lowerBound!
+      : metric.upperBound!;
+    const entityDescription: string =
+      [
+        dorisString(row, 'campaign_name') || campaignId,
+        dorisString(row, 'adgroup_name') || adsetId,
+      ]
+        .filter(Boolean)
+        .join(' / ') || '产品级';
     const thresholdGapPct: number = triggeredBound
-      ? Math.abs(
-          ((currentValue - triggeredBound) /
-            triggeredBound) *
-            100,
-        )
+      ? Math.abs(((currentValue - triggeredBound) / triggeredBound) * 100)
       : 100;
 
-    await this.growthDecisionService.ingestJudgment(
-      {
-        productId: product.id,
-        anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
-        severity: thresholdGapPct >= 30 ? 'high' : 'medium',
-        channel: product.channel,
-        campaignId,
-        campaignName: this.optionalString(row.campaign_name),
-        adsetId,
-        adsetName: this.optionalString(row.adgroup_name),
-        targetMetric: key,
-        currentValue,
-        baselineValue,
-        deviationPct,
-        metricValues,
-        spend: this.numeric(row.spend) ?? this.numeric(row.cohort_spend),
-        evidence:
-          `${dataDate} ${entityDescription} 的 ${metric.label} 实际值 ` +
-          `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation} ` +
-          `${this.formatMetricValue(metric, triggeredBound)}。`,
-        rootCause:
-          '指标已越过人工阈值；当前只确认异常条件成立，具体原因仍需结合投放、归因和产品链路继续分析。',
-        confidence: 95,
-        preliminaryJudgment:
-          `按 ${product.name} 指标库规则，${metric.label} 异常条件成立，等待人工确认、待定或否决。`,
-      },
-      'hourly_doris_threshold_compare',
-    );
+    const judgment: GrowthJudgment =
+      await this.growthDecisionService.ingestJudgment(
+        {
+          productId: product.id,
+          anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
+          severity: thresholdGapPct >= 30 ? 'high' : 'medium',
+          channel: product.channel,
+          campaignId,
+          campaignName: dorisString(row, 'campaign_name'),
+          adsetId,
+          adsetName: dorisString(row, 'adgroup_name'),
+          targetMetric: key,
+          currentValue,
+          baselineValue,
+          deviationPct,
+          metricValues,
+          spend: dorisNumber(row, 'spend') ?? dorisNumber(row, 'cohort_spend'),
+          evidence:
+            `${dataDate} ${entityDescription} 的 ${metric.label} 实际值 ` +
+            `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation} ` +
+            `${this.formatMetricValue(metric, triggeredBound)}。`,
+          rootCause:
+            '指标已越过人工阈值；当前只确认异常条件成立，具体原因仍需结合投放、归因和产品链路继续分析。',
+          confidence: 95,
+          preliminaryJudgment: `按 ${product.name} 指标库规则，${metric.label} 异常条件成立，等待人工确认、待定或否决。`,
+        },
+        'hourly_doris_threshold_compare',
+      );
+    void this.growthAiAnalysisService
+      .analyzeJudgment(judgment.id)
+      .catch((error: unknown): void => {
+        this.logger.error(
+          `异常 ${judgment.id} 的第一波分析失败：` +
+            (error instanceof Error ? error.message : String(error)),
+          error instanceof Error ? error.stack : undefined,
+        );
+      });
     return true;
   }
 
@@ -371,23 +446,23 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return this.database.listDecisionRecords(1000).some((record): boolean => {
       if (!('preliminaryJudgment' in record)) return false;
       const judgment: GrowthJudgment = record;
-      return judgment.productId === productId &&
+      return (
+        judgment.productId === productId &&
         judgment.targetMetric === metricKey &&
         judgment.campaignId === campaignId &&
         judgment.adsetId === adsetId &&
-        new Date(judgment.createdAt).getTime() >= cutoff;
+        new Date(judgment.createdAt).getTime() >= cutoff
+      );
     });
   }
 
-  private deliveryMetricValues(
-    row: Record<string, unknown>,
-  ): GrowthMetricValues {
-    const spend: number = this.numeric(row.spend) || 0;
-    const impressions: number = this.numeric(row.impressions) || 0;
-    const installs: number = this.numeric(row.adjust_installs) || 0;
-    const revenue: number = this.numeric(row.adjust_revenue) || 0;
-    const cpi: number | undefined = this.numeric(row.cpi) ||
-      (installs ? spend / installs : undefined);
+  private deliveryMetricValues(row: DorisRow): GrowthMetricValues {
+    const spend: number = dorisNumber(row, 'spend') || 0;
+    const impressions: number = dorisNumber(row, 'impressions') || 0;
+    const installs: number = dorisNumber(row, 'adjust_installs') || 0;
+    const revenue: number = dorisNumber(row, 'adjust_revenue') || 0;
+    const cpi: number | undefined =
+      dorisNumber(row, 'cpi') || (installs ? spend / installs : undefined);
     return {
       ...(cpi !== undefined ? { cpi } : {}),
       ...(impressions ? { ecpm: (spend / impressions) * 1000 } : {}),
@@ -395,27 +470,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private latestDate(
-    rows: Array<Record<string, unknown>>,
-    field: string,
-  ): string {
-    return rows.reduce(
-      (latest: string, row: Record<string, unknown>): string =>
-        String(row[field] || '') > latest ? String(row[field]) : latest,
-      '',
-    );
-  }
-
-  private numeric(value: unknown): number | undefined {
-    const parsed: number = Number(value);
-    return value !== null && value !== '' && Number.isFinite(parsed)
-      ? parsed
-      : undefined;
-  }
-
-  private optionalString(value: unknown): string | undefined {
-    const parsed: string = String(value || '').trim();
-    return parsed || undefined;
+  private latestDate(rows: DorisRow[], field: string): string {
+    return rows.reduce((latest: string, row: DorisRow): string => {
+      const value: string = dorisString(row, field) || '';
+      return value > latest ? value : latest;
+    }, '');
   }
 
   private formatMetricValue(
@@ -427,27 +486,75 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return value.toFixed(3);
   }
 
-  private async queryMetric(argumentsValue: Record<string, unknown>): Promise<DorisQueryResult> {
-    const result = await this.callMcpTool('query_metric', argumentsValue);
-    const text = result?.content?.find((item: { type?: string }) => item.type === 'text')?.text;
-    if (!text) throw new Error('Doris MCP 未返回查询结果');
-    return JSON.parse(text) as DorisQueryResult;
+  private async queryMetric(
+    argumentsValue: Record<string, unknown>,
+  ): Promise<DorisQueryResult> {
+    const result: unknown = await this.callMcpTool(
+      'query_metric',
+      argumentsValue,
+    );
+    const object: Record<string, unknown> | undefined =
+      typeof result === 'object' && result !== null
+        ? (result as Record<string, unknown>)
+        : undefined;
+    const structured: unknown = object?.structuredContent;
+    if (structured) return normalizeDorisQueryResult(structured);
+    const content: unknown = object?.content;
+    if (Array.isArray(content)) {
+      const textItem: unknown = content.find(
+        (item: unknown): boolean =>
+          typeof item === 'object' &&
+          item !== null &&
+          Reflect.get(item, 'type') === 'text',
+      );
+      const textObject: Record<string, unknown> | undefined =
+        typeof textItem === 'object' && textItem !== null
+          ? (textItem as Record<string, unknown>)
+          : undefined;
+      const text: unknown = textObject?.text;
+      if (typeof text === 'string') return normalizeDorisQueryResult(text);
+    }
+    throw new Error('Doris MCP 未返回可解析的查询结果');
   }
 
-  private async callMcpTool(name: string, argumentsValue: Record<string, unknown>): Promise<any> {
+  private async callMcpTool(
+    name: string,
+    argumentsValue: Record<string, unknown>,
+  ): Promise<any> {
     const token = process.env.DORIS_SUPERSET_MCP_TOKEN || this.keychainToken();
-    if (!token) throw new Error('Doris MCP Key 未配置，请重新运行公司 Mac setup.sh');
+    if (!token)
+      throw new Error('Doris MCP Key 未配置，请重新运行公司 Mac setup.sh');
     let sessionId = '';
     const initialize = await this.postMcp(token, {
-      jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'ai-growth-decision-center', version: '1.0.0' } },
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'ai-growth-decision-center', version: '1.0.0' },
+      },
     });
     sessionId = initialize.sessionId;
-    await this.postMcp(token, { jsonrpc: '2.0', method: 'notifications/initialized', params: {} }, sessionId);
-    const response = await this.postMcp(token, {
-      jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: argumentsValue },
-    }, sessionId);
-    if (response.payload?.error) throw new Error(`Doris MCP：${response.payload.error.message || '查询失败'}`);
+    await this.postMcp(
+      token,
+      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+      sessionId,
+    );
+    const response = await this.postMcp(
+      token,
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name, arguments: argumentsValue },
+      },
+      sessionId,
+    );
+    if (response.payload?.error)
+      throw new Error(
+        `Doris MCP：${response.payload.error.message || '查询失败'}`,
+      );
     return response.payload?.result;
   }
 
@@ -463,22 +570,49 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     };
     if (sessionId) headers['Mcp-Session-Id'] = sessionId;
     const response = await fetch(MCP_URL, {
-      method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(45_000),
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45_000),
     });
     const raw = await response.text();
-    if (!response.ok) throw new Error(`Doris MCP HTTP ${response.status}: ${raw}`);
+    if (!response.ok)
+      throw new Error(`Doris MCP HTTP ${response.status}: ${raw}`);
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('text/event-stream')
-      ? JSON.parse(raw.split(/\r?\n/u).find((line) => line.startsWith('data:'))?.slice(5).trim() || '{}')
-      : raw ? JSON.parse(raw) : null;
-    return { payload, sessionId: response.headers.get('mcp-session-id') || sessionId };
+      ? JSON.parse(
+          raw
+            .split(/\r?\n/u)
+            .find((line) => line.startsWith('data:'))
+            ?.slice(5)
+            .trim() || '{}',
+        )
+      : raw
+        ? JSON.parse(raw)
+        : null;
+    return {
+      payload,
+      sessionId: response.headers.get('mcp-session-id') || sessionId,
+    };
   }
 
   private keychainToken(): string {
     try {
-      return execFileSync('security', ['find-generic-password', '-a', process.env.USER || '', '-s', KEYCHAIN_SERVICE, '-w'], {
-        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
+      return execFileSync(
+        'security',
+        [
+          'find-generic-password',
+          '-a',
+          process.env.USER || '',
+          '-s',
+          KEYCHAIN_SERVICE,
+          '-w',
+        ],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      ).trim();
     } catch {
       return '';
     }

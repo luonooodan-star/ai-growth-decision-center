@@ -1,13 +1,7 @@
 import { HttpService } from '@nestjs/axios';
-import {
-  BadGatewayException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
-import { lastValueFrom } from 'rxjs';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { execFileSync } from 'node:child_process';
+import { lastValueFrom } from 'rxjs';
 
 import {
   LocalDatabaseService,
@@ -22,7 +16,7 @@ import type {
   GrowthProduct,
 } from '@shared/api.interface';
 
-interface GroqAnalysisPayload {
+interface GlmAnalysisPayload {
   judgment: GrowthAiJudgment;
   summary: string;
   primaryCause: string;
@@ -34,46 +28,13 @@ interface GroqAnalysisPayload {
   observationHours: number;
 }
 
-interface GroqChatResponse {
-  choices?: Array<{
-    message?: { content?: string };
-  }>;
+interface GlmChatResponse {
+  choices?: Array<{ message?: { content?: string } }>;
 }
 
-const GROQ_DEFAULT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-120b';
-const GROQ_KEYCHAIN_SERVICE = 'ai-growth-decision-center-groq';
-
-const ANALYSIS_SCHEMA = {
-  name: 'growth_anomaly_analysis',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      judgment: { type: 'string', enum: ['confirmed', 'uncertain', 'rejected'] },
-      summary: { type: 'string' },
-      primaryCause: { type: 'string' },
-      evidence: { type: 'array', items: { type: 'string' } },
-      alternativeCauses: { type: 'array', items: { type: 'string' } },
-      recommendedNextStep: { type: 'string' },
-      risk: { type: 'string' },
-      confidence: { type: 'number', minimum: 0, maximum: 100 },
-      observationHours: { type: 'integer', minimum: 1, maximum: 168 },
-    },
-    required: [
-      'judgment',
-      'summary',
-      'primaryCause',
-      'evidence',
-      'alternativeCauses',
-      'recommendedNextStep',
-      'risk',
-      'confidence',
-      'observationHours',
-    ],
-  },
-};
+const GLM_DEFAULT_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+const GLM_DEFAULT_MODEL = 'glm-4.7-flash';
+const GLM_KEYCHAIN_SERVICE = 'ai-growth-decision-center-glm';
 
 @Injectable()
 export class GrowthAiAnalysisService {
@@ -86,9 +47,11 @@ export class GrowthAiAnalysisService {
 
   getStatus(): GrowthAiProviderStatus {
     return {
-      provider: 'groq',
+      provider: 'glm',
       model: this.model(),
       configured: Boolean(this.apiKey()),
+      fallbackProvider: 'product_skill',
+      fallbackAvailable: true,
     };
   }
 
@@ -98,45 +61,39 @@ export class GrowthAiAnalysisService {
     if (!record || !('preliminaryJudgment' in record)) {
       throw new NotFoundException('异常判断不存在');
     }
-    const product: GrowthProduct | undefined =
-      this.database.getProduct(record.productId);
+    const product: GrowthProduct | undefined = this.database.getProduct(
+      record.productId,
+    );
     if (!product) throw new NotFoundException('产品不存在');
+
+    this.saveAnalysisStatus(record, 'running');
     const apiKey: string = this.apiKey();
     if (!apiKey) {
-      throw new ServiceUnavailableException(
-        'Groq API Key 未配置，请在公司 Mac 运行 configure-groq.sh',
-      );
+      return this.saveSkillFallback(record, product, 'GLM API Key 未配置');
     }
 
-    const model: string = this.model();
-    const payload: GroqAnalysisPayload = await this.requestAnalysis(
-      apiKey,
-      model,
-      product,
-      record,
-    );
-    const analysis: GrowthAiAnalysis = {
-      provider: 'groq',
-      model,
-      ...payload,
-      confidence: Math.round(payload.confidence),
-      observationHours: Math.round(payload.observationHours),
-      generatedAt: new Date().toISOString(),
-    };
-    const updated: GrowthJudgment = { ...record, aiAnalysis: analysis };
-    this.database.saveDecisionRecord(updated);
-    this.database.appendActivity({
-      caseId: record.id,
-      action: 'ai_analysis_completed',
-      actor: `Groq · ${model}`,
-      detail: analysis.summary,
-      metadata: {
-        source: 'groq_api',
-        judgment: analysis.judgment,
-        confidence: String(analysis.confidence),
-      },
-    });
-    return updated;
+    try {
+      const model: string = this.model();
+      const payload: GlmAnalysisPayload = await this.requestAnalysis(
+        apiKey,
+        model,
+        product,
+        record,
+      );
+      return this.saveAnalysis(record, {
+        provider: 'glm',
+        model,
+        ...payload,
+        confidence: Math.round(payload.confidence),
+        observationHours: Math.round(payload.observationHours),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error: unknown) {
+      const message: string =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(`GLM 不可用，已降级到产品 Skill：${message}`);
+      return this.saveSkillFallback(record, product, message);
+    }
   }
 
   private async requestAnalysis(
@@ -144,54 +101,131 @@ export class GrowthAiAnalysisService {
     model: string,
     product: GrowthProduct,
     judgment: GrowthJudgment,
-  ): Promise<GroqAnalysisPayload> {
-    try {
-      const response = await lastValueFrom(
-        this.httpService.post<GroqChatResponse>(
-          process.env.GROQ_API_URL || GROQ_DEFAULT_URL,
-          {
-            model,
-            reasoning_effort: 'high',
-            messages: [
-              {
-                role: 'system',
-                content: this.systemPrompt(),
-              },
-              {
-                role: 'user',
-                content: JSON.stringify(
-                  this.analysisContext(product, judgment),
-                ),
-              },
-            ],
-            response_format: {
-              type: 'json_schema',
-              json_schema: ANALYSIS_SCHEMA,
+  ): Promise<GlmAnalysisPayload> {
+    let lastError: Error | undefined;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await lastValueFrom(
+          this.httpService.post<GlmChatResponse>(
+            process.env.GLM_API_URL || GLM_DEFAULT_URL,
+            {
+              model,
+              messages: [
+                { role: 'system', content: this.systemPrompt() },
+                {
+                  role: 'user',
+                  content: JSON.stringify(
+                    this.analysisContext(product, judgment),
+                  ),
+                },
+              ],
+              thinking: { type: 'enabled' },
+              response_format: { type: 'json_object' },
+              temperature: 0.1,
             },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
+            {
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              signal: AbortSignal.timeout(60_000),
             },
-            signal: AbortSignal.timeout(90_000),
-          },
-        ),
-      );
-      const content: string | undefined =
-        response.data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('Groq 未返回分析内容');
-      const parsed: unknown = JSON.parse(content);
-      if (!this.isAnalysisPayload(parsed)) {
-        throw new Error('Groq 返回结果不符合分析结构');
+          ),
+        );
+        const content: string | undefined =
+          response.data.choices?.[0]?.message?.content;
+        if (!content) throw new Error('GLM 未返回分析内容');
+        const parsed: unknown = this.parseJson(content);
+        if (!this.isAnalysisPayload(parsed)) {
+          throw new Error('GLM 返回结果不符合分析结构');
+        }
+        return parsed;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.logger.warn(`GLM 第 ${attempt} 次分析失败：${lastError.message}`);
       }
-      return parsed;
-    } catch (error: unknown) {
-      const message: string =
-        error instanceof Error ? error.message : String(error);
-      this.logger.error(`Groq 深度分析失败：${message}`, error instanceof Error ? error.stack : undefined);
-      throw new BadGatewayException(`Groq 深度分析失败：${message}`);
     }
+    throw lastError || new Error('GLM 分析失败');
+  }
+
+  private saveAnalysis(
+    judgment: GrowthJudgment,
+    analysis: GrowthAiAnalysis,
+  ): GrowthJudgment {
+    const currentRecord: DecisionRecord | undefined =
+      this.database.getDecisionRecord(judgment.id);
+    const currentJudgment: GrowthJudgment =
+      currentRecord && 'preliminaryJudgment' in currentRecord
+        ? currentRecord
+        : judgment;
+    const status: GrowthJudgment['aiAnalysisStatus'] =
+      analysis.provider === 'glm' ? 'completed' : 'fallback';
+    const updated: GrowthJudgment = {
+      ...currentJudgment,
+      aiAnalysisStatus: status,
+      aiAnalysis: analysis,
+    };
+    this.database.saveDecisionRecord(updated);
+    this.database.appendActivity({
+      caseId: judgment.id,
+      action:
+        analysis.provider === 'glm'
+          ? 'ai_analysis_completed'
+          : 'skill_analysis_completed',
+      actor:
+        analysis.provider === 'glm'
+          ? `GLM · ${analysis.model}`
+          : analysis.model,
+      detail: analysis.summary,
+      metadata: {
+        source: analysis.provider,
+        judgment: analysis.judgment,
+        confidence: String(analysis.confidence),
+      },
+    });
+    return updated;
+  }
+
+  private saveSkillFallback(
+    judgment: GrowthJudgment,
+    product: GrowthProduct,
+    reason: string,
+  ): GrowthJudgment {
+    const target: string =
+      judgment.adsetName ||
+      judgment.adsetId ||
+      judgment.campaignName ||
+      judgment.campaignId ||
+      '产品级';
+    const analysis: GrowthAiAnalysis = {
+      provider: 'product_skill',
+      model: `${product.name} Skill · ${product.skillVersion}`,
+      judgment: 'confirmed',
+      summary:
+        `产品 Skill 判定 ${target} 的 ${judgment.targetMetric.toUpperCase()} ` +
+        '已越过人工指标边界，异常条件成立；具体原因仍需人工确认。',
+      primaryCause: '当前值越过指标库中的产品正常边界',
+      evidence: [judgment.evidence],
+      alternativeCauses: [
+        '数据延迟或归因未完整',
+        '买量竞价、素材效率或产品转化链路变化',
+      ],
+      recommendedNextStep:
+        '先核对同期数据完整性，再按 Campaign 和广告组拆解异常指标。',
+      risk: '仅根据阈值能确认异常现象，不能单独证明根因。',
+      confidence: Math.min(95, Math.max(0, judgment.confidence)),
+      observationHours: Math.max(1, Math.ceil(product.dataDelayMinutes / 60)),
+      fallbackReason: reason,
+      generatedAt: new Date().toISOString(),
+    };
+    return this.saveAnalysis(judgment, analysis);
+  }
+
+  private saveAnalysisStatus(
+    judgment: GrowthJudgment,
+    status: GrowthJudgment['aiAnalysisStatus'],
+  ): void {
+    this.database.saveDecisionRecord({ ...judgment, aiAnalysisStatus: status });
   }
 
   private analysisContext(
@@ -235,14 +269,30 @@ export class GrowthAiAnalysisService {
   private systemPrompt(): string {
     return [
       '你是移动应用 Facebook 广告增长分析师。',
-      '只根据输入的聚合指标和产品指标标准做判断，不补造数据。',
+      '只根据输入的 Doris 聚合指标和产品 Skill 标准做判断，不补造数据。',
       '区分事实证据、推断和待验证原因；数据不足时必须输出 uncertain。',
-      '建议优先是诊断或小范围验证，不自动执行预算调整。',
-      '输出简体中文，并严格符合提供的 JSON Schema。',
+      '判断阶段只给诊断下一步，不给预算增减量指令。',
+      '输出简体中文且只输出 JSON 对象。',
+      '必须包含 judgment, summary, primaryCause, evidence, ' +
+        'alternativeCauses, recommendedNextStep, risk, confidence, ' +
+        'observationHours。',
+      'judgment 只能是 confirmed, uncertain, rejected；confidence 为 0-100；' +
+        'observationHours 为 1-168 的整数。',
     ].join('\n');
   }
 
-  private isAnalysisPayload(value: unknown): value is GroqAnalysisPayload {
+  private parseJson(content: string): unknown {
+    try {
+      return JSON.parse(content);
+    } catch {
+      const start: number = content.indexOf('{');
+      const end: number = content.lastIndexOf('}');
+      if (start < 0 || end <= start) throw new Error('GLM 未返回 JSON');
+      return JSON.parse(content.slice(start, end + 1));
+    }
+  }
+
+  private isAnalysisPayload(value: unknown): value is GlmAnalysisPayload {
     if (typeof value !== 'object' || value === null) return false;
     const judgment: unknown = Reflect.get(value, 'judgment');
     const evidence: unknown = Reflect.get(value, 'evidence');
@@ -257,26 +307,33 @@ export class GrowthAiAnalysisService {
     ];
     return (
       ['confirmed', 'uncertain', 'rejected'].includes(String(judgment)) &&
-      textFields.every((field: string): boolean =>
-        typeof Reflect.get(value, field) === 'string',
+      textFields.every(
+        (field: string): boolean =>
+          typeof Reflect.get(value, field) === 'string',
       ) &&
       Array.isArray(evidence) &&
       evidence.every((item: unknown): boolean => typeof item === 'string') &&
       Array.isArray(alternatives) &&
-      alternatives.every((item: unknown): boolean => typeof item === 'string') &&
+      alternatives.every(
+        (item: unknown): boolean => typeof item === 'string',
+      ) &&
       typeof confidence === 'number' &&
       Number.isFinite(confidence) &&
+      confidence >= 0 &&
+      confidence <= 100 &&
       typeof hours === 'number' &&
-      Number.isFinite(hours)
+      Number.isInteger(hours) &&
+      hours >= 1 &&
+      hours <= 168
     );
   }
 
   private model(): string {
-    return process.env.GROQ_MODEL || GROQ_DEFAULT_MODEL;
+    return process.env.GLM_MODEL || GLM_DEFAULT_MODEL;
   }
 
   private apiKey(): string {
-    if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
+    if (process.env.GLM_API_KEY) return process.env.GLM_API_KEY;
     try {
       return execFileSync(
         'security',
@@ -285,7 +342,7 @@ export class GrowthAiAnalysisService {
           '-a',
           process.env.USER || '',
           '-s',
-          GROQ_KEYCHAIN_SERVICE,
+          GLM_KEYCHAIN_SERVICE,
           '-w',
         ],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },

@@ -177,6 +177,7 @@ export interface GrowthJudgment {
   spend?: number;
   recommendationCaseId?: string;
   recommendationCreatedAt?: string;
+  aiAnalysisStatus?: 'running' | 'completed' | 'fallback' | 'failed';
   aiAnalysis?: GrowthAiAnalysis;
   evidence: string;
   rootCause: string;
@@ -192,7 +193,7 @@ export interface GrowthJudgment {
 export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
 
 export interface GrowthAiAnalysis {
-  provider: 'groq';
+  provider: 'glm' | 'product_skill';
   model: string;
   judgment: GrowthAiJudgment;
   summary: string;
@@ -203,13 +204,16 @@ export interface GrowthAiAnalysis {
   risk: string;
   confidence: number;
   observationHours: number;
+  fallbackReason?: string;
   generatedAt: string;
 }
 
 export interface GrowthAiProviderStatus {
-  provider: 'groq';
+  provider: 'glm';
   model: string;
   configured: boolean;
+  fallbackProvider: 'product_skill';
+  fallbackAvailable: true;
 }
 
 export interface UpdateDecisionRequest {

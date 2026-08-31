@@ -40,10 +40,7 @@ import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
 interface JudgmentQueueProps {
   judgments: GrowthJudgment[];
   saving: boolean;
-  onReview: (
-    id: string,
-    request: ReviewJudgmentRequest,
-  ) => Promise<void>;
+  onReview: (id: string, request: ReviewJudgmentRequest) => Promise<void>;
   onGenerateRecommendation: (id: string) => Promise<void>;
   onAnalyze: (id: string) => Promise<void>;
   aiConfigured: boolean;
@@ -80,10 +77,14 @@ const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
 ];
 
 const metricValue = (item: GrowthJudgment, key: GrowthMetricKey): string => {
-  const value = item.metricValues?.[key] ?? (item.targetMetric === key ? item.currentValue : undefined);
+  const value =
+    item.metricValues?.[key] ??
+    (item.targetMetric === key ? item.currentValue : undefined);
   if (value === undefined) return '—';
-  if (key === 'd0_roas' || key === 'retention_d1') return `${(value * 100).toFixed(2)}%`;
-  if (key === 'cpi' || key === 'cpa' || key === 'ecpm' || key === 'arpu') return `$${value.toFixed(3)}`;
+  if (key === 'd0_roas' || key === 'retention_d1')
+    return `${(value * 100).toFixed(2)}%`;
+  if (key === 'cpi' || key === 'cpa' || key === 'ecpm' || key === 'arpu')
+    return `$${value.toFixed(3)}`;
   return value.toFixed(3);
 };
 
@@ -97,8 +98,9 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   aiModel,
 }) => {
   const [selected, setSelected] = useState<GrowthJudgment | null>(null);
-  const [reviewAction, setReviewAction] =
-    useState<ReviewJudgmentRequest['action'] | null>(null);
+  const [reviewAction, setReviewAction] = useState<
+    ReviewJudgmentRequest['action'] | null
+  >(null);
   const [reason, setReason] = useState<string>('');
   const [ruleCandidate, setRuleCandidate] = useState<string>('');
 
@@ -157,8 +159,9 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={aiConfigured ? 'secondary' : 'outline'}>
-              Groq 120B {aiConfigured ? '已连接' : '待配置'}
+              GLM-4.7-Flash {aiConfigured ? '已连接' : '未配置'}
             </Badge>
+            <Badge variant="outline">产品 Skill 自动降级</Badge>
             <Badge variant="secondary">{judgments.length} 条</Badge>
           </div>
         </CardHeader>
@@ -183,8 +186,13 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           <span className="text-xs text-slate-500">
                             {item.productName}
                           </span>
-                          <span className="truncate text-xs text-slate-500">Campaign：{item.campaignName || item.campaignId || '产品级'}</span>
-                          <span className="truncate text-xs text-slate-500">广告组：{item.adsetName || item.adsetId || '未定位'}</span>
+                          <span className="truncate text-xs text-slate-500">
+                            Campaign：
+                            {item.campaignName || item.campaignId || '产品级'}
+                          </span>
+                          <span className="truncate text-xs text-slate-500">
+                            广告组：{item.adsetName || item.adsetId || '未定位'}
+                          </span>
                         </div>
                         <h2 className="mt-3 text-sm font-semibold text-slate-950">
                           {item.anomalyType} · {item.targetMetric.toUpperCase()}
@@ -201,13 +209,22 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                               <WalletCards className="size-3" /> 消耗
                             </p>
                             <p className="mt-1 text-xs font-semibold text-slate-900">
-                              {item.spend === undefined ? '—' : `$${item.spend.toFixed(2)}`}
+                              {item.spend === undefined
+                                ? '—'
+                                : `$${item.spend.toFixed(2)}`}
                             </p>
                           </div>
                           {DEFAULT_METRICS.map((metric) => (
-                            <div key={metric.key} className="rounded-lg bg-slate-50 px-2.5 py-2">
-                              <p className="text-[10px] font-medium text-slate-500">{metric.label}</p>
-                              <p className="mt-1 text-xs font-semibold text-slate-900">{metricValue(item, metric.key)}</p>
+                            <div
+                              key={metric.key}
+                              className="rounded-lg bg-slate-50 px-2.5 py-2"
+                            >
+                              <p className="text-[10px] font-medium text-slate-500">
+                                {metric.label}
+                              </p>
+                              <p className="mt-1 text-xs font-semibold text-slate-900">
+                                {metricValue(item, metric.key)}
+                              </p>
                             </div>
                           ))}
                         </div>
@@ -223,30 +240,60 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                             </span>
                           ) : null}
                         </div>
+                        {item.aiAnalysisStatus === 'running' ? (
+                          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
+                            GLM 正在完成第一波分析…
+                          </div>
+                        ) : null}
                         {item.aiAnalysis ? (
                           <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-4">
                             <div className="flex flex-wrap items-center gap-2">
                               <BrainCircuit className="size-4 text-violet-700" />
-                              <Badge variant="outline" className="border-violet-200 bg-white text-violet-700">
+                              <Badge
+                                variant="outline"
+                                className="border-violet-200 bg-white text-violet-700"
+                              >
                                 {AI_JUDGMENT_LABELS[item.aiAnalysis.judgment]}
                               </Badge>
                               <span className="text-xs text-violet-600">
-                                {item.aiAnalysis.model} · 置信度 {item.aiAnalysis.confidence}%
+                                {item.aiAnalysis.model} · 置信度{' '}
+                                {item.aiAnalysis.confidence}%
                               </span>
+                              {item.aiAnalysis.provider === 'product_skill' ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-200 bg-amber-50 text-amber-700"
+                                >
+                                  GLM 不可用，已用 Skill
+                                </Badge>
+                              ) : null}
                             </div>
                             <p className="mt-3 text-sm font-medium leading-6 text-slate-900">
                               {item.aiAnalysis.summary}
                             </p>
                             <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
                               <div>
-                                <dt className="font-medium text-slate-500">首要原因</dt>
-                                <dd className="mt-1 leading-5 text-slate-700">{item.aiAnalysis.primaryCause}</dd>
+                                <dt className="font-medium text-slate-500">
+                                  首要原因
+                                </dt>
+                                <dd className="mt-1 leading-5 text-slate-700">
+                                  {item.aiAnalysis.primaryCause}
+                                </dd>
                               </div>
                               <div>
-                                <dt className="font-medium text-slate-500">建议下一步</dt>
-                                <dd className="mt-1 leading-5 text-slate-700">{item.aiAnalysis.recommendedNextStep}</dd>
+                                <dt className="font-medium text-slate-500">
+                                  建议下一步
+                                </dt>
+                                <dd className="mt-1 leading-5 text-slate-700">
+                                  {item.aiAnalysis.recommendedNextStep}
+                                </dd>
                               </div>
                             </dl>
+                            {item.aiAnalysis.fallbackReason ? (
+                              <p className="mt-3 text-xs leading-5 text-amber-700">
+                                降级原因：{item.aiAnalysis.fallbackReason}
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
@@ -259,11 +306,11 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           <Button
                             variant="outline"
                             onClick={() => void onAnalyze(item.id)}
-                            disabled={saving || !aiConfigured}
+                            disabled={saving}
                             title={
                               aiConfigured
                                 ? `使用 ${aiModel} 分析`
-                                : '请先在公司 Mac 配置 Groq API Key'
+                                : 'GLM 未配置，将使用产品 Skill 规则分析'
                             }
                           >
                             <BrainCircuit className="size-4" />
@@ -272,10 +319,14 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         ) : null}
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (
-                            <Badge className="h-9 px-3" variant="secondary">建议已生成</Badge>
+                            <Badge className="h-9 px-3" variant="secondary">
+                              建议已生成
+                            </Badge>
                           ) : (
                             <Button
-                              onClick={() => void onGenerateRecommendation(item.id)}
+                              onClick={() =>
+                                void onGenerateRecommendation(item.id)
+                              }
                               disabled={saving}
                             >
                               <Sparkles className="size-4" />
@@ -285,26 +336,26 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         ) : null}
                         {canReview ? (
                           <>
-                          <Button
-                            variant="outline"
-                            onClick={() => openReview(item, 'deferred')}
-                          >
-                            <Clock3 className="size-4" />
-                            待定
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => openReview(item, 'rejected')}
-                          >
-                            <X className="size-4" />
-                            否决
-                          </Button>
-                          <Button
-                            onClick={() => openReview(item, 'confirmed')}
-                          >
-                            <Check className="size-4" />
-                            确认判断
-                          </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => openReview(item, 'deferred')}
+                            >
+                              <Clock3 className="size-4" />
+                              待定
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => openReview(item, 'rejected')}
+                            >
+                              <X className="size-4" />
+                              否决
+                            </Button>
+                            <Button
+                              onClick={() => openReview(item, 'confirmed')}
+                            >
+                              <Check className="size-4" />
+                              确认判断
+                            </Button>
                           </>
                         ) : null}
                       </div>

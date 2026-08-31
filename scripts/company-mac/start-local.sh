@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly KEYCHAIN_SERVICE="ai-growth-doris-superset-mcp"
 readonly ACCESS_KEYCHAIN_SERVICE="ai-growth-decision-center-access"
-readonly GROQ_KEYCHAIN_SERVICE="ai-growth-decision-center-groq"
+readonly GLM_KEYCHAIN_SERVICE="ai-growth-decision-center-glm"
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h:h}"
@@ -24,10 +24,10 @@ access_password="$(security find-generic-password \
   exit 1
 }
 
-groq_api_key="$(security find-generic-password \
+glm_api_key="$(security find-generic-password \
   -a "$USER" \
-  -s "$GROQ_KEYCHAIN_SERVICE" \
-  -w 2>/dev/null)" || groq_api_key=""
+  -s "$GLM_KEYCHAIN_SERVICE" \
+  -w 2>/dev/null)" || glm_api_key=""
 
 cd "$project_dir"
 
@@ -36,7 +36,7 @@ export DORIS_MCP_URL="${DORIS_MCP_URL:-http://192.168.3.102:8766/mcp}"
 export SUPERSET_MCP_URL="${SUPERSET_MCP_URL:-http://192.168.3.102:8767/mcp}"
 export DORIS_SUPERSET_MCP_TOKEN="$token"
 export GROWTH_BASIC_AUTH_PASSWORD="$access_password"
-[[ -n "$groq_api_key" ]] && export GROQ_API_KEY="$groq_api_key"
+[[ -n "$glm_api_key" ]] && export GLM_API_KEY="$glm_api_key"
 export SERVER_HOST="0.0.0.0"
 export SERVER_PORT="8081"
 export GROWTH_DATABASE_PATH="$project_dir/runtime/ai-growth.sqlite"

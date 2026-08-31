@@ -23,6 +23,7 @@ import type {
   GrowthDashboardResponse,
   GrowthDecisionCase,
   GrowthDashboardSummary,
+  GrowthJudgment,
   GrowthProduct,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
@@ -122,9 +123,8 @@ const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
 
 const GrowthDecisionPage: React.FC = () => {
   const { productId = '' } = useParams<{ productId: string }>();
-  const [dashboardData, setDashboardData] = useState<GrowthDashboardResponse | null>(
-    null,
-  );
+  const [dashboardData, setDashboardData] =
+    useState<GrowthDashboardResponse | null>(null);
   const [selectedCase, setSelectedCase] = useState<GrowthDecisionCase | null>(
     null,
   );
@@ -139,6 +139,19 @@ const GrowthDecisionPage: React.FC = () => {
   useEffect((): void => {
     void loadDashboard();
   }, []);
+
+  useEffect((): (() => void) | undefined => {
+    const hasRunningAnalysis: boolean = Boolean(
+      dashboardData?.judgments.some(
+        (item: GrowthJudgment): boolean => item.aiAnalysisStatus === 'running',
+      ),
+    );
+    if (!hasRunningAnalysis) return undefined;
+    const timer: number = window.setTimeout((): void => {
+      void loadDashboard();
+    }, 3_000);
+    return (): void => window.clearTimeout(timer);
+  }, [dashboardData]);
 
   const loadDashboard = async (): Promise<void> => {
     setLoading(true);
@@ -164,24 +177,48 @@ const GrowthDecisionPage: React.FC = () => {
 
   const dashboard: GrowthDashboardResponse | null = useMemo(() => {
     if (!dashboardData) return null;
-    const products = dashboardData.products.filter((product) => product.id === productId);
-    const judgments = dashboardData.judgments.filter((item) => item.productId === productId);
-    const cases = dashboardData.cases.filter((item) => item.productId === productId);
-    const accepted = cases.filter((item) => item.status === 'accepted' || item.status === 'observing' || item.status === 'completed');
+    const products = dashboardData.products.filter(
+      (product) => product.id === productId,
+    );
+    const judgments = dashboardData.judgments.filter(
+      (item) => item.productId === productId,
+    );
+    const cases = dashboardData.cases.filter(
+      (item) => item.productId === productId,
+    );
+    const accepted = cases.filter(
+      (item) =>
+        item.status === 'accepted' ||
+        item.status === 'observing' ||
+        item.status === 'completed',
+    );
     const completed = cases.filter((item) => item.status === 'completed');
-    const improved = completed.filter((item) => item.resultClassification === 'expected' || item.resultClassification === 'partial');
+    const improved = completed.filter(
+      (item) =>
+        item.resultClassification === 'expected' ||
+        item.resultClassification === 'partial',
+    );
     return {
       products,
       judgments,
       cases,
       summary: {
         openAnomalies: judgments.length,
-        pendingJudgments: judgments.filter((item) => item.status === 'judgment_pending' || item.status === 'judgment_deferred').length,
-        confirmedJudgments: judgments.filter((item) => item.status === 'judgment_confirmed').length,
-        pendingDecisions: cases.filter((item) => item.status === 'pending').length,
+        pendingJudgments: judgments.filter(
+          (item) =>
+            item.status === 'judgment_pending' ||
+            item.status === 'judgment_deferred',
+        ).length,
+        confirmedJudgments: judgments.filter(
+          (item) => item.status === 'judgment_confirmed',
+        ).length,
+        pendingDecisions: cases.filter((item) => item.status === 'pending')
+          .length,
         acceptedRecommendations: accepted.length,
         completedExperiments: completed.length,
-        expectedImprovementRate: completed.length ? Math.round((improved.length / completed.length) * 100) : 0,
+        expectedImprovementRate: completed.length
+          ? Math.round((improved.length / completed.length) * 100)
+          : 0,
         medianDecisionMinutes: dashboardData.summary.medianDecisionMinutes,
         lastDataSyncAt: products[0]?.lastSyncAt,
       },
@@ -258,7 +295,7 @@ const GrowthDecisionPage: React.FC = () => {
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Groq 深度分析失败',
+          : '异常深度分析失败',
       );
     } finally {
       setSaving(false);
@@ -291,14 +328,33 @@ const GrowthDecisionPage: React.FC = () => {
   }
 
   if (!loading && dashboardData && !selectedProduct) {
-    return <div className="mx-auto max-w-3xl px-5 py-20 text-center"><Database className="mx-auto size-7 text-slate-400" /><h1 className="mt-4 text-xl font-semibold text-slate-900">产品页面不存在</h1><p className="mt-2 text-sm text-slate-500">该产品可能尚未接入或已停用。</p><Button asChild variant="outline" className="mt-5"><Link to="/">返回产品中心</Link></Button></div>;
+    return (
+      <div className="mx-auto max-w-3xl px-5 py-20 text-center">
+        <Database className="mx-auto size-7 text-slate-400" />
+        <h1 className="mt-4 text-xl font-semibold text-slate-900">
+          产品页面不存在
+        </h1>
+        <p className="mt-2 text-sm text-slate-500">
+          该产品可能尚未接入或已停用。
+        </p>
+        <Button asChild variant="outline" className="mt-5">
+          <Link to="/">返回产品中心</Link>
+        </Button>
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-[1540px] px-5 py-6 lg:px-8">
       <section className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
-          <Link to="/" className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"><ArrowLeft className="size-3.5" />返回产品中心</Link>
+          <Link
+            to="/"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft className="size-3.5" />
+            返回产品中心
+          </Link>
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-blue-700">
             <Sparkles className="size-3.5" />
             {selectedProduct?.name.toUpperCase()} · PRODUCT DECISION PAGE
@@ -307,7 +363,8 @@ const GrowthDecisionPage: React.FC = () => {
             {selectedProduct?.name} 增长判断与投放决策
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            本页面只使用 {selectedProduct?.name} 的 Doris 数据、Facebook 账户和产品 Skill；先判断异常是否成立，确认后再生成调整建议。
+            本页面只使用 {selectedProduct?.name} 的 Doris 数据、Facebook
+            账户和产品 Skill；先判断异常是否成立，确认后再生成调整建议。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -378,7 +435,7 @@ const GrowthDecisionPage: React.FC = () => {
             onGenerateRecommendation={handleGenerateRecommendation}
             onAnalyze={handleAiAnalysis}
             aiConfigured={Boolean(aiStatus?.configured)}
-            aiModel={aiStatus?.model || 'openai/gpt-oss-120b'}
+            aiModel={aiStatus?.model || 'glm-4.7-flash'}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">
@@ -628,11 +685,14 @@ const GrowthDecisionPage: React.FC = () => {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-500">异常规则</span>
                         <span className="font-medium text-slate-800">
-                          {product.metrics.filter(
-                            (metric) =>
-                              metric.lowerBound !== undefined ||
-                              metric.upperBound !== undefined,
-                          ).length} 项阈值已启用
+                          {
+                            product.metrics.filter(
+                              (metric) =>
+                                metric.lowerBound !== undefined ||
+                                metric.upperBound !== undefined,
+                            ).length
+                          }{' '}
+                          项阈值已启用
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">

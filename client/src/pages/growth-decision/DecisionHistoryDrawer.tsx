@@ -21,7 +21,8 @@ const ACTION_LABELS: Record<string, string> = {
   judgment_deferred: '人工设为待定',
   judgment_rejected: '人工否决判断',
   recommendation_created: '生成调整建议',
-  ai_analysis_completed: 'Groq 深度分析完成',
+  ai_analysis_completed: 'GLM 深度分析完成',
+  skill_analysis_completed: '产品 Skill 降级分析完成',
   ingested: '建议进入队列',
   accepted: '采纳建议',
   rejected: '不采纳建议',
@@ -51,7 +52,9 @@ const DecisionHistoryDrawer = ({
       .getDecisionHistory(recordId)
       .then((result) => setItems(result.items))
       .catch((requestError: unknown) =>
-        setError(requestError instanceof Error ? requestError.message : '历史加载失败'),
+        setError(
+          requestError instanceof Error ? requestError.message : '历史加载失败',
+        ),
       )
       .finally(() => setLoading(false));
   }, [open, recordId]);
@@ -75,17 +78,23 @@ const DecisionHistoryDrawer = ({
             <Loader2 className="size-4 animate-spin" /> 正在读取历史
           </div>
         ) : error ? (
-          <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>
+          <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </p>
         ) : items.length ? (
           <ol className="relative ml-2 border-l border-slate-200 pl-6">
             {items.map((item) => (
               <li key={item.id} className="relative pb-6">
                 <span className="absolute -left-[29px] top-1 size-2.5 rounded-full bg-blue-600 ring-4 ring-white" />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{ACTION_LABELS[item.action] || item.action}</Badge>
+                  <Badge variant="outline">
+                    {ACTION_LABELS[item.action] || item.action}
+                  </Badge>
                   <span className="text-xs text-slate-500">{item.actor}</span>
                 </div>
-                <p className="mt-2 text-sm leading-6 text-slate-700">{item.detail}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  {item.detail}
+                </p>
                 <p className="mt-2 flex items-center gap-1 text-xs text-slate-400">
                   <Clock3 className="size-3" />
                   {new Date(item.createdAt).toLocaleString('zh-CN')}

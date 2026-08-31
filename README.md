@@ -13,7 +13,7 @@
 - 可版本化的 Facebook 增长决策 Skill
 - 每小时 Doris 自动抓取、手动抓取与右侧历史抽屉
 - 产品指标标准库（人工录入标准值、正常下界和正常上界）
-- 可选 Groq GPT-OSS 120B 深度分析与结构化结果留档
+- GLM-4.7-Flash 默认深度分析、产品 Skill 自动降级与结果留档
 
 ## 技术结构
 
@@ -77,20 +77,18 @@ Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
 异常判断和调整建议是两类独立记录。判断结果用于迭代 Skill，但不进入
 建议采纳率的分子或分母。
 
-## Groq GPT-OSS 120B（可选）
+## GLM-4.7-Flash 与产品 Skill 降级
 
-Groq 只由公司 Mac 后端调用，API Key 不会进入浏览器或 Git。配置后，异常队列会
-显示“Groq 120B 已连接”，人工可以在确认判断前点击“AI 深度分析”。模型结果使用
-严格 JSON Schema，包含异常判断、首要原因、证据、其他可能原因、下一步、风险、
-置信度和观察周期，并写入 SQLite 与操作历史。
+GLM 只由公司 Mac 后端调用，API Key 不会进入浏览器或 Git。Doris 每次
+创建新异常后会自动尝试 GLM 第一波分析；未配置 Key、超时或返回结构无效时，
+立即改用对应产品 Skill 的确定性规则，并保留降级原因。
 
 ```bash
-zsh scripts/company-mac/configure-groq.sh
+zsh scripts/company-mac/configure-glm.sh
 ```
 
-如果未配置 Groq 或请求失败，Doris 抓取、人工判断和产品 Skill 仍可独立运行。
-确认判断后生成的建议会优先使用已有 Groq 分析；没有 AI 分析时继续使用产品 Skill
-的确定性规则。任何路径都不会自动修改广告预算。
+确认判断后生成的建议会使用已留档的 GLM 或产品 Skill 分析。任何路径
+都不会自动修改广告预算。
 
 ### 创建产品
 

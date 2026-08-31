@@ -17,10 +17,9 @@ const buildSkillRecommendation = (
       recommendedAction: {
         actionType: 'investigate_metric_anomaly',
         targetLevel: judgment.adsetId ? 'adset' : 'campaign',
-        targetId:
-          judgment.adsetId || judgment.campaignId || judgment.productId,
+        targetId: judgment.adsetId || judgment.campaignId || judgment.productId,
         parameters: {
-          source: 'groq_deep_analysis',
+          source: judgment.aiAnalysis.provider,
           budgetChangePct: 0,
           observationHours: judgment.aiAnalysis.observationHours,
         },
@@ -31,8 +30,12 @@ const buildSkillRecommendation = (
       riskNote: judgment.aiAnalysis.risk,
     };
   }
-  const targetName: string = judgment.adsetName || judgment.adsetId ||
-    judgment.campaignName || judgment.campaignId || judgment.productName;
+  const targetName: string =
+    judgment.adsetName ||
+    judgment.adsetId ||
+    judgment.campaignName ||
+    judgment.campaignId ||
+    judgment.productName;
   const templates: Record<string, RecommendationTemplate> = {
     cpi: {
       recommendation: `保持 ${targetName} 当前预算，先拆解 ECPM、素材点击/安装转化与商店页转化，定位 CPI 越界环节。`,
@@ -75,8 +78,10 @@ const buildSkillRecommendation = (
       targetId: judgment.adsetId || judgment.campaignId || judgment.productId,
       parameters: { focus: template.focus, budgetChangePct: 0 },
     },
-    expectedImpact: '在下一个完整数据窗口内完成原因定位，并确认是否需要进入预算或素材实验。',
-    riskNote: '产品增减量规则尚未校准，本建议不会自动调整预算，需再次人工采纳。',
+    expectedImpact:
+      '在下一个完整数据窗口内完成原因定位，并确认是否需要进入预算或素材实验。',
+    riskNote:
+      '产品增减量规则尚未校准，本建议不会自动调整预算，需再次人工采纳。',
   };
 };
 
