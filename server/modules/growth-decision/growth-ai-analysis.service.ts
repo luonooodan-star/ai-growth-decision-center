@@ -22,7 +22,7 @@ import type {
   GrowthProduct,
 } from '@shared/api.interface';
 
-interface GlmAnalysisPayload {
+interface GeminiAnalysisPayload {
   judgment: GrowthAiJudgment;
   summary: string;
   primaryCause: string;
@@ -34,13 +34,15 @@ interface GlmAnalysisPayload {
   observationHours: number;
 }
 
-interface GlmChatResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+interface GeminiGenerateResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+  }>;
 }
 
-const GLM_DEFAULT_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-const GLM_DEFAULT_MODEL = 'glm-4.7-flash';
-const GLM_KEYCHAIN_SERVICE = 'ai-growth-decision-center-glm';
+const GEMINI_DEFAULT_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_DEFAULT_MODEL = 'gemini-3.7-flash';
+const GEMINI_KEYCHAIN_SERVICE = 'ai-growth-decision-center-gemini';
 
 @Injectable()
 export class GrowthAiAnalysisService {
@@ -53,7 +55,7 @@ export class GrowthAiAnalysisService {
 
   getStatus(): GrowthAiProviderStatus {
     return {
-      provider: 'glm',
+      provider: 'gemini',
       model: this.model(),
       configured: Boolean(this.apiKey()),
       fallbackProvider: 'product_skill',
@@ -63,7 +65,7 @@ export class GrowthAiAnalysisService {
 
   async analyzeJudgment(
     id: string,
-    mode: 'default' | 'glm_only' = 'default',
+    mode: 'default' | 'gemini_only' = 'default',
   ): Promise<GrowthJudgment> {
     const record: DecisionRecord | undefined =
       this.database.getDecisionRecord(id);
@@ -78,24 +80,24 @@ export class GrowthAiAnalysisService {
     this.saveAnalysisStatus(record, 'running');
     const apiKey: string = this.apiKey();
     if (!apiKey) {
-      if (mode === 'glm_only') {
-        const message: string = 'GLM API Key 未配置';
+      if (mode === 'gemini_only') {
+        const message: string = 'Gemini API Key 未配置';
         this.saveAnalysisFailure(record, message);
         throw new ServiceUnavailableException(message);
       }
-      return this.saveSkillFallback(record, product, 'GLM API Key 未配置');
+      return this.saveSkillFallback(record, product, 'Gemini API Key 未配置');
     }
 
     try {
       const model: string = this.model();
-      const payload: GlmAnalysisPayload = await this.requestAnalysis(
+      const payload: GeminiAnalysisPayload = await this.requestAnalysis(
         apiKey,
         model,
         product,
         record,
       );
       return this.saveAnalysis(record, {
-        provider: 'glm',
+        provider: 'gemini',
         model,
         ...payload,
         confidence: Math.round(payload.confidence),
@@ -105,12 +107,12 @@ export class GrowthAiAnalysisService {
     } catch (error: unknown) {
       const message: string =
         error instanceof Error ? error.message : String(error);
-      if (mode === 'glm_only') {
-        const friendlyMessage: string = this.friendlyGlmError(message);
+      if (mode === 'gemini_only') {
+        const friendlyMessage: string = this.friendlyGeminiError(message);
         this.saveAnalysisFailure(record, friendlyMessage);
         throw new BadGatewayException(friendlyMessage);
       }
-      this.logger.warn(`GLM 不可用，已降级到产品 Skill：${message}`);
+      this.logger.warn(`Gemini 不可用，已降级到产品 Skill：${message}`);
       return this.saveSkillFallback(record, product, message);
     }
   }
@@ -120,48 +122,64 @@ export class GrowthAiAnalysisService {
     model: string,
     product: GrowthProduct,
     judgment: GrowthJudgment,
-  ): Promise<GlmAnalysisPayload> {
+  ): Promise<GeminiAnalysisPayload> {
     let lastError: Error | undefined;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const response = await lastValueFrom(
-          this.httpService.post<GlmChatResponse>(
-            process.env.GLM_API_URL || GLM_DEFAULT_URL,
+          this.httpService.post<GeminiGenerateResponse>(
+            this.endpoint(model),
             {
-              model,
-              messages: [
-                { role: 'system', content: this.systemPrompt() },
+              systemInstruction: {
+                parts: [{ text: this.systemPrompt() }],
+              },
+              contents: [
                 {
                   role: 'user',
-                  content: JSON.stringify(
-                    this.analysisContext(product, judgment),
-                  ),
+                  parts: [
+                    {
+                      text: JSON.stringify(
+                        this.analysisContext(product, judgment),
+                      ),
+                    },
+                  ],
                 },
               ],
-              thinking: { type: 'enabled' },
-              response_format: { type: 'json_object' },
-              temperature: 0.1,
+              generationConfig: {
+                maxOutputTokens: 4096,
+                responseFormat: {
+                  text: {
+                    mimeType: 'application/json',
+                    schema: this.responseSchema(),
+                  },
+                },
+              },
             },
             {
               headers: {
-                Authorization: `Bearer ${apiKey}`,
+                'x-goog-api-key': apiKey,
                 'Content-Type': 'application/json',
               },
               signal: AbortSignal.timeout(60_000),
             },
           ),
         );
-        const content: string | undefined =
-          response.data.choices?.[0]?.message?.content;
-        if (!content) throw new Error('GLM 未返回分析内容');
+        const content: string | undefined = response.data.candidates?.[0]
+          ?.content?.parts?.map((part: { text?: string }): string =>
+            part.text || '',
+          )
+          .join('');
+        if (!content) throw new Error('Gemini 未返回分析内容');
         const parsed: unknown = this.parseJson(content);
         if (!this.isAnalysisPayload(parsed)) {
-          throw new Error('GLM 返回结果不符合分析结构');
+          throw new Error('Gemini 返回结果不符合分析结构');
         }
         return parsed;
       } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        this.logger.warn(`GLM 第 ${attempt} 次分析失败：${lastError.message}`);
+        this.logger.warn(
+          `Gemini 第 ${attempt} 次分析失败：${lastError.message}`,
+        );
         if (attempt < 2) {
           await new Promise<void>((resolve: () => void): void => {
             setTimeout(resolve, 3_000);
@@ -169,7 +187,7 @@ export class GrowthAiAnalysisService {
         }
       }
     }
-    throw lastError || new Error('GLM 分析失败');
+    throw lastError || new Error('Gemini 分析失败');
   }
 
   private saveAnalysis(
@@ -183,7 +201,7 @@ export class GrowthAiAnalysisService {
         ? currentRecord
         : judgment;
     const status: GrowthJudgment['aiAnalysisStatus'] =
-      analysis.provider === 'glm' ? 'completed' : 'fallback';
+      analysis.provider === 'gemini' ? 'completed' : 'fallback';
     const updated: GrowthJudgment = {
       ...currentJudgment,
       aiAnalysisStatus: status,
@@ -193,12 +211,12 @@ export class GrowthAiAnalysisService {
     this.database.appendActivity({
       caseId: judgment.id,
       action:
-        analysis.provider === 'glm'
+        analysis.provider === 'gemini'
           ? 'ai_analysis_completed'
           : 'skill_analysis_completed',
       actor:
-        analysis.provider === 'glm'
-          ? `GLM · ${analysis.model}`
+        analysis.provider === 'gemini'
+          ? `Gemini · ${analysis.model}`
           : analysis.model,
       detail: analysis.summary,
       metadata: {
@@ -266,20 +284,23 @@ export class GrowthAiAnalysisService {
     this.database.appendActivity({
       caseId: judgment.id,
       action: 'ai_analysis_failed',
-      actor: `GLM · ${this.model()}`,
+      actor: `Gemini · ${this.model()}`,
       detail: message,
-      metadata: { source: 'glm', mode: 'manual_refresh' },
+      metadata: { source: 'gemini', mode: 'manual_refresh' },
     });
   }
 
-  private friendlyGlmError(message: string): string {
+  private friendlyGeminiError(message: string): string {
     if (message.includes('429')) {
-      return 'GLM 当前访问量过大，原分析已保留，请稍后手动重试';
+      return 'Gemini 免费额度或速率已受限，原分析已保留，请稍后重试';
+    }
+    if (message.includes('401') || message.includes('403')) {
+      return 'Gemini Key 无效、API 未开启或公司网络无法访问 Google API';
     }
     if (message.toLowerCase().includes('timeout')) {
-      return 'GLM 分析超时，原分析已保留，请稍后手动重试';
+      return 'Gemini 分析超时，原分析已保留，请检查公司 Mac 网络';
     }
-    return `GLM 分析失败，原分析已保留：${message}`;
+    return `Gemini 分析失败，原分析已保留：${message}`;
   }
 
   private analysisContext(
@@ -341,12 +362,12 @@ export class GrowthAiAnalysisService {
     } catch {
       const start: number = content.indexOf('{');
       const end: number = content.lastIndexOf('}');
-      if (start < 0 || end <= start) throw new Error('GLM 未返回 JSON');
+      if (start < 0 || end <= start) throw new Error('Gemini 未返回 JSON');
       return JSON.parse(content.slice(start, end + 1));
     }
   }
 
-  private isAnalysisPayload(value: unknown): value is GlmAnalysisPayload {
+  private isAnalysisPayload(value: unknown): value is GeminiAnalysisPayload {
     if (typeof value !== 'object' || value === null) return false;
     const judgment: unknown = Reflect.get(value, 'judgment');
     const evidence: unknown = Reflect.get(value, 'evidence');
@@ -383,11 +404,11 @@ export class GrowthAiAnalysisService {
   }
 
   private model(): string {
-    return process.env.GLM_MODEL || GLM_DEFAULT_MODEL;
+    return process.env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL;
   }
 
   private apiKey(): string {
-    if (process.env.GLM_API_KEY) return process.env.GLM_API_KEY;
+    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
     try {
       return execFileSync(
         'security',
@@ -396,7 +417,7 @@ export class GrowthAiAnalysisService {
           '-a',
           process.env.USER || '',
           '-s',
-          GLM_KEYCHAIN_SERVICE,
+          GEMINI_KEYCHAIN_SERVICE,
           '-w',
         ],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
@@ -404,5 +425,41 @@ export class GrowthAiAnalysisService {
     } catch {
       return '';
     }
+  }
+
+  private endpoint(model: string): string {
+    if (process.env.GEMINI_API_URL) return process.env.GEMINI_API_URL;
+    return `${GEMINI_DEFAULT_URL}/models/${encodeURIComponent(model)}:generateContent`;
+  }
+
+  private responseSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      properties: {
+        judgment: {
+          type: 'string',
+          enum: ['confirmed', 'uncertain', 'rejected'],
+        },
+        summary: { type: 'string' },
+        primaryCause: { type: 'string' },
+        evidence: { type: 'array', items: { type: 'string' } },
+        alternativeCauses: { type: 'array', items: { type: 'string' } },
+        recommendedNextStep: { type: 'string' },
+        risk: { type: 'string' },
+        confidence: { type: 'number', minimum: 0, maximum: 100 },
+        observationHours: { type: 'integer', minimum: 1, maximum: 168 },
+      },
+      required: [
+        'judgment',
+        'summary',
+        'primaryCause',
+        'evidence',
+        'alternativeCauses',
+        'recommendedNextStep',
+        'risk',
+        'confidence',
+        'observationHours',
+      ],
+    };
   }
 }

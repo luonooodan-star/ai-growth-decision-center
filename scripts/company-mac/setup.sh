@@ -150,8 +150,8 @@ for attempt in {1..30}; do
     print "本机页面：http://localhost:8081/（用户名 growth）"
     [[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/（同一公司网络内访问）"
     print "Doris 验证：node scripts/company-mac/mcp-whoami.mjs"
-    print "默认 GLM-4.7-Flash：zsh scripts/company-mac/configure-glm.sh"
-    print "未配置 GLM 时会自动使用产品 Skill 规则。"
+    print "默认 Gemini 3.7 Flash：zsh scripts/company-mac/configure-gemini.sh"
+    print "未配置 Gemini 时会自动使用产品 Skill 规则。"
     exit 0
   fi
   sleep 2

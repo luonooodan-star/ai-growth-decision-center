@@ -435,7 +435,7 @@ const GrowthDecisionPage: React.FC = () => {
             onGenerateRecommendation={handleGenerateRecommendation}
             onAnalyze={handleAiAnalysis}
             aiConfigured={Boolean(aiStatus?.configured)}
-            aiModel={aiStatus?.model || 'glm-4.7-flash'}
+            aiModel={aiStatus?.model || 'gemini-3.7-flash'}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">

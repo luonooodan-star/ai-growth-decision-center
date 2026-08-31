@@ -159,7 +159,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={aiConfigured ? 'secondary' : 'outline'}>
-              GLM-4.7-Flash {aiConfigured ? '已连接' : '未配置'}
+              Gemini Flash {aiConfigured ? '已连接' : '未配置'}
             </Badge>
             <Badge variant="outline">产品 Skill 自动降级</Badge>
             <Badge variant="secondary">{judgments.length} 条</Badge>
@@ -242,7 +242,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         </div>
                         {item.aiAnalysisStatus === 'running' ? (
                           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
-                            GLM 正在完成第一波分析…
+                            Gemini 正在完成第一波分析…
                           </div>
                         ) : null}
                         {item.aiAnalysis ? (
@@ -264,7 +264,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                                   variant="outline"
                                   className="border-amber-200 bg-amber-50 text-amber-700"
                                 >
-                                  GLM 不可用，已用 Skill
+                                  Gemini 不可用，已用 Skill
                                 </Badge>
                               ) : null}
                             </div>
@@ -313,15 +313,15 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           title={
                             aiConfigured
                               ? `只使用 ${aiModel} 重新分析，失败时保留原结果`
-                              : '请先在公司 Mac 配置 GLM API Key'
+                              : '请先在公司 Mac 配置 Gemini API Key'
                           }
                         >
                           <BrainCircuit className="size-4" />
                           {item.aiAnalysisStatus === 'running'
-                            ? 'GLM 分析中'
-                            : item.aiAnalysis?.provider === 'glm'
-                              ? '刷新 GLM 分析'
-                              : '用 GLM 重新分析'}
+                            ? 'Gemini 分析中'
+                            : item.aiAnalysis?.provider === 'gemini'
+                              ? '刷新 Gemini 分析'
+                              : '用 Gemini 重新分析'}
                         </Button>
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (

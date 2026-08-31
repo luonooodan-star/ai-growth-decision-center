@@ -58,14 +58,14 @@ zsh scripts/company-mac/setup.sh
 5. 执行类型检查和生产构建。
 6. 创建本地 SQLite 数据库，安装 `launchd` 服务并开机自启。
 
-要启用默认 GLM-4.7-Flash 深度分析，首次部署完成后执行：
+要启用默认 Gemini 3.7 Flash 深度分析，首次部署完成后执行：
 
 ```bash
-zsh scripts/company-mac/configure-glm.sh
+zsh scripts/company-mac/configure-gemini.sh
 ```
 
 脚本会把 Key 单独保存在 macOS Keychain、验证模型可用并重启服务。
-未配置或 GLM 请求失败时，异常分析会自动降级为产品 Skill。
+未配置或 Gemini 请求失败时，异常分析会自动降级为产品 Skill。
 
 部署后本机访问：
 
@@ -131,5 +131,5 @@ Doris MCP 是 `192.168.3.102` 局域网地址，公司 Mac 必须在对应公司
 - 页面与所有 API 均受独立访问密码保护，并拒绝跨站写入。
 - 定时扫描只能写入“待判断异常”，不能直接调整广告。
 - 判断的确认/待定/否决与调整建议的采纳率分开计算。
-- GLM 只接收单条异常所需的聚合指标、人工阈值和产品 Skill 上下文，不接收
-  Doris 凭据，也不在前端暴露 GLM Key。
+- Gemini 只接收单条异常所需的聚合指标、人工阈值和产品 Skill 上下文，不接收
+  Doris 凭据，也不在前端暴露 Gemini Key。

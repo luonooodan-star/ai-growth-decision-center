@@ -72,7 +72,7 @@ async function reviewJudgment(
 async function analyzeJudgment(id: string): Promise<GrowthJudgment> {
   const response = await axios.post<GrowthJudgment>(
     `/api/growth-decision/judgments/${id}/ai-analysis`,
-    { mode: 'glm_only' },
+    { mode: 'gemini_only' },
   );
   return response.data;
 }

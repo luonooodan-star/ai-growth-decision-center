@@ -193,7 +193,7 @@ export interface GrowthJudgment {
 export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
 
 export interface GrowthAiAnalysis {
-  provider: 'glm' | 'product_skill';
+  provider: 'gemini' | 'product_skill';
   model: string;
   judgment: GrowthAiJudgment;
   summary: string;
@@ -209,7 +209,7 @@ export interface GrowthAiAnalysis {
 }
 
 export interface GrowthAiProviderStatus {
-  provider: 'glm';
+  provider: 'gemini';
   model: string;
   configured: boolean;
   fallbackProvider: 'product_skill';
@@ -217,7 +217,7 @@ export interface GrowthAiProviderStatus {
 }
 
 export interface AnalyzeJudgmentRequest {
-  mode?: 'default' | 'glm_only';
+  mode?: 'default' | 'gemini_only';
 }
 
 export interface UpdateDecisionRequest {
