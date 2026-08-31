@@ -55,6 +55,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 
 import { JudgmentQueue } from './JudgmentQueue';
+import { FetchHistoryControl } from './FetchHistoryControl';
 
 interface StatCardProps {
   label: string;
@@ -269,8 +270,13 @@ const GrowthDecisionPage: React.FC = () => {
             className="gap-1.5 border-emerald-200 bg-emerald-50 text-emerald-700"
           >
             <span className="size-1.5 rounded-full bg-emerald-500" />
-            本地链路正常
+            公司 Mac 局域网服务
           </Badge>
+          <FetchHistoryControl
+            productId={productId}
+            onCompleted={loadDashboard}
+            onError={setError}
+          />
           <Button
             variant="outline"
             onClick={() => void loadDashboard()}
@@ -602,7 +608,7 @@ const GrowthDecisionPage: React.FC = () => {
                   自动化节奏
                 </div>
                 <p className="mt-1">
-                  每小时与每周一触发器已创建，发布验证后可由管理员启用。
+                  每小时 Doris 抓取已启用；手动抓取与结果历史可在页面顶部查看。
                 </p>
               </div>
             </CardContent>

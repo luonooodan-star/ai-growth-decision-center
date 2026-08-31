@@ -3,6 +3,7 @@ import { Bot, Check, Clock3, SearchCheck, X } from 'lucide-react';
 
 import type {
   GrowthJudgment,
+  GrowthMetricKey,
   ReviewJudgmentRequest,
 } from '@shared/api.interface';
 
@@ -45,6 +46,24 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
   confirmed: '确认判断',
   deferred: '暂时待定',
   rejected: '否决判断',
+};
+
+const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
+  { key: 'cpi', label: 'CPI' },
+  { key: 'cpa', label: 'CPA' },
+  { key: 'd0_roas', label: 'D0 ROAS' },
+  { key: 'ecpm', label: 'ECPM' },
+  { key: 'retention_d1', label: '次留' },
+  { key: 'ipu', label: 'IPU' },
+  { key: 'arpu', label: 'ARPU' },
+];
+
+const metricValue = (item: GrowthJudgment, key: GrowthMetricKey): string => {
+  const value = item.metricValues?.[key] ?? (item.targetMetric === key ? item.currentValue : undefined);
+  if (value === undefined) return '—';
+  if (key === 'd0_roas' || key === 'retention_d1') return `${(value * 100).toFixed(2)}%`;
+  if (key === 'cpi' || key === 'cpa' || key === 'ecpm' || key === 'arpu') return `$${value.toFixed(3)}`;
+  return value.toFixed(3);
 };
 
 const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
@@ -134,9 +153,8 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           <span className="text-xs text-slate-500">
                             {item.productName}
                           </span>
-                          <span className="truncate text-xs text-slate-500">
-                            {item.campaignName || item.campaignId || '产品级'}
-                          </span>
+                          <span className="truncate text-xs text-slate-500">Campaign：{item.campaignName || item.campaignId || '产品级'}</span>
+                          <span className="truncate text-xs text-slate-500">广告组：{item.adsetName || item.adsetId || '未定位'}</span>
                         </div>
                         <h2 className="mt-3 text-sm font-semibold text-slate-950">
                           {item.anomalyType} · {item.targetMetric.toUpperCase()}
@@ -147,6 +165,14 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         <p className="mt-2 text-sm leading-6 text-slate-600">
                           {item.preliminaryJudgment}
                         </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+                          {DEFAULT_METRICS.map((metric) => (
+                            <div key={metric.key} className="rounded-lg bg-slate-50 px-2.5 py-2">
+                              <p className="text-[10px] font-medium text-slate-500">{metric.label}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-900">{metricValue(item, metric.key)}</p>
+                            </div>
+                          ))}
+                        </div>
                         <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
                           <span className="flex items-center gap-1.5">
                             <Bot className="size-3.5" />

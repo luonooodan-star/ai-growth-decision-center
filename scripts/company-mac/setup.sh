@@ -37,6 +37,10 @@ node_supported="$(node -p '
 
 cd "$project_dir"
 
+if [[ "$project_dir" == "$HOME/Downloads/"* ]]; then
+  print -u2 "提示：建议将服务放到 $HOME/Services/，避免 macOS 对 Downloads 的后台访问限制。"
+fi
+
 print "[1/6] 安装项目依赖"
 npm ci
 
@@ -140,8 +144,10 @@ print "[6/6] 等待服务启动"
 health_url="http://localhost:8081/health/live"
 for attempt in {1..30}; do
   if curl -fsS "$health_url" >/dev/null 2>&1; then
+    lan_ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
     print "部署完成：$health_url"
-    print "页面地址：http://localhost:8081/（用户名 growth）"
+    print "本机页面：http://localhost:8081/（用户名 growth）"
+    [[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/（同一公司网络内访问）"
     print "Doris 验证：node scripts/company-mac/mcp-whoami.mjs"
     exit 0
   fi

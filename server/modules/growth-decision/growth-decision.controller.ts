@@ -4,25 +4,51 @@ import type {
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
   GrowthDashboardResponse,
+  GrowthFetchHistoryResponse,
+  GrowthFetchRun,
   GrowthDecisionCase,
   GrowthJudgment,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
   ReviewJudgmentRequest,
+  TriggerGrowthFetchRequest,
   UpdateDecisionRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
 import { GrowthDecisionService } from './growth-decision.service';
+import { GrowthDataFetchService } from './growth-data-fetch.service';
 
 @Controller('api/growth-decision')
 export class GrowthDecisionController {
-  constructor(private readonly growthDecisionService: GrowthDecisionService) {}
+  constructor(
+    private readonly growthDecisionService: GrowthDecisionService,
+    private readonly growthDataFetchService: GrowthDataFetchService,
+  ) {}
 
   @Get('dashboard')
   async getDashboard(): Promise<GrowthDashboardResponse> {
     return this.growthDecisionService.getDashboard();
+  }
+
+  @Get('fetch-history')
+  getFetchHistory(): GrowthFetchHistoryResponse {
+    return this.growthDataFetchService.getHistory();
+  }
+
+  @Get('products/:productId/fetch-history')
+  getProductFetchHistory(
+    @Param('productId') productId: string,
+  ): GrowthFetchHistoryResponse {
+    return this.growthDataFetchService.getHistory(productId);
+  }
+
+  @Post('fetches/trigger')
+  async triggerFetch(
+    @Body() request: TriggerGrowthFetchRequest,
+  ): Promise<GrowthFetchRun[]> {
+    return this.growthDataFetchService.trigger('manual', request.productId);
   }
 
   @Post('products')

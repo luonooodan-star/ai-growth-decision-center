@@ -32,4 +32,6 @@ npm run build:company
 print "[5/5] 重启公司 Mac 服务"
 launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL"
 
+lan_ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
 print "更新完成：http://localhost:8081/"
+[[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/"

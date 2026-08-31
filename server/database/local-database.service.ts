@@ -6,7 +6,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 import type {
   GrowthDecisionCase,
+  GrowthFetchRun,
   GrowthJudgment,
+  GrowthMetricDefinition,
   GrowthProduct,
 } from '@shared/api.interface';
 
@@ -21,6 +23,16 @@ interface DecisionActivityInput {
 }
 
 const WINGSLITE_PRODUCT_ID = '579150cc-4ebe-4f27-891d-2dbc375d7889';
+
+const DEFAULT_GROWTH_METRICS: GrowthMetricDefinition[] = [
+  { key: 'cpi', label: 'CPI', unit: 'usd', direction: 'lower', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_daily.cpi', description: '每个 Adjust 安装对应的广告消耗。' },
+  { key: 'cpa', label: 'CPA', unit: 'usd', direction: 'lower', availability: 'pending', source: '待产品侧转化事件口径确认', description: '每个目标转化对应的广告消耗；当前 Doris 权限未提供目标转化指标。' },
+  { key: 'd0_roas', label: 'D0 ROAS', unit: 'percent', direction: 'higher', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_cohort_metric.d0_roas', description: '成熟 cohort 的首日广告支出回报。' },
+  { key: 'ecpm', label: 'ECPM', unit: 'usd', direction: 'higher', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'spend / impressions × 1000', description: '每千次广告展示对应的消耗。' },
+  { key: 'retention_d1', label: '次留', unit: 'percent', direction: 'higher', availability: 'pending', source: '待产品后台次日留存数据集接入', description: '安装用户次日留存率。' },
+  { key: 'ipu', label: 'IPU', unit: 'number', direction: 'higher', availability: 'pending', source: '待产品负责人确认业务定义与数据字段', description: '保留产品原始 IPU 口径，不在未确认前推导。' },
+  { key: 'arpu', label: 'ARPU', unit: 'usd', direction: 'higher', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'adjust_revenue / adjust_installs', description: '每个 Adjust 安装用户对应的收入。' },
+];
 
 @Injectable()
 export class LocalDatabaseService implements OnModuleDestroy {
@@ -48,7 +60,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .all();
     return rows.map(
       (row: Record<string, unknown>): GrowthProduct =>
-        this.parsePayload<GrowthProduct>(row.payload),
+        this.normalizeProduct(this.parsePayload<GrowthProduct>(row.payload)),
     );
   }
 
@@ -56,7 +68,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
     const row: Record<string, unknown> | undefined = this.database
       .prepare('SELECT payload FROM growth_product WHERE id = ?')
       .get(id);
-    return row ? this.parsePayload<GrowthProduct>(row.payload) : undefined;
+    return row
+      ? this.normalizeProduct(this.parsePayload<GrowthProduct>(row.payload))
+      : undefined;
   }
 
   saveProduct(product: GrowthProduct): void {
@@ -144,6 +158,31 @@ export class LocalDatabaseService implements OnModuleDestroy {
       );
   }
 
+  listFetchRuns(productId?: string, limit = 100): GrowthFetchRun[] {
+    const rows: Record<string, unknown>[] = productId
+      ? this.database
+          .prepare('SELECT payload FROM growth_fetch_run WHERE product_id = ? ORDER BY started_at DESC LIMIT ?')
+          .all(productId, limit)
+      : this.database
+          .prepare('SELECT payload FROM growth_fetch_run ORDER BY started_at DESC LIMIT ?')
+          .all(limit);
+    return rows.map((row) => this.parsePayload<GrowthFetchRun>(row.payload));
+  }
+
+  saveFetchRun(run: GrowthFetchRun): void {
+    this.database
+      .prepare(`
+        INSERT INTO growth_fetch_run (id, product_id, status, started_at, payload)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          product_id = excluded.product_id,
+          status = excluded.status,
+          started_at = excluded.started_at,
+          payload = excluded.payload
+      `)
+      .run(run.id, run.productId || null, run.status, run.startedAt, JSON.stringify(run));
+  }
+
   private initializeSchema(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS growth_product (
@@ -182,6 +221,18 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
       CREATE INDEX IF NOT EXISTS idx_growth_activity_case
         ON growth_decision_activity(case_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS growth_fetch_run (
+        id TEXT PRIMARY KEY,
+        product_id TEXT,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (product_id) REFERENCES growth_product(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_growth_fetch_product
+        ON growth_fetch_run(product_id, started_at DESC);
     `);
   }
 
@@ -217,6 +268,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
         increaseEnabled: false,
         decreaseEnabled: false,
       },
+      metrics: DEFAULT_GROWTH_METRICS,
     };
     this.saveProduct(product);
   }
@@ -227,6 +279,14 @@ export class LocalDatabaseService implements OnModuleDestroy {
     }
     return JSON.parse(value) as T;
   }
+
+  private normalizeProduct(product: GrowthProduct): GrowthProduct {
+    return {
+      ...product,
+      metrics: product.metrics?.length ? product.metrics : DEFAULT_GROWTH_METRICS,
+    };
+  }
 }
 
+export { DEFAULT_GROWTH_METRICS };
 export type { DecisionActivityInput, DecisionRecord };

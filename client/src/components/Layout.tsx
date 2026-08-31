@@ -1,4 +1,4 @@
-import { Activity, Database, FlaskConical, Sparkles } from 'lucide-react';
+import { Activity, Database, FlaskConical, Gauge, Sparkles } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 const Layout = () => {
@@ -33,6 +33,13 @@ const Layout = () => {
               <Database className="size-3.5" />
               实验库
             </span>
+            <Link
+              to="/metrics"
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${location.pathname === '/metrics' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+            >
+              <Gauge className="size-3.5" />
+              指标库
+            </Link>
             <span className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
               <FlaskConical className="size-3.5" />
               Skill 迭代

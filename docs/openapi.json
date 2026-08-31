@@ -37,7 +37,11 @@
                     "targetMetric": "cpa",
                     "channel": "facebook",
                     "dataDelayMinutes": 60,
-                    "skillVersion": "v0.1.0"
+                    "skillVersion": "product-standard-pending",
+                    "metrics": [
+                      { "key": "cpi", "label": "CPI", "availability": "direct" },
+                      { "key": "d0_roas", "label": "D0 ROAS", "availability": "direct" }
+                    ]
                   }
                 }
               }
@@ -80,6 +84,7 @@
                   "currentValue": { "type": "number", "description": "指标当前值", "example": 42.8 },
                   "baselineValue": { "type": "number", "description": "对照基线值", "example": 31.2 },
                   "deviationPct": { "type": "number", "description": "相对基线变化百分比", "example": 37.2 },
+                  "metricValues": { "type": "object", "description": "产品默认指标快照", "example": { "cpi": 1.42, "cpa": 8.6, "d0_roas": 0.21, "ecpm": 4.8, "retention_d1": 0.31, "ipu": 0.08, "arpu": 0.36 } },
                   "evidence": { "type": "string", "description": "异常检测证据", "example": "过去 3 小时消耗 560 美元，转化 14 个，CPA 较七日同时段上升 37.2%。" },
                   "rootCause": { "type": "string", "description": "原因分析结论", "example": "CTR 连续三天下降且 Frequency 升至 4.9，素材疲劳概率较高。" },
                   "confidence": { "type": "number", "description": "原因判断置信度百分比", "example": 78 },
@@ -105,7 +110,8 @@
                     "productName": "Product A",
                     "status": "pending",
                     "anomalyType": "CPA 突然上升",
-                    "confidence": 78
+                    "confidence": 78,
+                    "metricValues": { "cpi": 1.42, "cpa": 8.6, "d0_roas": 0.21 }
                   }
                 }
               }
@@ -148,6 +154,7 @@
                   "currentValue": { "type": "number", "description": "指标当前值", "example": 0.18 },
                   "baselineValue": { "type": "number", "description": "对照基线值", "example": 0.24 },
                   "deviationPct": { "type": "number", "description": "相对基线变化百分比", "example": -25 },
+                  "metricValues": { "type": "object", "description": "产品默认指标快照", "example": { "cpi": 1.42, "d0_roas": 0.18, "ecpm": 4.8, "arpu": 0.31 } },
                   "evidence": { "type": "string", "description": "异常检测证据", "example": "成熟 cohort 的 D0 ROAS 较七日同小时基线下降 25%。" },
                   "rootCause": { "type": "string", "description": "第一波原因分析", "example": "CTR 稳定但安装后收入下降，问题更可能位于产品转化侧。" },
                   "confidence": { "type": "number", "description": "判断置信度百分比", "example": 76 },
@@ -169,7 +176,8 @@
                     "id": "8dd23410-61df-44df-9d3c-164933134da5",
                     "productName": "Wingslite",
                     "status": "judgment_pending",
-                    "preliminaryJudgment": "异常真实，暂不归因于素材疲劳。"
+                    "preliminaryJudgment": "异常真实，暂不归因于素材疲劳。",
+                    "metricValues": { "cpi": 1.42, "d0_roas": 0.18, "ecpm": 4.8, "arpu": 0.31 }
                   }
                 }
               }

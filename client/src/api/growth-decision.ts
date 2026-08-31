@@ -3,6 +3,8 @@ import axios from 'axios';
 import type {
   GrowthDashboardResponse,
   GrowthDecisionCase,
+  GrowthFetchHistoryResponse,
+  GrowthFetchRun,
   GrowthJudgment,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
@@ -12,6 +14,22 @@ import type {
 async function getDashboard(): Promise<GrowthDashboardResponse> {
   const response = await axios.get<GrowthDashboardResponse>(
     '/api/growth-decision/dashboard',
+  );
+  return response.data;
+}
+
+async function getFetchHistory(productId?: string): Promise<GrowthFetchHistoryResponse> {
+  const path = productId
+    ? `/api/growth-decision/products/${productId}/fetch-history`
+    : '/api/growth-decision/fetch-history';
+  const response = await axios.get<GrowthFetchHistoryResponse>(path);
+  return response.data;
+}
+
+async function triggerFetch(productId?: string): Promise<GrowthFetchRun[]> {
+  const response = await axios.post<GrowthFetchRun[]>(
+    '/api/growth-decision/fetches/trigger',
+    { productId },
   );
   return response.data;
 }
@@ -49,4 +67,11 @@ async function updateResult(
   return response.data;
 }
 
-export { getDashboard, reviewJudgment, updateDecision, updateResult };
+export {
+  getDashboard,
+  getFetchHistory,
+  reviewJudgment,
+  triggerFetch,
+  updateDecision,
+  updateResult,
+};

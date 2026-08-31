@@ -11,6 +11,8 @@
 - 每小时扫描、每周一复盘的统计服务接口
 - 可供 Doris MCP 或外部 Agent 调用的 OpenAPI
 - 可版本化的 Facebook 增长决策 Skill
+- 每小时 Doris 自动抓取、手动抓取与右侧历史抽屉
+- 产品指标库（直取、计算、待接入口径分层）
 
 ## 技术结构
 
@@ -28,7 +30,7 @@ React 决策工作台
 `shared/api.interface.ts`。独立版数据保存在
 `runtime/ai-growth.sqlite`，该目录不进入 Git。
 
-## 本地启动
+## 公司 Mac 局域网部署
 
 独立版要求 Node.js 22.13 或更高版本，无需 `lark-cli`。
 
@@ -38,9 +40,12 @@ CLIENT_BASE_PATH=/ npm run build:prod
 npm run start:standalone
 ```
 
-默认访问地址为 `http://localhost:8081/`。独立部署必须设置
+服务监听 `0.0.0.0:8081`。本机使用 `http://localhost:8081/`，同一公司
+局域网的其他电脑使用 `http://<公司Mac局域网IP>:8081/`。独立部署必须设置
 `GROWTH_BASIC_AUTH_PASSWORD`，用户名固定为 `growth`。公司 Mac 安装脚本
-会将该密码保存到 macOS Keychain。
+会将该密码保存到 macOS Keychain。建议把仓库放在 `$HOME/Services/`，不要放在
+Downloads；若 macOS 防火墙开启，需要允许 Node 接收入站连接。局域网 HTTP 仅适合
+可信公司网络，不应直接暴露到公网。
 
 常用检查：
 
@@ -124,9 +129,9 @@ Wingslite 的只读连接已于 2026-08-28 验证通过。当前固定使用
 
 ## 自动化状态
 
-妙搭触发器不再是运行依赖。公司 Mac 将由 macOS `launchd`
-执行每小时扫描和每周一复盘。当前仍只开放 Doris 连接验证，实际
-定时分析在首次真实查询和去重验证后再启用。
+妙搭触发器不再是运行依赖。公司 Mac 进程内每 60 分钟通过只读 MCP 抓取一次，
+页面也可手动触发；每次成功、部分完成或失败都会进入抓取历史。产品阈值未校准前，
+只更新指标与抓取记录，不会凭空制造异常或预算调整建议。
 
 ## 消息与广告执行集成
 

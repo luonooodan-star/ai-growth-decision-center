@@ -6,6 +6,7 @@ import {
 import { randomUUID } from 'node:crypto';
 
 import {
+  DEFAULT_GROWTH_METRICS,
   LocalDatabaseService,
   type DecisionRecord,
 } from '@server/database/local-database.service';
@@ -123,6 +124,7 @@ export class GrowthDecisionService {
       currentValue: request.currentValue,
       baselineValue: request.baselineValue,
       deviationPct: request.deviationPct,
+      metricValues: request.metricValues,
       evidence: request.evidence,
       rootCause: request.rootCause,
       confidence: request.confidence,
@@ -210,6 +212,7 @@ export class GrowthDecisionService {
       currentValue: judgment.currentValue,
       baselineValue: judgment.baselineValue,
       deviationPct: judgment.deviationPct,
+      metricValues: judgment.metricValues,
       evidence: judgment.evidence,
       rootCause: judgment.rootCause,
       confidence: judgment.confidence,
@@ -249,6 +252,7 @@ export class GrowthDecisionService {
       skillVersion: 'product-standard-pending',
       dorisSource: request.dorisSource,
       thresholds: { configuredBy: userId || 'local_operator' },
+      metrics: DEFAULT_GROWTH_METRICS,
     };
     this.database.saveProduct(product);
     return product;

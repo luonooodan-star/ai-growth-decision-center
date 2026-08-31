@@ -11,6 +11,56 @@ export interface GrowthProduct {
   dorisSource?: string;
   lastSyncAt?: string;
   thresholds: Record<string, number | string | boolean | null>;
+  metrics: GrowthMetricDefinition[];
+  latestMetricValues?: GrowthMetricValues;
+}
+
+export type GrowthMetricKey =
+  | 'cpi'
+  | 'cpa'
+  | 'd0_roas'
+  | 'ecpm'
+  | 'retention_d1'
+  | 'ipu'
+  | 'arpu';
+
+export type GrowthMetricAvailability = 'direct' | 'derived' | 'pending';
+
+export interface GrowthMetricDefinition {
+  key: GrowthMetricKey;
+  label: string;
+  unit: 'usd' | 'percent' | 'number';
+  direction: 'higher' | 'lower';
+  availability: GrowthMetricAvailability;
+  source: string;
+  formula?: string;
+  description: string;
+}
+
+export type GrowthMetricValues = Partial<Record<GrowthMetricKey, number>>;
+
+export interface GrowthFetchRun {
+  id: string;
+  productId?: string;
+  productName?: string;
+  trigger: 'scheduled' | 'manual';
+  status: 'running' | 'success' | 'partial' | 'failed';
+  startedAt: string;
+  finishedAt?: string;
+  rowsFetched: number;
+  anomalyCount: number;
+  source: string;
+  message: string;
+}
+
+export interface GrowthFetchHistoryResponse {
+  items: GrowthFetchRun[];
+  scheduleMinutes: number;
+  nextScheduledAt: string;
+}
+
+export interface TriggerGrowthFetchRequest {
+  productId?: string;
 }
 
 export interface RecommendedAction {
@@ -43,6 +93,7 @@ export interface GrowthDecisionCase {
   currentValue?: number;
   baselineValue?: number;
   deviationPct?: number;
+  metricValues?: GrowthMetricValues;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -102,6 +153,7 @@ export interface GrowthJudgment {
   currentValue?: number;
   baselineValue?: number;
   deviationPct?: number;
+  metricValues?: GrowthMetricValues;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -153,6 +205,7 @@ export interface IngestDecisionCaseRequest {
   currentValue?: number;
   baselineValue?: number;
   deviationPct?: number;
+  metricValues?: GrowthMetricValues;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -181,6 +234,7 @@ export interface IngestJudgmentRequest {
   currentValue?: number;
   baselineValue?: number;
   deviationPct?: number;
+  metricValues?: GrowthMetricValues;
   evidence: string;
   rootCause: string;
   confidence: number;
