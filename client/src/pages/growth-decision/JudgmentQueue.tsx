@@ -63,9 +63,9 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
 };
 
 const AI_JUDGMENT_LABELS: Record<string, string> = {
-  confirmed: 'Mavis 判断成立',
-  uncertain: 'Mavis 判断待定',
-  rejected: 'Mavis 判断不成立',
+  confirmed: 'Marvis 判断成立',
+  uncertain: 'Marvis 判断待定',
+  rejected: 'Marvis 判断不成立',
 };
 
 const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
@@ -163,11 +163,11 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={mavisConfigured ? 'secondary' : 'outline'}>
-              Mavis {mavisConfigured ? '任务桥已启用' : '未启用'}
+              Marvis {mavisConfigured ? '任务桥已启用' : '未启用'}
             </Badge>
             <Badge variant="outline">
               {mavisRuntimeMode === 'external_worker'
-                ? '外部 Mavis Worker'
+                ? '外部 Marvis Worker'
                 : '产品 Skill 模拟运行'}
             </Badge>
             {mavisQueuedJobs > 0 ? (
@@ -253,7 +253,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         </div>
                         {item.aiAnalysisStatus === 'running' ? (
                           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
-                            Mavis 正在完成第一波分析…
+                            Marvis 正在完成第一波分析…
                           </div>
                         ) : null}
                         {item.aiAnalysis ? (
@@ -324,15 +324,15 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           title={
                             mavisConfigured
                               ? `创建 ${mavisModel} 分析任务并记录完整过程`
-                              : 'Mavis 任务桥尚未启用'
+                              : 'Marvis 任务桥尚未启用'
                           }
                         >
                           <BrainCircuit className="size-4" />
                           {item.aiAnalysisStatus === 'running'
-                            ? 'Mavis 分析中'
+                            ? 'Marvis 分析中'
                             : item.aiAnalysis?.provider === 'mavis'
-                              ? '重新运行 Mavis'
-                              : '使用 Mavis 分析'}
+                              ? '重新运行 Marvis'
+                              : '使用 Marvis 分析'}
                         </Button>
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (

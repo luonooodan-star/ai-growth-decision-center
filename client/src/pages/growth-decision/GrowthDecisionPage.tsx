@@ -435,7 +435,7 @@ const GrowthDecisionPage: React.FC = () => {
             onGenerateRecommendation={handleGenerateRecommendation}
             onAnalyze={handleAiAnalysis}
             mavisConfigured={Boolean(aiStatus?.configured)}
-            mavisModel={aiStatus?.model || 'Mavis Growth Analyst'}
+            mavisModel={aiStatus?.model || 'Marvis Growth Analyst'}
             mavisRuntimeMode={
               aiStatus?.runtimeMode || 'skill_simulation'
             }

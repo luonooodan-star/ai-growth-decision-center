@@ -59,16 +59,16 @@ lan_ip="$(ipconfig getifaddr en0 2>/dev/null || \
   ipconfig getifaddr en1 2>/dev/null || true)"
 mcp_host="${lan_ip:-127.0.0.1}"
 
-print "Mavis MCP 已准备好。"
+print "Marvis MCP 已准备好。"
 print "URL：http://$mcp_host:8081/mcp/growth-decision"
 print "HTTP Basic：使用页面账号 growth 和页面访问密码"
-print "X-Mavis-Token：$token"
+print "X-Marvis-Token：$token（兼容旧请求头 X-Mavis-Token）"
 if [[ "$mode" == "external" ]]; then
-  print "当前模式：外部 Mavis Worker（新任务等待 Mavis 领取）。"
+  print "当前模式：外部 Marvis Worker（新任务等待 Marvis 领取）。"
 else
   print "当前模式：产品 Skill 模拟运行。"
 fi
-print "真实 Mavis 接入后，将该 URL 和 X-Mavis-Token 配到它的 MCP 客户端。"
+print "真实 Marvis 接入后，将该 URL 和 X-Marvis-Token 配到它的 MCP 客户端。"
 print "切到外部模式：zsh scripts/company-mac/configure-mavis.sh external"
 print "切回模拟模式：zsh scripts/company-mac/configure-mavis.sh simulation"
 print "项目目录：$project_dir"

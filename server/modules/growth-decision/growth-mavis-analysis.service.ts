@@ -34,7 +34,7 @@ export class GrowthMavisAnalysisService {
     const jobs: GrowthMavisJob[] = this.database.listMavisJobs(undefined, 1000);
     return {
       provider: 'mavis',
-      model: process.env.MAVIS_MODEL || 'Mavis Growth Analyst',
+      model: process.env.MAVIS_MODEL || 'Marvis Growth Analyst',
       configured: true,
       runtimeMode: this.runtimeMode(),
       mcpConfigured: Boolean(this.mcpToken()),
@@ -88,7 +88,7 @@ export class GrowthMavisAnalysisService {
     this.database.appendActivity({
       caseId: judgment.id,
       action: 'mavis_job_queued',
-      actor: 'Mavis Bridge',
+      actor: 'Marvis Bridge',
       detail: `已创建异常分析任务 ${job.id}`,
       metadata: {
         source: 'mavis',
@@ -134,7 +134,7 @@ export class GrowthMavisAnalysisService {
     this.validateAnalysis(request.analysis);
     const analysis: GrowthAiAnalysis = {
       provider: 'mavis',
-      model: request.model.trim() || 'Mavis Growth Analyst',
+      model: request.model.trim() || 'Marvis Growth Analyst',
       ...request.analysis,
       confidence: Math.round(request.analysis.confidence),
       observationHours: Math.round(request.analysis.observationHours),
@@ -159,7 +159,7 @@ export class GrowthMavisAnalysisService {
       ...job,
       status: 'failed',
       workerId: request.workerId,
-      error: request.error.trim() || 'Mavis Worker 未返回错误详情',
+      error: request.error.trim() || 'Marvis Worker 未返回错误详情',
       completedAt: new Date().toISOString(),
     };
     this.database.saveMavisJob(failed);
@@ -172,7 +172,7 @@ export class GrowthMavisAnalysisService {
       caseId: judgment.id,
       action: 'mavis_analysis_failed',
       actor: request.workerId,
-      detail: failed.error || 'Mavis 分析失败',
+      detail: failed.error || 'Marvis 分析失败',
       metadata: { source: 'mavis', requestId: job.id },
     });
     return failed;
@@ -182,7 +182,7 @@ export class GrowthMavisAnalysisService {
     const expected: string = this.mcpToken();
     const provided: string = token?.trim() || '';
     if (!expected || !provided || !this.safeEqual(expected, provided)) {
-      throw new UnauthorizedException('Mavis MCP Token 无效或未配置');
+      throw new UnauthorizedException('Marvis MCP Token 无效或未配置');
     }
   }
 
@@ -207,7 +207,7 @@ export class GrowthMavisAnalysisService {
       '产品级';
     return this.completeJob(running.id, {
       workerId: LOCAL_WORKER_ID,
-      model: 'Mavis Bridge · Product Skill Simulation',
+      model: 'Marvis Bridge · Product Skill Simulation',
       analysis: {
         judgment: 'confirmed',
         summary:
@@ -274,16 +274,16 @@ export class GrowthMavisAnalysisService {
 
   private getJob(id: string): GrowthMavisJob {
     const job: GrowthMavisJob | undefined = this.database.getMavisJob(id);
-    if (!job) throw new NotFoundException('Mavis 分析任务不存在');
+    if (!job) throw new NotFoundException('Marvis 分析任务不存在');
     return job;
   }
 
   private ensureWorkerOwnsJob(job: GrowthMavisJob, workerId: string): void {
     if (job.status !== 'running') {
-      throw new BadRequestException('Mavis 分析任务当前不可回写');
+      throw new BadRequestException('Marvis 分析任务当前不可回写');
     }
     if (!workerId.trim() || job.workerId !== workerId.trim()) {
-      throw new BadRequestException('该任务未由当前 Mavis Worker 领取');
+      throw new BadRequestException('该任务未由当前 Marvis Worker 领取');
     }
   }
 
@@ -310,7 +310,7 @@ export class GrowthMavisAnalysisService {
       analysis.observationHours < 1 ||
       analysis.observationHours > 168
     ) {
-      throw new BadRequestException('Mavis 分析结果不符合结构化输出合同');
+      throw new BadRequestException('Marvis 分析结果不符合结构化输出合同');
     }
   }
 

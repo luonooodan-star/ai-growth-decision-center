@@ -33,7 +33,7 @@ interface MavisMcpResponse {
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: 'claim_analysis_job',
-    description: '领取一个等待 Mavis 分析的广告异常任务',
+    description: '领取一个等待 Marvis 分析的广告异常任务',
     inputSchema: {
       type: 'object',
       properties: { workerId: { type: 'string' } },
@@ -65,7 +65,7 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: 'fail_analysis_job',
-    description: '记录 Mavis 分析任务失败和错误原因',
+    description: '记录 Marvis 分析任务失败和错误原因',
     inputSchema: {
       type: 'object',
       properties: {
@@ -87,9 +87,10 @@ export class GrowthMavisMcpController {
   @Post()
   handleMcp(
     @Headers('x-mavis-token') mavisToken: string | undefined,
+    @Headers('x-marvis-token') marvisToken: string | undefined,
     @Body() request: MavisMcpRequest,
   ): MavisMcpResponse {
-    this.growthMavisAnalysisService.authorize(mavisToken);
+    this.growthMavisAnalysisService.authorize(marvisToken || mavisToken);
     if (request.jsonrpc !== '2.0') {
       return this.error(request.id, -32600, '仅支持 JSON-RPC 2.0');
     }
@@ -164,7 +165,7 @@ export class GrowthMavisMcpController {
         },
       );
     }
-    throw new BadRequestException(`未知 Mavis Tool：${name}`);
+    throw new BadRequestException(`未知 Marvis Tool：${name}`);
   }
 
   private stringArg(args: Record<string, unknown>, key: string): string {

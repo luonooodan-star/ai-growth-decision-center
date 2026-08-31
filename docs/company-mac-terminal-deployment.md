@@ -58,23 +58,36 @@ zsh scripts/company-mac/setup.sh
 5. 执行类型检查和生产构建。
 6. 创建本地 SQLite 数据库，安装 `launchd` 服务并开机自启。
 
-首次部署完成后，可查看供 Mavis 使用的 MCP 地址和 Token：
+首次部署完成后，可查看供 Marvis 使用的 MCP 地址和 Token：
 
 ```bash
 zsh scripts/company-mac/configure-mavis.sh
 ```
 
 MCP Token 由部署脚本自动生成并单独保存在 macOS Keychain。当前第一版
-默认使用产品 Skill 模拟 Mavis Worker，先验证“创建任务 → 读取上下文 →
+默认使用产品 Skill 模拟 Marvis Worker，先验证“创建任务 → 读取上下文 →
 结构化分析 → 回写页面”的完整闭环，不需要任何第三方模型 API Key。
 MCP 客户端需同时使用页面 HTTP Basic 登录，并通过独立的
-`X-Mavis-Token` 请求头传入 Mavis Token。
+`X-Marvis-Token` 请求头传入 Marvis Token（旧的 `X-Mavis-Token` 仍兼容）。
 
-接入真实 Mavis Worker 后切换模式：
+接入真实 Marvis Worker 后切换模式：
 
 ```bash
 zsh scripts/company-mac/configure-mavis.sh external
 ```
+
+生成可导入 Marvis 的 Skill 和自动任务提示词：
+
+```bash
+zsh scripts/company-mac/prepare-marvis-integration.sh
+```
+
+脚本会把 Skill、提示词和本地安全代理生成到 `~/Downloads/ai-growth-marvis/`。
+安全代理仅从 macOS Keychain 读取页面密码和 Marvis Token，不会把凭据写入 Skill。
+在 Marvis 中导入生成的 `growth-decision-analyst.zip`，再创建每 1 分钟运行一次的
+自动任务并粘贴生成的提示词。网页点击“使用 Marvis 分析”后，任务会先进入本地队列，
+Marvis 在下一次轮询中领取、分析并回写，通常等待不超过 1 分钟。当前 Marvis 桌面版
+没有公开的外部对话唤醒接口，因此不使用易失效的界面模拟点击方案。
 
 如果需要恢复内置闭环测试模式：
 
@@ -146,5 +159,5 @@ Doris MCP 是 `192.168.3.102` 局域网地址，公司 Mac 必须在对应公司
 - 页面与所有 API 均受独立访问密码保护，并拒绝跨站写入。
 - 定时扫描只能写入“待判断异常”，不能直接调整广告。
 - 判断的确认/待定/否决与调整建议的采纳率分开计算。
-- Mavis MCP 只开放异常任务领取、上下文读取、结构化分析回写和失败记录，
+- Marvis MCP 只开放异常任务领取、上下文读取、结构化分析回写和失败记录，
   不开放 Shell、文件删除、Doris 凭据或广告账户写操作。
