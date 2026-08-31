@@ -177,6 +177,7 @@ export interface GrowthJudgment {
   spend?: number;
   recommendationCaseId?: string;
   recommendationCreatedAt?: string;
+  aiAnalysis?: GrowthAiAnalysis;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -186,6 +187,29 @@ export interface GrowthJudgment {
   reviewedBy?: string;
   reviewedAt?: string;
   createdAt: string;
+}
+
+export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
+
+export interface GrowthAiAnalysis {
+  provider: 'groq';
+  model: string;
+  judgment: GrowthAiJudgment;
+  summary: string;
+  primaryCause: string;
+  evidence: string[];
+  alternativeCauses: string[];
+  recommendedNextStep: string;
+  risk: string;
+  confidence: number;
+  observationHours: number;
+  generatedAt: string;
+}
+
+export interface GrowthAiProviderStatus {
+  provider: 'groq';
+  model: string;
+  configured: boolean;
 }
 
 export interface UpdateDecisionRequest {

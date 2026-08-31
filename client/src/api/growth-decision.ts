@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 import type {
+  GrowthAiProviderStatus,
   GrowthDashboardResponse,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
@@ -13,6 +14,13 @@ import type {
   UpdateMetricStandardsRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
+
+async function getAiStatus(): Promise<GrowthAiProviderStatus> {
+  const response = await axios.get<GrowthAiProviderStatus>(
+    '/api/growth-decision/ai/status',
+  );
+  return response.data;
+}
 
 async function getDashboard(): Promise<GrowthDashboardResponse> {
   const response = await axios.get<GrowthDashboardResponse>(
@@ -59,6 +67,13 @@ async function reviewJudgment(
   return response.data;
 }
 
+async function analyzeJudgment(id: string): Promise<GrowthJudgment> {
+  const response = await axios.post<GrowthJudgment>(
+    `/api/growth-decision/judgments/${id}/ai-analysis`,
+  );
+  return response.data;
+}
+
 async function generateRecommendation(id: string): Promise<GrowthDecisionCase> {
   const response = await axios.post<GrowthDecisionCase>(
     `/api/growth-decision/judgments/${id}/generate-recommendation`,
@@ -98,6 +113,8 @@ async function updateResult(
 }
 
 export {
+  analyzeJudgment,
+  getAiStatus,
   getDashboard,
   generateRecommendation,
   getDecisionHistory,

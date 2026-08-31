@@ -21,6 +21,7 @@ const ACTION_LABELS: Record<string, string> = {
   judgment_deferred: '人工设为待定',
   judgment_rejected: '人工否决判断',
   recommendation_created: '生成调整建议',
+  ai_analysis_completed: 'Groq 深度分析完成',
   ingested: '建议进入队列',
   accepted: '采纳建议',
   rejected: '不采纳建议',

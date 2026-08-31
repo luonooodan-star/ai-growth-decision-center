@@ -58,6 +58,15 @@ zsh scripts/company-mac/setup.sh
 5. 执行类型检查和生产构建。
 6. 创建本地 SQLite 数据库，安装 `launchd` 服务并开机自启。
 
+需要试用 Groq GPT-OSS 120B 深度分析时，首次部署完成后再执行：
+
+```bash
+zsh scripts/company-mac/configure-groq.sh
+```
+
+脚本会把 `gsk_...` Key 单独保存在 macOS Keychain、验证 120B 模型可用并重启
+服务。Groq 是可选能力，未配置不会影响 Doris 与产品 Skill 主链路。
+
 部署后本机访问：
 
 ```text
@@ -122,3 +131,5 @@ Doris MCP 是 `192.168.3.102` 局域网地址，公司 Mac 必须在对应公司
 - 页面与所有 API 均受独立访问密码保护，并拒绝跨站写入。
 - 定时扫描只能写入“待判断异常”，不能直接调整广告。
 - 判断的确认/待定/否决与调整建议的采纳率分开计算。
+- Groq 只接收单条异常所需的聚合指标、人工阈值和产品 Skill 上下文，不接收
+  Doris 凭据，也不在前端暴露 Groq Key。

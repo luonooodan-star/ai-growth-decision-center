@@ -11,6 +11,26 @@ interface RecommendationTemplate {
 const buildSkillRecommendation = (
   judgment: GrowthJudgment,
 ): CreateRecommendationFromJudgmentRequest => {
+  if (judgment.aiAnalysis) {
+    return {
+      recommendation: judgment.aiAnalysis.recommendedNextStep,
+      recommendedAction: {
+        actionType: 'investigate_metric_anomaly',
+        targetLevel: judgment.adsetId ? 'adset' : 'campaign',
+        targetId:
+          judgment.adsetId || judgment.campaignId || judgment.productId,
+        parameters: {
+          source: 'groq_deep_analysis',
+          budgetChangePct: 0,
+          observationHours: judgment.aiAnalysis.observationHours,
+        },
+      },
+      expectedImpact:
+        `在 ${judgment.aiAnalysis.observationHours} 小时观察窗口内验证：` +
+        judgment.aiAnalysis.primaryCause,
+      riskNote: judgment.aiAnalysis.risk,
+    };
+  }
   const targetName: string = judgment.adsetName || judgment.adsetId ||
     judgment.campaignName || judgment.campaignId || judgment.productName;
   const templates: Record<string, RecommendationTemplate> = {

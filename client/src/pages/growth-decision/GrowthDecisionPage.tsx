@@ -19,6 +19,7 @@ import {
 import { Link, useParams } from 'react-router-dom';
 
 import type {
+  GrowthAiProviderStatus,
   GrowthDashboardResponse,
   GrowthDecisionCase,
   GrowthDashboardSummary,
@@ -133,6 +134,7 @@ const GrowthDecisionPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [aiStatus, setAiStatus] = useState<GrowthAiProviderStatus | null>(null);
 
   useEffect((): void => {
     void loadDashboard();
@@ -142,9 +144,15 @@ const GrowthDecisionPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const response: GrowthDashboardResponse =
-        await growthDecision.getDashboard();
+      const [response, providerStatus]: [
+        GrowthDashboardResponse,
+        GrowthAiProviderStatus,
+      ] = await Promise.all([
+        growthDecision.getDashboard(),
+        growthDecision.getAiStatus(),
+      ]);
       setDashboardData(response);
+      setAiStatus(providerStatus);
     } catch (requestError: unknown) {
       setError(
         requestError instanceof Error ? requestError.message : '工作台加载失败',
@@ -234,6 +242,23 @@ const GrowthDecisionPage: React.FC = () => {
         requestError instanceof Error
           ? requestError.message
           : '调整建议生成失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAiAnalysis = async (id: string): Promise<void> => {
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.analyzeJudgment(id);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Groq 深度分析失败',
       );
     } finally {
       setSaving(false);
@@ -351,6 +376,9 @@ const GrowthDecisionPage: React.FC = () => {
             saving={saving}
             onReview={handleJudgmentReview}
             onGenerateRecommendation={handleGenerateRecommendation}
+            onAnalyze={handleAiAnalysis}
+            aiConfigured={Boolean(aiStatus?.configured)}
+            aiModel={aiStatus?.model || 'openai/gpt-oss-120b'}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">

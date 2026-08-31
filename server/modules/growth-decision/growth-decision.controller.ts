@@ -3,6 +3,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import type {
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
+  GrowthAiProviderStatus,
   GrowthDashboardResponse,
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
@@ -21,12 +22,14 @@ import type {
 
 import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthDataFetchService } from './growth-data-fetch.service';
+import { GrowthAiAnalysisService } from './growth-ai-analysis.service';
 
 @Controller('api/growth-decision')
 export class GrowthDecisionController {
   constructor(
     private readonly growthDecisionService: GrowthDecisionService,
     private readonly growthDataFetchService: GrowthDataFetchService,
+    private readonly growthAiAnalysisService: GrowthAiAnalysisService,
   ) {}
 
   @Get('dashboard')
@@ -37,6 +40,11 @@ export class GrowthDecisionController {
   @Get('fetch-history')
   getFetchHistory(): GrowthFetchHistoryResponse {
     return this.growthDataFetchService.getHistory();
+  }
+
+  @Get('ai/status')
+  getAiStatus(): GrowthAiProviderStatus {
+    return this.growthAiAnalysisService.getStatus();
   }
 
   @Get('records/:id/history')
@@ -99,6 +107,13 @@ export class GrowthDecisionController {
       request,
       '人工决策负责人',
     );
+  }
+
+  @Post('judgments/:id/ai-analysis')
+  async analyzeJudgment(
+    @Param('id') id: string,
+  ): Promise<GrowthJudgment> {
+    return this.growthAiAnalysisService.analyzeJudgment(id);
   }
 
   @Post('judgments/:id/recommendations')

@@ -223,9 +223,11 @@ export class GrowthDecisionService {
       metricValues: judgment.metricValues,
       spend: judgment.spend,
       sourceJudgmentId: judgment.id,
-      evidence: judgment.evidence,
-      rootCause: judgment.rootCause,
-      confidence: judgment.confidence,
+      evidence: judgment.aiAnalysis
+        ? [judgment.evidence, ...judgment.aiAnalysis.evidence].join('；')
+        : judgment.evidence,
+      rootCause: judgment.aiAnalysis?.primaryCause || judgment.rootCause,
+      confidence: judgment.aiAnalysis?.confidence || judgment.confidence,
       recommendation: request.recommendation,
       recommendedAction: request.recommendedAction,
       expectedImpact: request.expectedImpact,

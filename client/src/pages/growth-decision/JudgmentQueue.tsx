@@ -1,5 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, Check, Clock3, SearchCheck, Sparkles, WalletCards, X } from 'lucide-react';
+import {
+  Bot,
+  BrainCircuit,
+  Check,
+  Clock3,
+  SearchCheck,
+  Sparkles,
+  WalletCards,
+  X,
+} from 'lucide-react';
 
 import type {
   GrowthJudgment,
@@ -36,6 +45,9 @@ interface JudgmentQueueProps {
     request: ReviewJudgmentRequest,
   ) => Promise<void>;
   onGenerateRecommendation: (id: string) => Promise<void>;
+  onAnalyze: (id: string) => Promise<void>;
+  aiConfigured: boolean;
+  aiModel: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -49,6 +61,12 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
   confirmed: '确认判断',
   deferred: '暂时待定',
   rejected: '否决判断',
+};
+
+const AI_JUDGMENT_LABELS: Record<string, string> = {
+  confirmed: 'AI 判断成立',
+  uncertain: 'AI 判断待定',
+  rejected: 'AI 判断不成立',
 };
 
 const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
@@ -74,6 +92,9 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   saving,
   onReview,
   onGenerateRecommendation,
+  onAnalyze,
+  aiConfigured,
+  aiModel,
 }) => {
   const [selected, setSelected] = useState<GrowthJudgment | null>(null);
   const [reviewAction, setReviewAction] =
@@ -134,7 +155,12 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
               先确认异常与原因是否成立，再进入调整建议阶段
             </CardDescription>
           </div>
-          <Badge variant="secondary">{judgments.length} 条</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={aiConfigured ? 'secondary' : 'outline'}>
+              Groq 120B {aiConfigured ? '已连接' : '待配置'}
+            </Badge>
+            <Badge variant="secondary">{judgments.length} 条</Badge>
+          </div>
         </CardHeader>
         <CardContent>
           {orderedJudgments.length ? (
@@ -197,12 +223,53 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                             </span>
                           ) : null}
                         </div>
+                        {item.aiAnalysis ? (
+                          <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <BrainCircuit className="size-4 text-violet-700" />
+                              <Badge variant="outline" className="border-violet-200 bg-white text-violet-700">
+                                {AI_JUDGMENT_LABELS[item.aiAnalysis.judgment]}
+                              </Badge>
+                              <span className="text-xs text-violet-600">
+                                {item.aiAnalysis.model} · 置信度 {item.aiAnalysis.confidence}%
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm font-medium leading-6 text-slate-900">
+                              {item.aiAnalysis.summary}
+                            </p>
+                            <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                              <div>
+                                <dt className="font-medium text-slate-500">首要原因</dt>
+                                <dd className="mt-1 leading-5 text-slate-700">{item.aiAnalysis.primaryCause}</dd>
+                              </div>
+                              <div>
+                                <dt className="font-medium text-slate-500">建议下一步</dt>
+                                <dd className="mt-1 leading-5 text-slate-700">{item.aiAnalysis.recommendedNextStep}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <DecisionHistoryDrawer
                           recordId={item.id}
                           title={`${item.productName} · ${item.anomalyType}`}
                         />
+                        {canReview ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => void onAnalyze(item.id)}
+                            disabled={saving || !aiConfigured}
+                            title={
+                              aiConfigured
+                                ? `使用 ${aiModel} 分析`
+                                : '请先在公司 Mac 配置 Groq API Key'
+                            }
+                          >
+                            <BrainCircuit className="size-4" />
+                            {item.aiAnalysis ? '重新深度分析' : 'AI 深度分析'}
+                          </Button>
+                        ) : null}
                         {item.status === 'judgment_confirmed' ? (
                           item.recommendationCaseId ? (
                             <Badge className="h-9 px-3" variant="secondary">建议已生成</Badge>

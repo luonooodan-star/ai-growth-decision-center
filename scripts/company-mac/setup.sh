@@ -85,6 +85,7 @@ mkdir -p "$launch_agents_dir" "$logs_dir"
 start_script="$project_dir/scripts/company-mac/start-local.sh"
 chmod +x \
   "$start_script" \
+  "$project_dir/scripts/company-mac/configure-groq.sh" \
   "$project_dir/scripts/company-mac/update.sh"
 
 escaped_start_script="${start_script//&/&amp;}"
@@ -149,6 +150,7 @@ for attempt in {1..30}; do
     print "本机页面：http://localhost:8081/（用户名 growth）"
     [[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/（同一公司网络内访问）"
     print "Doris 验证：node scripts/company-mac/mcp-whoami.mjs"
+    print "可选 Groq 120B：zsh scripts/company-mac/configure-groq.sh"
     exit 0
   fi
   sleep 2
