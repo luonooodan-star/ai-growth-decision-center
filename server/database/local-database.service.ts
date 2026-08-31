@@ -28,7 +28,7 @@ const DEFAULT_GROWTH_METRICS: GrowthMetricDefinition[] = [
   { key: 'cpi', label: 'CPI', unit: 'usd', direction: 'lower', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_daily.cpi', description: '每个 Adjust 安装对应的广告消耗。' },
   { key: 'cpa', label: 'CPA', unit: 'usd', direction: 'lower', availability: 'pending', source: '待产品侧转化事件口径确认', description: '每个目标转化对应的广告消耗；当前 Doris 权限未提供目标转化指标。' },
   { key: 'd0_roas', label: 'D0 ROAS', unit: 'percent', direction: 'higher', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_cohort_metric.d0_roas', description: '成熟 cohort 的首日广告支出回报。' },
-  { key: 'ecpm', label: 'ECPM', unit: 'usd', direction: 'higher', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'spend / impressions × 1000', description: '每千次广告展示对应的消耗。' },
+  { key: 'ecpm', label: 'ECPM', unit: 'usd', direction: 'lower', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'spend / impressions × 1000', description: '每千次广告展示对应的消耗。' },
   { key: 'retention_d1', label: '次留', unit: 'percent', direction: 'higher', availability: 'pending', source: '待产品后台次日留存数据集接入', description: '安装用户次日留存率。' },
   { key: 'ipu', label: 'IPU', unit: 'number', direction: 'higher', availability: 'pending', source: '待产品负责人确认业务定义与数据字段', description: '保留产品原始 IPU 口径，不在未确认前推导。' },
   { key: 'arpu', label: 'ARPU', unit: 'usd', direction: 'higher', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'adjust_revenue / adjust_installs', description: '每个 Adjust 安装用户对应的收入。' },
@@ -281,9 +281,21 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   private normalizeProduct(product: GrowthProduct): GrowthProduct {
+    const savedMetrics = new Map(
+      (product.metrics || []).map((metric) => [metric.key, metric]),
+    );
     return {
       ...product,
-      metrics: product.metrics?.length ? product.metrics : DEFAULT_GROWTH_METRICS,
+      metrics: DEFAULT_GROWTH_METRICS.map((definition) => {
+        const saved = savedMetrics.get(definition.key);
+        return {
+          ...definition,
+          standardValue: saved?.standardValue,
+          anomalyThreshold: saved?.anomalyThreshold,
+          updatedAt: saved?.updatedAt,
+          updatedBy: saved?.updatedBy,
+        };
+      }),
     };
   }
 }

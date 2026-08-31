@@ -6,8 +6,10 @@ import type {
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthJudgment,
+  GrowthProduct,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
+  UpdateMetricStandardsRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -30,6 +32,17 @@ async function triggerFetch(productId?: string): Promise<GrowthFetchRun[]> {
   const response = await axios.post<GrowthFetchRun[]>(
     '/api/growth-decision/fetches/trigger',
     { productId },
+  );
+  return response.data;
+}
+
+async function updateMetricStandards(
+  productId: string,
+  request: UpdateMetricStandardsRequest,
+): Promise<GrowthProduct> {
+  const response = await axios.patch<GrowthProduct>(
+    `/api/growth-decision/products/${productId}/metric-standards`,
+    request,
   );
   return response.data;
 }
@@ -73,5 +86,6 @@ export {
   reviewJudgment,
   triggerFetch,
   updateDecision,
+  updateMetricStandards,
   updateResult,
 };

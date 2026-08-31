@@ -14,6 +14,7 @@ import type {
   ReviewJudgmentRequest,
   TriggerGrowthFetchRequest,
   UpdateDecisionRequest,
+  UpdateMetricStandardsRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -56,6 +57,18 @@ export class GrowthDecisionController {
     @Body() request: CreateProductRequest,
   ): Promise<GrowthProduct> {
     return this.growthDecisionService.createProduct(request, 'local_operator');
+  }
+
+  @Patch('products/:productId/metric-standards')
+  async updateMetricStandards(
+    @Param('productId') productId: string,
+    @Body() request: UpdateMetricStandardsRequest,
+  ): Promise<GrowthProduct> {
+    return this.growthDecisionService.updateMetricStandards(
+      productId,
+      request,
+      '人工决策负责人',
+    );
   }
 
   @Post('judgments/ingest')

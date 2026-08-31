@@ -564,15 +564,19 @@ const GrowthDecisionPage: React.FC = () => {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-500">达标标准</span>
                         <span className="font-medium text-slate-800">
-                          {Object.keys(product.thresholds || {}).length
-                            ? `${Object.keys(product.thresholds).length} 项已配置`
+                          {product.metrics.filter(
+                            (metric) => metric.standardValue !== undefined,
+                          ).length
+                            ? `${product.metrics.filter((metric) => metric.standardValue !== undefined).length} 项已录入`
                             : '待产品负责人校准'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-500">异常规则</span>
                         <span className="font-medium text-slate-800">
-                          产品独立维护
+                          {product.metrics.filter(
+                            (metric) => metric.anomalyThreshold !== undefined,
+                          ).length} 项阈值已启用
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">

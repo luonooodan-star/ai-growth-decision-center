@@ -22,6 +22,7 @@ import type {
   IngestJudgmentRequest,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
+  UpdateMetricStandardsRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -256,6 +257,37 @@ export class GrowthDecisionService {
     };
     this.database.saveProduct(product);
     return product;
+  }
+
+  async updateMetricStandards(
+    productId: string,
+    request: UpdateMetricStandardsRequest,
+    actor: string,
+  ): Promise<GrowthProduct> {
+    const product: GrowthProduct = this.getProduct(productId);
+    const requested = new Map(
+      request.metrics.map((item) => [item.key, item]),
+    );
+    const updatedAt: string = new Date().toISOString();
+    const metrics = product.metrics.map((metric) => {
+      const input = requested.get(metric.key);
+      if (!input) return metric;
+      for (const value of [input.standardValue, input.anomalyThreshold]) {
+        if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+          throw new BadRequestException(`${metric.label} 必须填写大于或等于 0 的数字`);
+        }
+      }
+      return {
+        ...metric,
+        standardValue: input.standardValue,
+        anomalyThreshold: input.anomalyThreshold,
+        updatedAt,
+        updatedBy: actor,
+      };
+    });
+    const updated: GrowthProduct = { ...product, metrics };
+    this.database.saveProduct(updated);
+    return updated;
   }
 
   async ingestCase(

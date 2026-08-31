@@ -35,6 +35,10 @@ export interface GrowthMetricDefinition {
   source: string;
   formula?: string;
   description: string;
+  standardValue?: number;
+  anomalyThreshold?: number;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export type GrowthMetricValues = Partial<Record<GrowthMetricKey, number>>;
@@ -61,6 +65,16 @@ export interface GrowthFetchHistoryResponse {
 
 export interface TriggerGrowthFetchRequest {
   productId?: string;
+}
+
+export interface UpdateMetricStandardItem {
+  key: GrowthMetricKey;
+  standardValue?: number;
+  anomalyThreshold?: number;
+}
+
+export interface UpdateMetricStandardsRequest {
+  metrics: UpdateMetricStandardItem[];
 }
 
 export interface RecommendedAction {
