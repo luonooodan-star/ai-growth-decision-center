@@ -16,6 +16,7 @@
     "gen:openapi": "echo 'UNSUPPORTED, SKIP'",
     "build": "./scripts/build.sh",
     "build:prod": "npm run build:server && npm run build:client",
+    "build:company": "npm run build:server && MIAODA_BUILD_TARGET=standalone CLIENT_BASE_PATH=/ npm run build:client && node scripts/company-mac/finalize-client-build.mjs",
     "build:server": "NODE_ENV=production nest build",
     "build:client": "NODE_ENV=production vite build --config vite.config.ts",
     "start": "NODE_ENV=production node dist/server/standalone.js",

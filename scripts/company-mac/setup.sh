@@ -75,7 +75,7 @@ node "$project_dir/scripts/company-mac/mcp-whoami.mjs"
 
 print "[5/6] 校验代码并安装开机常驻服务"
 npm run type:check
-CLIENT_BASE_PATH="/" npm run build:prod
+npm run build:company
 
 mkdir -p "$launch_agents_dir" "$logs_dir"
 start_script="$project_dir/scripts/company-mac/start-local.sh"

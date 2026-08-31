@@ -27,7 +27,7 @@ node scripts/company-mac/mcp-whoami.mjs
 
 print "[4/5] 校验并构建"
 npm run type:check
-CLIENT_BASE_PATH="/" npm run build:prod
+npm run build:company
 
 print "[5/5] 重启公司 Mac 服务"
 launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL"
