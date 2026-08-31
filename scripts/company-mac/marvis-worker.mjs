@@ -25,7 +25,7 @@ function secret(service) {
   ).trim();
 }
 
-async function callTool(name, args) {
+async function callMcp(method, params = undefined) {
   let accessPassword;
   let marvisToken;
   try {
@@ -46,9 +46,9 @@ async function callTool(name, args) {
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
-      id: `${Date.now()}-${name}`,
-      method: 'tools/call',
-      params: { name, arguments: args },
+      id: `${Date.now()}-${method}`,
+      method,
+      ...(params ? { params } : {}),
     }),
   });
   const text = await response.text();
@@ -57,7 +57,12 @@ async function callTool(name, args) {
   }
   const payload = JSON.parse(text);
   if (payload.error) throw new Error(payload.error.message || 'MCP 工具调用失败');
-  return payload.result?.structuredContent;
+  return payload.result;
+}
+
+async function callTool(name, args) {
+  const result = await callMcp('tools/call', { name, arguments: args });
+  return result?.structuredContent;
 }
 
 function printJson(value) {
@@ -66,6 +71,16 @@ function printJson(value) {
 
 async function main() {
   const command = process.argv[2] || 'claim';
+  if (command === 'check') {
+    const result = await callMcp('tools/list');
+    printJson({
+      ok: true,
+      mcpUrl: MCP_URL,
+      tools: (result?.tools || []).map((tool) => tool.name),
+    });
+    return;
+  }
+
   if (command === 'claim') {
     const workerId = process.argv[3] || DEFAULT_WORKER_ID;
     const claimed = await callTool('claim_analysis_job', { workerId });
@@ -111,11 +126,10 @@ async function main() {
     return;
   }
 
-  throw new Error('支持的命令：claim、submit、fail');
+  throw new Error('支持的命令：check、claim、submit、fail');
 }
 
 main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });
-

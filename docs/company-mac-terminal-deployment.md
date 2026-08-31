@@ -84,6 +84,7 @@ zsh scripts/company-mac/prepare-marvis-integration.sh
 
 脚本会把 Skill、提示词和本地安全代理生成到 `~/Downloads/ai-growth-marvis/`。
 安全代理仅从 macOS Keychain 读取页面密码和 Marvis Token，不会把凭据写入 Skill。
+可先运行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" check` 做无副作用连接检查。
 在 Marvis 中导入生成的 `growth-decision-analyst.zip`，再创建每 1 分钟运行一次的
 自动任务并粘贴生成的提示词。网页点击“使用 Marvis 分析”后，任务会先进入本地队列，
 Marvis 在下一次轮询中领取、分析并回写，通常等待不超过 1 分钟。当前 Marvis 桌面版
