@@ -15,21 +15,24 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-print "[1/5] 拉取 GitHub $DEPLOY_BRANCH"
+print "[1/6] 拉取 GitHub $DEPLOY_BRANCH"
 git fetch "$DEPLOY_REMOTE" "$DEPLOY_BRANCH"
 git merge --ff-only FETCH_HEAD
 
-print "[2/5] 安装锁定依赖"
+print "[2/6] 初始化 Mavis 本地凭据"
+zsh scripts/company-mac/configure-mavis.sh ensure
+
+print "[3/6] 安装锁定依赖"
 npm ci
 
-print "[3/5] 验证 Doris 只读连接"
+print "[4/6] 验证 Doris 只读连接"
 node scripts/company-mac/mcp-whoami.mjs
 
-print "[4/5] 校验并构建"
+print "[5/6] 校验并构建"
 npm run type:check
 npm run build:company
 
-print "[5/5] 重启公司 Mac 服务"
+print "[6/6] 重启公司 Mac 服务"
 launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_LABEL"
 
 lan_ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"

@@ -21,7 +21,7 @@ token="$(security find-generic-password \
 
 requested_mode="${1:-status}"
 case "$requested_mode" in
-  status)
+  status|ensure)
     ;;
   simulation)
     security add-generic-password \
@@ -42,6 +42,13 @@ esac
 mode="$(security find-generic-password \
   -a "$USER" -s "$MAVIS_MODE_KEYCHAIN_SERVICE" \
   -w 2>/dev/null)" || mode="skill_simulation"
+
+if [[ "$requested_mode" == "ensure" ]]; then
+  security add-generic-password \
+    -a "$USER" -s "$MAVIS_MODE_KEYCHAIN_SERVICE" \
+    -w "$mode" -U >/dev/null
+  exit 0
+fi
 
 if [[ "$requested_mode" != "status" ]]; then
   launchctl kickstart -k \
