@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import type {
   GrowthDecisionCase,
+  GrowthDecisionActivity,
   GrowthFetchRun,
   GrowthJudgment,
   GrowthMetricDefinition,
@@ -158,6 +159,27 @@ export class LocalDatabaseService implements OnModuleDestroy {
       );
   }
 
+  listActivities(recordId: string, limit = 100): GrowthDecisionActivity[] {
+    const rows: Record<string, unknown>[] = this.database
+      .prepare(
+        `SELECT id, case_id, action, actor, detail, metadata, created_at
+         FROM growth_decision_activity
+         WHERE case_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(recordId, limit);
+    return rows.map((row) => ({
+      id: String(row.id),
+      recordId: String(row.case_id),
+      action: String(row.action),
+      actor: String(row.actor),
+      detail: String(row.detail),
+      metadata: this.parsePayload<Record<string, string>>(row.metadata),
+      createdAt: String(row.created_at),
+    }));
+  }
+
   listFetchRuns(productId?: string, limit = 100): GrowthFetchRun[] {
     const rows: Record<string, unknown>[] = productId
       ? this.database
@@ -288,10 +310,16 @@ export class LocalDatabaseService implements OnModuleDestroy {
       ...product,
       metrics: DEFAULT_GROWTH_METRICS.map((definition) => {
         const saved = savedMetrics.get(definition.key);
+        const legacyThreshold = saved?.anomalyThreshold;
+        const lowerBound = saved?.lowerBound ??
+          (saved?.direction === 'higher' ? legacyThreshold : undefined);
+        const upperBound = saved?.upperBound ??
+          (saved?.direction === 'lower' ? legacyThreshold : undefined);
         return {
           ...definition,
           standardValue: saved?.standardValue,
-          anomalyThreshold: saved?.anomalyThreshold,
+          lowerBound,
+          upperBound,
           updatedAt: saved?.updatedAt,
           updatedBy: saved?.updatedBy,
         };

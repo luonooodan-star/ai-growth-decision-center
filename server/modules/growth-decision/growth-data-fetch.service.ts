@@ -173,7 +173,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         anomalyCount,
         message: isPartial
           ? '连接成功，但当前时间窗口没有返回可用数据'
-          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写异常阈值的指标不参与判断`,
+          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写上下界的指标不参与判断`,
       } satisfies Partial<GrowthFetchRun>);
     } catch (error: unknown) {
       Object.assign(run, {
@@ -294,14 +294,16 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     );
     if (
       !metric ||
-      metric.anomalyThreshold === undefined ||
+      (metric.lowerBound === undefined && metric.upperBound === undefined) ||
       currentValue === undefined
     ) {
       return false;
     }
-    const isAnomaly: boolean = metric.direction === 'lower'
-      ? currentValue > metric.anomalyThreshold
-      : currentValue < metric.anomalyThreshold;
+    const belowLower: boolean = metric.lowerBound !== undefined &&
+      currentValue < metric.lowerBound;
+    const aboveUpper: boolean = metric.upperBound !== undefined &&
+      currentValue > metric.upperBound;
+    const isAnomaly: boolean = belowLower || aboveUpper;
     if (!isAnomaly) return false;
 
     const campaignId: string | undefined = this.optionalString(row.campaign_id);
@@ -310,21 +312,20 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
     const baselineValue: number =
-      metric.standardValue ?? metric.anomalyThreshold;
+      metric.standardValue ?? (belowLower ? metric.lowerBound! : metric.upperBound!);
     const deviationPct: number | undefined = baselineValue
       ? Number((((currentValue - baselineValue) / baselineValue) * 100).toFixed(2))
       : undefined;
-    const thresholdRelation: string = metric.direction === 'lower'
-      ? '高于'
-      : '低于';
+    const thresholdRelation: string = belowLower ? '低于下界' : '高于上界';
+    const triggeredBound: number = belowLower ? metric.lowerBound! : metric.upperBound!;
     const entityDescription: string = [
       this.optionalString(row.campaign_name) || campaignId,
       this.optionalString(row.adgroup_name) || adsetId,
     ].filter(Boolean).join(' / ') || '产品级';
-    const thresholdGapPct: number = metric.anomalyThreshold
+    const thresholdGapPct: number = triggeredBound
       ? Math.abs(
-          ((currentValue - metric.anomalyThreshold) /
-            metric.anomalyThreshold) *
+          ((currentValue - triggeredBound) /
+            triggeredBound) *
             100,
         )
       : 100;
@@ -332,7 +333,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     await this.growthDecisionService.ingestJudgment(
       {
         productId: product.id,
-        anomalyType: `${metric.label} ${thresholdRelation}人工异常阈值`,
+        anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
         severity: thresholdGapPct >= 30 ? 'high' : 'medium',
         channel: product.channel,
         campaignId,
@@ -344,10 +345,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         baselineValue,
         deviationPct,
         metricValues,
+        spend: this.numeric(row.spend) ?? this.numeric(row.cohort_spend),
         evidence:
           `${dataDate} ${entityDescription} 的 ${metric.label} 实际值 ` +
-          `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation}人工留档的异常阈值 ` +
-          `${this.formatMetricValue(metric, metric.anomalyThreshold)}。`,
+          `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation} ` +
+          `${this.formatMetricValue(metric, triggeredBound)}。`,
         rootCause:
           '指标已越过人工阈值；当前只确认异常条件成立，具体原因仍需结合投放、归因和产品链路继续分析。',
         confidence: 95,

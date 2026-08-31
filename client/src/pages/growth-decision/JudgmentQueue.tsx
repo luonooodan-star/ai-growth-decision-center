@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bot, Check, Clock3, SearchCheck, X } from 'lucide-react';
+import { Bot, Check, Clock3, SearchCheck, Sparkles, WalletCards, X } from 'lucide-react';
 
 import type {
   GrowthJudgment,
@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
+import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
+
 interface JudgmentQueueProps {
   judgments: GrowthJudgment[];
   saving: boolean;
@@ -33,6 +35,7 @@ interface JudgmentQueueProps {
     id: string,
     request: ReviewJudgmentRequest,
   ) => Promise<void>;
+  onGenerateRecommendation: (id: string) => Promise<void>;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -70,6 +73,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   judgments,
   saving,
   onReview,
+  onGenerateRecommendation,
 }) => {
   const [selected, setSelected] = useState<GrowthJudgment | null>(null);
   const [reviewAction, setReviewAction] =
@@ -165,7 +169,15 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         <p className="mt-2 text-sm leading-6 text-slate-600">
                           {item.preliminaryJudgment}
                         </p>
-                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+                          <div className="rounded-lg bg-blue-50 px-2.5 py-2">
+                            <p className="flex items-center gap-1 text-[10px] font-medium text-blue-600">
+                              <WalletCards className="size-3" /> 消耗
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-900">
+                              {item.spend === undefined ? '—' : `$${item.spend.toFixed(2)}`}
+                            </p>
+                          </div>
                           {DEFAULT_METRICS.map((metric) => (
                             <div key={metric.key} className="rounded-lg bg-slate-50 px-2.5 py-2">
                               <p className="text-[10px] font-medium text-slate-500">{metric.label}</p>
@@ -186,8 +198,26 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           ) : null}
                         </div>
                       </div>
-                      {canReview ? (
-                        <div className="flex shrink-0 flex-wrap gap-2">
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <DecisionHistoryDrawer
+                          recordId={item.id}
+                          title={`${item.productName} · ${item.anomalyType}`}
+                        />
+                        {item.status === 'judgment_confirmed' ? (
+                          item.recommendationCaseId ? (
+                            <Badge className="h-9 px-3" variant="secondary">建议已生成</Badge>
+                          ) : (
+                            <Button
+                              onClick={() => void onGenerateRecommendation(item.id)}
+                              disabled={saving}
+                            >
+                              <Sparkles className="size-4" />
+                              生成调整建议
+                            </Button>
+                          )
+                        ) : null}
+                        {canReview ? (
+                          <>
                           <Button
                             variant="outline"
                             onClick={() => openReview(item, 'deferred')}
@@ -208,8 +238,9 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                             <Check className="size-4" />
                             确认判断
                           </Button>
-                        </div>
-                      ) : null}
+                          </>
+                        ) : null}
+                      </div>
                     </div>
                   </article>
                 );

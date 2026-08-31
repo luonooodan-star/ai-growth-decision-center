@@ -7,6 +7,7 @@ import type {
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthDecisionCase,
+  GrowthDecisionHistoryResponse,
   GrowthJudgment,
   GrowthProduct,
   IngestDecisionCaseRequest,
@@ -36,6 +37,13 @@ export class GrowthDecisionController {
   @Get('fetch-history')
   getFetchHistory(): GrowthFetchHistoryResponse {
     return this.growthDataFetchService.getHistory();
+  }
+
+  @Get('records/:id/history')
+  async getDecisionHistory(
+    @Param('id') id: string,
+  ): Promise<GrowthDecisionHistoryResponse> {
+    return this.growthDecisionService.getDecisionHistory(id);
   }
 
   @Get('products/:productId/fetch-history')
@@ -102,6 +110,16 @@ export class GrowthDecisionController {
       id,
       request,
       'local_operator',
+    );
+  }
+
+  @Post('judgments/:id/generate-recommendation')
+  async generateRecommendationFromSkill(
+    @Param('id') id: string,
+  ): Promise<GrowthDecisionCase> {
+    return this.growthDecisionService.generateRecommendationFromSkill(
+      id,
+      '产品 Skill',
     );
   }
 

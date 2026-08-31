@@ -3,6 +3,7 @@ import axios from 'axios';
 import type {
   GrowthDashboardResponse,
   GrowthDecisionCase,
+  GrowthDecisionHistoryResponse,
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthJudgment,
@@ -58,6 +59,22 @@ async function reviewJudgment(
   return response.data;
 }
 
+async function generateRecommendation(id: string): Promise<GrowthDecisionCase> {
+  const response = await axios.post<GrowthDecisionCase>(
+    `/api/growth-decision/judgments/${id}/generate-recommendation`,
+  );
+  return response.data;
+}
+
+async function getDecisionHistory(
+  id: string,
+): Promise<GrowthDecisionHistoryResponse> {
+  const response = await axios.get<GrowthDecisionHistoryResponse>(
+    `/api/growth-decision/records/${id}/history`,
+  );
+  return response.data;
+}
+
 async function updateDecision(
   id: string,
   request: UpdateDecisionRequest,
@@ -82,6 +99,8 @@ async function updateResult(
 
 export {
   getDashboard,
+  generateRecommendation,
+  getDecisionHistory,
   getFetchHistory,
   reviewJudgment,
   triggerFetch,

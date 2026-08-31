@@ -16,6 +16,7 @@ import type {
   GrowthDashboardResponse,
   GrowthDashboardSummary,
   GrowthDecisionCase,
+  GrowthDecisionHistoryResponse,
   GrowthJudgment,
   GrowthProduct,
   IngestDecisionCaseRequest,
@@ -25,6 +26,8 @@ import type {
   UpdateMetricStandardsRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
+
+import { buildSkillRecommendation } from './growth-recommendation-rule';
 
 @Injectable()
 export class GrowthDecisionService {
@@ -126,6 +129,7 @@ export class GrowthDecisionService {
       baselineValue: request.baselineValue,
       deviationPct: request.deviationPct,
       metricValues: request.metricValues,
+      spend: request.spend,
       evidence: request.evidence,
       rootCause: request.rootCause,
       confidence: request.confidence,
@@ -191,6 +195,9 @@ export class GrowthDecisionService {
     if (judgment.status !== 'judgment_confirmed') {
       throw new BadRequestException('只有已确认的判断可以生成调整建议');
     }
+    if (judgment.recommendationCaseId) {
+      return this.getCase(judgment.recommendationCaseId);
+    }
     const created: GrowthDecisionCase = {
       id: randomUUID(),
       productId: judgment.productId,
@@ -214,6 +221,8 @@ export class GrowthDecisionService {
       baselineValue: judgment.baselineValue,
       deviationPct: judgment.deviationPct,
       metricValues: judgment.metricValues,
+      spend: judgment.spend,
+      sourceJudgmentId: judgment.id,
       evidence: judgment.evidence,
       rootCause: judgment.rootCause,
       confidence: judgment.confidence,
@@ -224,6 +233,11 @@ export class GrowthDecisionService {
       createdAt: new Date().toISOString(),
     };
     this.database.saveDecisionRecord(created);
+    this.database.saveDecisionRecord({
+      ...judgment,
+      recommendationCaseId: created.id,
+      recommendationCreatedAt: created.createdAt,
+    });
     this.database.appendActivity({
       caseId: created.id,
       action: 'recommendation_created',
@@ -231,7 +245,36 @@ export class GrowthDecisionService {
       detail: request.recommendation,
       metadata: { source: 'confirmed_judgment', requestId: id },
     });
+    this.database.appendActivity({
+      caseId: judgment.id,
+      action: 'recommendation_created',
+      actor: userId || 'Growth Agent',
+      detail: request.recommendation,
+      metadata: {
+        source: 'confirmed_judgment',
+        recommendationCaseId: created.id,
+      },
+    });
     return created;
+  }
+
+  async generateRecommendationFromSkill(
+    id: string,
+    actor: string,
+  ): Promise<GrowthDecisionCase> {
+    const judgment: GrowthJudgment = this.getJudgment(id);
+    return this.createRecommendationFromJudgment(
+      id,
+      buildSkillRecommendation(judgment),
+      actor,
+    );
+  }
+
+  async getDecisionHistory(id: string): Promise<GrowthDecisionHistoryResponse> {
+    if (!this.database.getDecisionRecord(id)) {
+      throw new NotFoundException('决策记录不存在');
+    }
+    return { items: this.database.listActivities(id) };
   }
 
   async createProduct(
@@ -272,15 +315,24 @@ export class GrowthDecisionService {
     const metrics = product.metrics.map((metric) => {
       const input = requested.get(metric.key);
       if (!input) return metric;
-      for (const value of [input.standardValue, input.anomalyThreshold]) {
+      for (const value of [input.standardValue, input.lowerBound, input.upperBound]) {
         if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
           throw new BadRequestException(`${metric.label} 必须填写大于或等于 0 的数字`);
         }
       }
+      if (
+        input.lowerBound !== undefined &&
+        input.upperBound !== undefined &&
+        input.lowerBound > input.upperBound
+      ) {
+        throw new BadRequestException(`${metric.label} 下界不能高于上界`);
+      }
       return {
         ...metric,
         standardValue: input.standardValue,
-        anomalyThreshold: input.anomalyThreshold,
+        lowerBound: input.lowerBound,
+        upperBound: input.upperBound,
+        anomalyThreshold: undefined,
         updatedAt,
         updatedBy: actor,
       };

@@ -39,8 +39,8 @@
                     "dataDelayMinutes": 60,
                     "skillVersion": "product-standard-pending",
                     "metrics": [
-                      { "key": "cpi", "label": "CPI", "availability": "direct", "standardValue": 1.5, "anomalyThreshold": 1.8 },
-                      { "key": "d0_roas", "label": "D0 ROAS", "availability": "direct", "standardValue": 0.3, "anomalyThreshold": 0.24 }
+                      { "key": "cpi", "label": "CPI", "availability": "direct", "standardValue": 1.5, "lowerBound": 1.2, "upperBound": 1.8 },
+                      { "key": "d0_roas", "label": "D0 ROAS", "availability": "direct", "standardValue": 0.3, "lowerBound": 0.24, "upperBound": 0.42 }
                     ]
                   }
                 }

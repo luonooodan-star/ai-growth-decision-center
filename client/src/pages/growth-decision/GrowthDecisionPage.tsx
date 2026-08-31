@@ -56,6 +56,7 @@ import { Progress } from '@/components/ui/progress';
 
 import { JudgmentQueue } from './JudgmentQueue';
 import { FetchHistoryControl } from './FetchHistoryControl';
+import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
 
 interface StatCardProps {
   label: string;
@@ -209,10 +210,30 @@ const GrowthDecisionPage: React.FC = () => {
     setError('');
     try {
       await growthDecision.reviewJudgment(id, request);
+      if (request.action === 'confirmed') {
+        await growthDecision.generateRecommendation(id);
+      }
       await loadDashboard();
     } catch (requestError: unknown) {
       setError(
         requestError instanceof Error ? requestError.message : '判断保存失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleGenerateRecommendation = async (id: string): Promise<void> => {
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.generateRecommendation(id);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '调整建议生成失败',
       );
     } finally {
       setSaving(false);
@@ -329,6 +350,7 @@ const GrowthDecisionPage: React.FC = () => {
             judgments={dashboard?.judgments || []}
             saving={saving}
             onReview={handleJudgmentReview}
+            onGenerateRecommendation={handleGenerateRecommendation}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">
@@ -396,6 +418,10 @@ const GrowthDecisionPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
+                          <DecisionHistoryDrawer
+                            recordId={item.id}
+                            title={`${item.productName} · ${item.recommendation}`}
+                          />
                           <Button
                             variant="outline"
                             onClick={() => setSelectedCase(item)}
@@ -575,7 +601,9 @@ const GrowthDecisionPage: React.FC = () => {
                         <span className="text-slate-500">异常规则</span>
                         <span className="font-medium text-slate-800">
                           {product.metrics.filter(
-                            (metric) => metric.anomalyThreshold !== undefined,
+                            (metric) =>
+                              metric.lowerBound !== undefined ||
+                              metric.upperBound !== undefined,
                           ).length} 项阈值已启用
                         </span>
                       </div>

@@ -36,6 +36,9 @@ export interface GrowthMetricDefinition {
   formula?: string;
   description: string;
   standardValue?: number;
+  lowerBound?: number;
+  upperBound?: number;
+  /** @deprecated 仅用于兼容旧数据，读取时会迁移为上下界。 */
   anomalyThreshold?: number;
   updatedAt?: string;
   updatedBy?: string;
@@ -70,7 +73,8 @@ export interface TriggerGrowthFetchRequest {
 export interface UpdateMetricStandardItem {
   key: GrowthMetricKey;
   standardValue?: number;
-  anomalyThreshold?: number;
+  lowerBound?: number;
+  upperBound?: number;
 }
 
 export interface UpdateMetricStandardsRequest {
@@ -108,6 +112,8 @@ export interface GrowthDecisionCase {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  spend?: number;
+  sourceJudgmentId?: string;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -168,6 +174,9 @@ export interface GrowthJudgment {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  spend?: number;
+  recommendationCaseId?: string;
+  recommendationCreatedAt?: string;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -220,6 +229,7 @@ export interface IngestDecisionCaseRequest {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  spend?: number;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -249,6 +259,7 @@ export interface IngestJudgmentRequest {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  spend?: number;
   evidence: string;
   rootCause: string;
   confidence: number;
@@ -267,4 +278,18 @@ export interface CreateRecommendationFromJudgmentRequest {
   recommendedAction: RecommendedAction;
   expectedImpact: string;
   riskNote?: string;
+}
+
+export interface GrowthDecisionActivity {
+  id: string;
+  recordId: string;
+  action: string;
+  actor: string;
+  detail: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+}
+
+export interface GrowthDecisionHistoryResponse {
+  items: GrowthDecisionActivity[];
 }

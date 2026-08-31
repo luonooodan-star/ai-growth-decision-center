@@ -38,19 +38,20 @@ import {
 
 interface MetricDraft {
   standardValue: string;
-  anomalyThreshold: string;
+  lowerBound: string;
+  upperBound: string;
 }
 
 type MetricDrafts = Record<GrowthMetricKey, MetricDraft>;
 
 const EMPTY_DRAFTS: MetricDrafts = {
-  cpi: { standardValue: '', anomalyThreshold: '' },
-  cpa: { standardValue: '', anomalyThreshold: '' },
-  d0_roas: { standardValue: '', anomalyThreshold: '' },
-  ecpm: { standardValue: '', anomalyThreshold: '' },
-  retention_d1: { standardValue: '', anomalyThreshold: '' },
-  ipu: { standardValue: '', anomalyThreshold: '' },
-  arpu: { standardValue: '', anomalyThreshold: '' },
+  cpi: { standardValue: '', lowerBound: '', upperBound: '' },
+  cpa: { standardValue: '', lowerBound: '', upperBound: '' },
+  d0_roas: { standardValue: '', lowerBound: '', upperBound: '' },
+  ecpm: { standardValue: '', lowerBound: '', upperBound: '' },
+  retention_d1: { standardValue: '', lowerBound: '', upperBound: '' },
+  ipu: { standardValue: '', lowerBound: '', upperBound: '' },
+  arpu: { standardValue: '', lowerBound: '', upperBound: '' },
 };
 
 const ACTUAL_SOURCE_LABEL: Record<
@@ -101,7 +102,8 @@ const draftsFromProduct = (product?: GrowthProduct): MetricDrafts => {
   product?.metrics.forEach((metric: GrowthMetricDefinition): void => {
     result[metric.key] = {
       standardValue: displayValue(metric, metric.standardValue),
-      anomalyThreshold: displayValue(metric, metric.anomalyThreshold),
+      lowerBound: displayValue(metric, metric.lowerBound),
+      upperBound: displayValue(metric, metric.upperBound),
     };
   });
   return result;
@@ -191,9 +193,13 @@ const MetricLibraryPage = () => {
             metric,
             drafts[metric.key].standardValue,
           ),
-          anomalyThreshold: parseInput(
+          lowerBound: parseInput(
             metric,
-            drafts[metric.key].anomalyThreshold,
+            drafts[metric.key].lowerBound,
+          ),
+          upperBound: parseInput(
+            metric,
+            drafts[metric.key].upperBound,
           ),
         }),
       );
@@ -212,7 +218,7 @@ const MetricLibraryPage = () => {
       );
       setDrafts(draftsFromProduct(updated));
       setSuccess(
-        '指标标准已保存，下一次 Doris 抓取会按异常阈值自动比对。',
+        '指标标准已保存，下一次 Doris 抓取会按上下界自动比对。',
       );
     } catch (requestError: unknown) {
       setError(
@@ -245,7 +251,7 @@ const MetricLibraryPage = () => {
             产品指标标准库
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            人工录入产品标准值和异常阈值。Doris 每次抓取后按 Campaign、广告组实际值交叉比对，越过阈值的记录进入产品异常队列。
+            人工录入产品标准值、正常下界和正常上界。Doris 每次抓取后按 Campaign、广告组实际值交叉比对，低于下界或高于上界的记录进入异常队列。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -294,9 +300,7 @@ const MetricLibraryPage = () => {
         {product?.metrics.map((metric: GrowthMetricDefinition) => {
           const draft: MetricDraft = drafts[metric.key];
           const thresholdRule: string =
-            metric.direction === 'lower'
-              ? '实际值高于阈值时判为异常'
-              : '实际值低于阈值时判为异常';
+            '实际值低于下界或高于上界时判为异常；任一边留空则不检测该方向。';
           return (
             <Card
               key={metric.key}
@@ -322,7 +326,7 @@ const MetricLibraryPage = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <label className="text-xs font-medium text-slate-600">
                     标准值（{metricUnit(metric)}）
                     <Input
@@ -342,21 +346,39 @@ const MetricLibraryPage = () => {
                     />
                   </label>
                   <label className="text-xs font-medium text-slate-600">
-                    异常阈值（{metricUnit(metric)}）
+                    正常下界（{metricUnit(metric)}）
                     <Input
                       className="mt-2"
                       type="number"
                       min="0"
                       step="any"
-                      value={draft.anomalyThreshold}
+                      value={draft.lowerBound}
                       onChange={(event) =>
                         changeDraft(
                           metric.key,
-                          'anomalyThreshold',
+                          'lowerBound',
                           event.target.value,
                         )
                       }
-                      placeholder="留空不检测"
+                      placeholder="留空不检测偏低"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    正常上界（{metricUnit(metric)}）
+                    <Input
+                      className="mt-2"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={draft.upperBound}
+                      onChange={(event) =>
+                        changeDraft(
+                          metric.key,
+                          'upperBound',
+                          event.target.value,
+                        )
+                      }
+                      placeholder="留空不检测偏高"
                     />
                   </label>
                 </div>
