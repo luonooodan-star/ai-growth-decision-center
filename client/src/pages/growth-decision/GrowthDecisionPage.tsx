@@ -724,7 +724,7 @@ const GrowthDecisionPage: React.FC = () => {
                                   }
                                 >
                                   {account.activityStatus === 'new'
-                                    ? '新户'
+                                    ? '新发现'
                                     : account.activityStatus === 'active'
                                       ? '活跃'
                                       : account.activityStatus === 'inactive'
