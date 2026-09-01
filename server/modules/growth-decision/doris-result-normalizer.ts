@@ -53,6 +53,13 @@ const rowsFrom = (value: unknown): DorisRow[] | undefined => {
 
 const findRows = (value: unknown, depth = 0): DorisRow[] | undefined => {
   if (depth > 4) return undefined;
+  if (typeof value === 'string') {
+    try {
+      return findRows(parseJsonText(value), depth + 1);
+    } catch {
+      return undefined;
+    }
+  }
   const object: DorisRow | undefined = asObject(value);
   if (!object) return undefined;
   for (const key of ['rows', 'data', 'records', 'items']) {
@@ -67,6 +74,13 @@ const findRows = (value: unknown, depth = 0): DorisRow[] | undefined => {
 };
 
 const rowCountFrom = (value: unknown): number | undefined => {
+  if (typeof value === 'string') {
+    try {
+      return rowCountFrom(parseJsonText(value));
+    } catch {
+      return undefined;
+    }
+  }
   const object: DorisRow | undefined = asObject(value);
   if (!object) return undefined;
   for (const key of ['row_count', 'rowCount', 'total']) {

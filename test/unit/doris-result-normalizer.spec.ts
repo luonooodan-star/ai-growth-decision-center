@@ -42,4 +42,20 @@ describe('Doris result normalizer', () => {
     expect(result.row_count).toBe(1);
     expect(dorisNumber(result.rows?.[0] || {}, 'spend')).toBe(9.5);
   });
+
+  it('parses the JSON string returned in structuredContent.result', () => {
+    const result: DorisQueryResult = normalizeDorisQueryResult({
+      result: JSON.stringify({
+        row_count: 2,
+        rows: [
+          { report_date: '2026-08-27', spend: '18.50' },
+          { report_date: '2026-08-28', spend: '21.75' },
+        ],
+      }),
+    });
+
+    expect(result.row_count).toBe(2);
+    expect(result.rows).toHaveLength(2);
+    expect(dorisNumber(result.rows?.[1] || {}, 'spend')).toBe(21.75);
+  });
 });
