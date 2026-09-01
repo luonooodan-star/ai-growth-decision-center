@@ -18,6 +18,7 @@ import type {
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
   GrowthJudgment,
+  GrowthHistoryResetResult,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
@@ -51,6 +52,10 @@ export class GrowthDecisionService {
       judgments,
       cases,
     };
+  }
+
+  resetHistory(): GrowthHistoryResetResult {
+    return this.database.resetGrowthHistory();
   }
 
   async getHourlyMaintenanceStatus(): Promise<Record<string, number>> {

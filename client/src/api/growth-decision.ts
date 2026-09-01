@@ -3,11 +3,13 @@ import axios from 'axios';
 import type {
   GrowthAiProviderStatus,
   GrowthDashboardResponse,
+  GrowthDataHistoryResponse,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthJudgment,
+  GrowthHistoryResetResult,
   GrowthMavisJobListResponse,
   GrowthProduct,
   ReviewJudgmentRequest,
@@ -44,6 +46,34 @@ async function triggerFetch(productId?: string): Promise<GrowthFetchRun[]> {
   const response = await axios.post<GrowthFetchRun[]>(
     '/api/growth-decision/fetches/trigger',
     { productId },
+  );
+  return response.data;
+}
+
+async function backfillHistory(
+  productId: string,
+  historyDays: 7 | 14 | 30,
+): Promise<GrowthFetchRun[]> {
+  const response = await axios.post<GrowthFetchRun[]>(
+    '/api/growth-decision/fetches/trigger',
+    { productId, historyDays },
+  );
+  return response.data;
+}
+
+async function getDataHistory(
+  productId: string,
+): Promise<GrowthDataHistoryResponse> {
+  const response = await axios.get<GrowthDataHistoryResponse>(
+    `/api/growth-decision/products/${productId}/data-history`,
+  );
+  return response.data;
+}
+
+async function resetHistory(): Promise<GrowthHistoryResetResult> {
+  const response = await axios.post<GrowthHistoryResetResult>(
+    '/api/growth-decision/history/reset',
+    { confirmation: 'RESET_HISTORY' },
   );
   return response.data;
 }
@@ -125,13 +155,16 @@ async function updateResult(
 
 export {
   analyzeJudgment,
+  backfillHistory,
   getAiStatus,
   getDashboard,
+  getDataHistory,
   generateRecommendation,
   getDecisionHistory,
   getFetchHistory,
   getMavisJobs,
   reviewJudgment,
+  resetHistory,
   triggerFetch,
   updateDecision,
   updateMetricStandards,

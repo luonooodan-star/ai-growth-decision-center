@@ -1,21 +1,32 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 
 import type {
   AnalyzeJudgmentRequest,
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
   GrowthAiProviderStatus,
+  GrowthDataHistoryResponse,
   GrowthDashboardResponse,
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
   GrowthJudgment,
+  GrowthHistoryResetResult,
   GrowthMavisJobListResponse,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
   ReviewJudgmentRequest,
+  ResetGrowthHistoryRequest,
   TriggerGrowthFetchRequest,
   UpdateDecisionRequest,
   UpdateMetricStandardsRequest,
@@ -70,11 +81,32 @@ export class GrowthDecisionController {
     return this.growthDataFetchService.getHistory(productId);
   }
 
+  @Get('products/:productId/data-history')
+  getProductDataHistory(
+    @Param('productId') productId: string,
+  ): GrowthDataHistoryResponse {
+    return { items: this.growthDataFetchService.getDataHistory(productId) };
+  }
+
   @Post('fetches/trigger')
   async triggerFetch(
     @Body() request: TriggerGrowthFetchRequest,
   ): Promise<GrowthFetchRun[]> {
-    return this.growthDataFetchService.trigger('manual', request.productId);
+    return this.growthDataFetchService.trigger(
+      'manual',
+      request.productId,
+      request.historyDays,
+    );
+  }
+
+  @Post('history/reset')
+  resetHistory(
+    @Body() request: ResetGrowthHistoryRequest,
+  ): GrowthHistoryResetResult {
+    if (request.confirmation !== 'RESET_HISTORY') {
+      throw new BadRequestException('清空确认信息不正确');
+    }
+    return this.growthDecisionService.resetHistory();
   }
 
   @Post('products')

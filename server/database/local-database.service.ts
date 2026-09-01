@@ -7,7 +7,9 @@ import { DatabaseSync } from 'node:sqlite';
 import type {
   GrowthDecisionCase,
   GrowthDecisionActivity,
+  GrowthDataSnapshot,
   GrowthFetchRun,
+  GrowthHistoryResetResult,
   GrowthJudgment,
   GrowthMavisJob,
   GrowthMetricDefinition,
@@ -206,6 +208,100 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(run.id, run.productId || null, run.status, run.startedAt, JSON.stringify(run));
   }
 
+  listDataSnapshots(productId: string, limit = 90): GrowthDataSnapshot[] {
+    const rows: Record<string, unknown>[] = this.database
+      .prepare(
+        `SELECT payload FROM growth_metric_snapshot
+         WHERE product_id = ? ORDER BY data_date DESC LIMIT ?`,
+      )
+      .all(productId, limit);
+    return rows.map(
+      (row: Record<string, unknown>): GrowthDataSnapshot =>
+        this.parsePayload<GrowthDataSnapshot>(row.payload),
+    );
+  }
+
+  saveDataSnapshot(snapshot: GrowthDataSnapshot): void {
+    this.database
+      .prepare(
+        `INSERT INTO growth_metric_snapshot (
+           id, product_id, data_date, updated_at, payload
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(product_id, data_date) DO UPDATE SET
+           id = excluded.id,
+           updated_at = excluded.updated_at,
+           payload = excluded.payload`,
+      )
+      .run(
+        snapshot.id,
+        snapshot.productId,
+        snapshot.dataDate,
+        snapshot.fetchedAt,
+        JSON.stringify(snapshot),
+      );
+  }
+
+  resetGrowthHistory(): GrowthHistoryResetResult {
+    const countRows = (tableName: string): number => {
+      const row: Record<string, unknown> = this.database
+        .prepare(`SELECT COUNT(*) AS count FROM ${tableName}`)
+        .get() || { count: 0 };
+      return Number(row.count || 0);
+    };
+    const deleted: GrowthHistoryResetResult['deleted'] = {
+      fetchRuns: countRows('growth_fetch_run'),
+      snapshots: countRows('growth_metric_snapshot'),
+      decisionRecords: countRows('growth_decision_record'),
+      activities: countRows('growth_decision_activity'),
+      mavisJobs: countRows('growth_mavis_job'),
+    };
+    const products: GrowthProduct[] = this.listProducts();
+    const resetAt: string = new Date().toISOString();
+
+    this.database.exec('BEGIN IMMEDIATE;');
+    try {
+      this.database.exec(`
+        DELETE FROM growth_decision_activity;
+        DELETE FROM growth_mavis_job;
+        DELETE FROM growth_decision_record;
+        DELETE FROM growth_fetch_run;
+        DELETE FROM growth_metric_snapshot;
+      `);
+      const updateProduct = this.database.prepare(
+        'UPDATE growth_product SET payload = ?, updated_at = ? WHERE id = ?',
+      );
+      for (const product of products) {
+        const resetProduct: GrowthProduct = { ...product };
+        delete resetProduct.lastSyncAt;
+        delete resetProduct.latestMetricValues;
+        updateProduct.run(JSON.stringify(resetProduct), resetAt, product.id);
+      }
+      this.database
+        .prepare(
+          `INSERT INTO growth_history_reset_audit
+           (id, reset_at, deleted_counts) VALUES (?, ?, ?)`,
+        )
+        .run(randomUUID(), resetAt, JSON.stringify(deleted));
+      this.database.exec('COMMIT;');
+    } catch (error: unknown) {
+      this.database.exec('ROLLBACK;');
+      throw error;
+    }
+
+    return {
+      resetAt,
+      deleted,
+      preserved: {
+        products: products.length,
+        metricStandards: products.reduce(
+          (total: number, product: GrowthProduct): number =>
+            total + product.metrics.length,
+          0,
+        ),
+      },
+    };
+  }
+
   listMavisJobs(judgmentId?: string, limit = 100): GrowthMavisJob[] {
     const rows: Record<string, unknown>[] = judgmentId
       ? this.database
@@ -331,6 +427,19 @@ export class LocalDatabaseService implements OnModuleDestroy {
       CREATE INDEX IF NOT EXISTS idx_growth_fetch_product
         ON growth_fetch_run(product_id, started_at DESC);
 
+      CREATE TABLE IF NOT EXISTS growth_metric_snapshot (
+        id TEXT PRIMARY KEY,
+        product_id TEXT NOT NULL,
+        data_date TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        UNIQUE(product_id, data_date),
+        FOREIGN KEY (product_id) REFERENCES growth_product(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_growth_snapshot_product_date
+        ON growth_metric_snapshot(product_id, data_date DESC);
+
       CREATE TABLE IF NOT EXISTS growth_mavis_job (
         id TEXT PRIMARY KEY,
         judgment_id TEXT NOT NULL,
@@ -345,6 +454,12 @@ export class LocalDatabaseService implements OnModuleDestroy {
         ON growth_mavis_job(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_growth_mavis_job_judgment
         ON growth_mavis_job(judgment_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS growth_history_reset_audit (
+        id TEXT PRIMARY KEY,
+        reset_at TEXT NOT NULL,
+        deleted_counts TEXT NOT NULL
+      );
     `);
   }
 

@@ -106,6 +106,42 @@ export interface GrowthFetchHistoryResponse {
 
 export interface TriggerGrowthFetchRequest {
   productId?: string;
+  historyDays?: 7 | 14 | 30;
+}
+
+export interface GrowthDataSnapshot {
+  id: string;
+  productId: string;
+  productName: string;
+  dataDate: string;
+  metrics: GrowthDeliveryMetricValues;
+  campaignCount: number;
+  adsetCount: number;
+  sourceRows: number;
+  fetchedAt: string;
+}
+
+export interface GrowthDataHistoryResponse {
+  items: GrowthDataSnapshot[];
+}
+
+export interface ResetGrowthHistoryRequest {
+  confirmation: 'RESET_HISTORY';
+}
+
+export interface GrowthHistoryResetResult {
+  resetAt: string;
+  deleted: {
+    fetchRuns: number;
+    snapshots: number;
+    decisionRecords: number;
+    activities: number;
+    mavisJobs: number;
+  };
+  preserved: {
+    products: number;
+    metricStandards: number;
+  };
 }
 
 export interface UpdateMetricStandardItem {

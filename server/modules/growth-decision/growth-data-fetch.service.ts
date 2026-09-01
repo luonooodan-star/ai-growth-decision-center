@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import type {
   GrowthDeliveryMetricKey,
   GrowthDeliveryMetricValues,
+  GrowthDataSnapshot,
   GrowthDiagnosticBreakdown,
   GrowthDiagnosticContext,
   GrowthJudgment,
@@ -91,16 +92,21 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  getDataHistory(productId: string): GrowthDataSnapshot[] {
+    return this.database.listDataSnapshots(productId);
+  }
+
   async trigger(
     trigger: GrowthFetchRun['trigger'],
     productId?: string,
+    historyDays?: number,
   ): Promise<GrowthFetchRun[]> {
     if (this.activeRun) {
       if (trigger === 'manual')
         throw new ConflictException('已有抓取任务正在运行');
       return this.activeRun;
     }
-    this.activeRun = this.runProducts(trigger, productId);
+    this.activeRun = this.runProducts(trigger, productId, historyDays);
     try {
       return await this.activeRun;
     } finally {
@@ -111,6 +117,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private async runProducts(
     trigger: GrowthFetchRun['trigger'],
     productId?: string,
+    historyDays?: number,
   ): Promise<GrowthFetchRun[]> {
     const products = productId
       ? ([this.database.getProduct(productId)].filter(
@@ -123,7 +130,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
     const results: GrowthFetchRun[] = [];
     for (const product of products) {
-      results.push(await this.fetchProduct(product, trigger));
+      results.push(await this.fetchProduct(product, trigger, historyDays));
     }
     return results;
   }
@@ -131,6 +138,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private async fetchProduct(
     product: GrowthProduct,
     trigger: GrowthFetchRun['trigger'],
+    historyDays?: number,
   ): Promise<GrowthFetchRun> {
     const startedAt = new Date().toISOString();
     const run: GrowthFetchRun = {
@@ -151,7 +159,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const degradationNotes: string[] = [];
       const endDate = this.dateString(new Date());
       const start = new Date();
-      start.setDate(start.getDate() - 8);
+      const requestedHistoryDays: number =
+        trigger === 'manual' && historyDays
+          ? Math.min(30, Math.max(1, Math.round(historyDays)))
+          : 8;
+      start.setDate(start.getDate() - requestedHistoryDays);
       const defaultStartDate: string = this.dateString(start);
       const historyCutoff = new Date();
       historyCutoff.setDate(historyCutoff.getDate() - 30);
@@ -175,7 +187,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               .sort()[0]
           : undefined;
       const startDate: string =
-        earliestStoredDate && earliestStoredDate < defaultStartDate
+        !historyDays && earliestStoredDate && earliestStoredDate < defaultStartDate
           ? earliestStoredDate
           : defaultStartDate;
       const filters = {
@@ -334,6 +346,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         latestMetricValues,
       };
       this.database.saveProduct(updatedProduct);
+      const snapshotCount: number = this.saveDailySnapshots(
+        updatedProduct,
+        deliveryRows,
+        cohortRows,
+      );
       const historicalBackfillCount: number =
         trigger === 'manual'
           ? await this.backfillHistoricalJudgments(
@@ -361,7 +378,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             : '连接成功，但当前时间窗口没有返回可用数据'
           : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常${
               trigger === 'manual'
-                ? `，历史核对/回填 ${historicalBackfillCount} 条`
+                ? `，保存/更新 ${snapshotCount} 天历史快照，历史异常回填 ${historicalBackfillCount} 条`
                 : ''
             }；未填写上下界的指标不参与判断${
               degradationNotes.length ? `；${degradationNotes.join('；')}` : ''
@@ -376,6 +393,90 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
     this.database.saveFetchRun(run);
     return run;
+  }
+
+  private saveDailySnapshots(
+    product: GrowthProduct,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
+  ): number {
+    const dataDates: string[] = Array.from(
+      new Set<string>([
+        ...deliveryRows
+          .map((row: DorisRow): string =>
+            dorisString(row, 'report_date') || '',
+          )
+          .filter(Boolean),
+        ...cohortRows
+          .map((row: DorisRow): string =>
+            dorisString(row, 'install_date') || '',
+          )
+          .filter(Boolean),
+      ]),
+    ).sort();
+    const fetchedAt: string = new Date().toISOString();
+
+    for (const dataDate of dataDates) {
+      const dailyDelivery: DorisRow[] = deliveryRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'report_date') === dataDate,
+      );
+      const dailyCohort: DorisRow[] = cohortRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'install_date') === dataDate,
+      );
+      const aggregate: DorisRow | undefined = dailyDelivery.length
+        ? this.aggregateDeliveryRows(dailyDelivery)
+        : undefined;
+      const cohortSpend: number = dailyCohort.reduce(
+        (total: number, row: DorisRow): number =>
+          total + (dorisNumber(row, 'cohort_spend') || 0),
+        0,
+      );
+      const weightedD0Roas: number | undefined = cohortSpend
+        ? dailyCohort.reduce(
+            (total: number, row: DorisRow): number =>
+              total +
+              (dorisNumber(row, 'd0_roas') || 0) *
+                (dorisNumber(row, 'cohort_spend') || 0),
+            0,
+          ) / cohortSpend
+        : undefined;
+      const snapshot: GrowthDataSnapshot = {
+        id: `${product.id}:${dataDate}`,
+        productId: product.id,
+        productName: product.name,
+        dataDate,
+        metrics: {
+          ...this.deliveryDiagnosticValues(aggregate),
+          ...(weightedD0Roas === undefined
+            ? {}
+            : { d0_roas: weightedD0Roas }),
+        },
+        campaignCount: new Set(
+          dailyDelivery
+            .map((row: DorisRow): string =>
+              dorisString(row, 'campaign_id') ||
+              dorisString(row, 'campaign_name') ||
+              '',
+            )
+            .filter(Boolean),
+        ).size,
+        adsetCount: new Set(
+          dailyDelivery
+            .map((row: DorisRow): string =>
+              dorisString(row, 'adgroup_id') ||
+              dorisString(row, 'adgroup_name') ||
+              '',
+            )
+            .filter(Boolean),
+        ).size,
+        sourceRows: dailyDelivery.length + dailyCohort.length,
+        fetchedAt,
+      };
+      this.database.saveDataSnapshot(snapshot);
+    }
+    return dataDates.length;
   }
 
   private calculateLatestMetrics(

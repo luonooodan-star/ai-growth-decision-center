@@ -1,8 +1,11 @@
 import { Activity, Database, FlaskConical, Gauge, Sparkles } from 'lucide-react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 
 const Layout = () => {
-  const location = useLocation();
+  const navClass = ({ isActive }: { isActive: boolean }): string =>
+    `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${
+      isActive ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'
+    }`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-foreground">
@@ -22,28 +25,29 @@ const Layout = () => {
             </div>
           </div>
           <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 md:flex">
-            <Link
+            <NavLink
               to="/"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${location.pathname === '/' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              className={navClass}
+              end
             >
               <Activity className="size-3.5" />
               产品中心
-            </Link>
-            <span className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
+            </NavLink>
+            <NavLink to="/experiments" className={navClass}>
               <Database className="size-3.5" />
               实验库
-            </span>
-            <Link
+            </NavLink>
+            <NavLink
               to="/metrics"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${location.pathname === '/metrics' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              className={navClass}
             >
               <Gauge className="size-3.5" />
               指标库
-            </Link>
-            <span className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500">
+            </NavLink>
+            <NavLink to="/skills" className={navClass}>
               <FlaskConical className="size-3.5" />
               Skill 迭代
-            </span>
+            </NavLink>
           </nav>
           <div className="text-right">
             <p className="text-xs font-medium text-slate-800">当前用户</p>
