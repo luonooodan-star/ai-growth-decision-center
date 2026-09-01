@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Check,
   Clock3,
+  Eye,
   SearchCheck,
   Sparkles,
   WalletCards,
@@ -52,6 +53,8 @@ const DETAIL_STATUS_LABELS: Record<string, string> = {
   judgment_deferred: '待定',
   judgment_confirmed: '判断成立',
   judgment_rejected: '判断否决',
+  judgment_observing: '观察中',
+  judgment_observation_resolved: '观察已结束',
 };
 
 const DETAIL_AI_JUDGMENT_LABELS: Record<string, string> = {
@@ -567,6 +570,13 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                 ) : null}
                 {canReview ? (
                   <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onReview(item, 'observing')}
+                    >
+                      <Eye className="size-4" /> 观察
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

@@ -60,6 +60,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 
 import { JudgmentQueue } from './JudgmentQueue';
+import { ObservationQueue } from './ObservationQueue';
 import { FetchHistoryControl } from './FetchHistoryControl';
 import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
 
@@ -92,16 +93,17 @@ const SEVERITY_LABELS: Record<string, string> = {
   critical: '紧急',
 };
 
-const experimentExpiresAt = (item: GrowthDecisionCase): number => {
-  if (item.experimentExpiresAt) {
-    return new Date(item.experimentExpiresAt).getTime();
-  }
-  const startedAt: string = item.experimentStartedAt || item.decidedAt || item.createdAt;
-  return new Date(startedAt).getTime() + 7 * 24 * 60 * 60 * 1000;
+const experimentHideAt = (item: GrowthDecisionCase): number => {
+  if (item.status !== 'completed') return Number.POSITIVE_INFINITY;
+  if (item.hideAfterAt) return new Date(item.hideAfterAt).getTime();
+  const endedAt: string =
+    item.observationEndedAt || item.completedAt || item.createdAt;
+  return new Date(endedAt).getTime() + 7 * 24 * 60 * 60 * 1000;
 };
 
 const experimentRetentionLabel = (item: GrowthDecisionCase): string => {
-  const remainingMs: number = Math.max(0, experimentExpiresAt(item) - Date.now());
+  if (item.status !== 'completed') return '持续观察中';
+  const remainingMs: number = Math.max(0, experimentHideAt(item) - Date.now());
   const remainingDays: number = Math.max(
     1,
     Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
@@ -433,13 +435,13 @@ const GrowthDecisionPage: React.FC = () => {
         .filter(
           (item: GrowthDecisionCase): boolean =>
             ['accepted', 'observing', 'completed'].includes(item.status) &&
-            experimentExpiresAt(item) > Date.now(),
+            experimentHideAt(item) > Date.now(),
         )
         .sort(
           (left: GrowthDecisionCase, right: GrowthDecisionCase): number =>
             Number(Boolean(right.isFocused)) -
               Number(Boolean(left.isFocused)) ||
-            experimentExpiresAt(left) - experimentExpiresAt(right),
+            experimentHideAt(left) - experimentHideAt(right),
         ),
     [dashboard],
   );
@@ -569,6 +571,13 @@ const GrowthDecisionPage: React.FC = () => {
             mavisModel={aiStatus?.model || 'Marvis Growth Analyst'}
             mavisRuntimeMode={aiStatus?.runtimeMode || 'skill_simulation'}
             mavisQueuedJobs={aiStatus?.queuedJobs || 0}
+          />
+
+          <ObservationQueue
+            judgments={dashboard?.judgments || []}
+            saving={saving}
+            onReview={handleJudgmentReview}
+            onToggleFocus={handleToggleFocus}
           />
 
           <Card className="border-slate-200 bg-white shadow-none">

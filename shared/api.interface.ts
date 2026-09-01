@@ -161,6 +161,7 @@ export interface GrowthHistoryResetResult {
     decisionRecords: number;
     activities: number;
     mavisJobs: number;
+    monitoringSnapshots: number;
   };
   preserved: {
     products: number;
@@ -237,6 +238,9 @@ export interface GrowthDecisionCase {
   recoveryReadyAt?: string;
   latestObservedValue?: number;
   completedAt?: string;
+  observationEndedAt?: string;
+  hideAfterAt?: string;
+  supersededByCaseId?: string;
   createdAt: string;
 }
 
@@ -299,7 +303,39 @@ export interface GrowthJudgment {
   isFocused?: boolean;
   focusedAt?: string;
   focusedBy?: string;
+  observationStartedAt?: string;
+  observationNormalSince?: string;
+  observationRecoveryReadyAt?: string;
+  observationResolvedAt?: string;
+  latestObservedValue?: number;
   createdAt: string;
+}
+
+export type GrowthMonitoringSubjectType =
+  | 'judgment_observation'
+  | 'experiment';
+
+export interface GrowthMonitoringSnapshot {
+  id: string;
+  recordId: string;
+  productId: string;
+  subjectType: GrowthMonitoringSubjectType;
+  observedAt: string;
+  dataDate: string;
+  campaignId?: string;
+  campaignName?: string;
+  adsetId?: string;
+  adsetName?: string;
+  metrics: GrowthDeliveryMetricValues;
+  previousMetrics: GrowthDeliveryMetricValues;
+  changesPct: GrowthDeliveryMetricValues;
+  isWithinNormalRange: boolean;
+  isBaseline?: boolean;
+  source: string;
+}
+
+export interface GrowthMonitoringHistoryResponse {
+  items: GrowthMonitoringSnapshot[];
 }
 
 export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
@@ -527,7 +563,7 @@ export interface IngestJudgmentRequest {
 }
 
 export interface ReviewJudgmentRequest {
-  action: 'confirmed' | 'deferred' | 'rejected';
+  action: 'confirmed' | 'deferred' | 'rejected' | 'observing' | 'resolved';
   reason: string;
   skillRuleCandidate?: string;
 }

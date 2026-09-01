@@ -24,6 +24,7 @@ import type {
   GrowthJudgment,
   GrowthHistoryResetResult,
   GrowthMavisJobListResponse,
+  GrowthMonitoringHistoryResponse,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
@@ -74,6 +75,13 @@ export class GrowthDecisionController {
     @Param('id') id: string,
   ): Promise<GrowthDecisionHistoryResponse> {
     return this.growthDecisionService.getDecisionHistory(id);
+  }
+
+  @Get('records/:id/monitoring-history')
+  getMonitoringHistory(
+    @Param('id') id: string,
+  ): GrowthMonitoringHistoryResponse {
+    return this.growthDecisionService.getMonitoringHistory(id);
   }
 
   @Patch('records/:id/focus')

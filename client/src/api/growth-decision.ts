@@ -13,6 +13,7 @@ import type {
   GrowthJudgment,
   GrowthHistoryResetResult,
   GrowthMavisJobListResponse,
+  GrowthMonitoringHistoryResponse,
   GrowthProduct,
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
@@ -157,6 +158,15 @@ async function getDecisionHistory(
   return response.data;
 }
 
+async function getMonitoringHistory(
+  id: string,
+): Promise<GrowthMonitoringHistoryResponse> {
+  const response = await axios.get<GrowthMonitoringHistoryResponse>(
+    `/api/growth-decision/records/${id}/monitoring-history`,
+  );
+  return response.data;
+}
+
 async function updateRecordFocus(
   id: string,
   request: UpdateRecordFocusRequest,
@@ -201,6 +211,7 @@ export {
   getDecisionHistory,
   getFetchHistory,
   getMavisJobs,
+  getMonitoringHistory,
   reviewJudgment,
   resetHistory,
   triggerFetch,

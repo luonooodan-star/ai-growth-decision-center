@@ -61,6 +61,8 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
   confirmed: '确认判断',
   deferred: '暂时待定',
   rejected: '否决判断',
+  observing: '转入观察队列',
+  resolved: '结束观察',
 };
 
 const COMPACT_AI_JUDGMENT_LABELS: Record<string, string> = {

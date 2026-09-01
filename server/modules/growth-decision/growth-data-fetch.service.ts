@@ -22,6 +22,7 @@ import type {
   GrowthFetchHistoryResponse,
   GrowthFetchRun,
   GrowthMetricValues,
+  GrowthMonitoringSnapshot,
   GrowthProduct,
 } from '@shared/api.interface';
 
@@ -411,7 +412,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         deliveryRows,
         cohortRows,
       );
-      this.updateExperimentRecovery(
+      this.updateMonitoringSnapshots(
         updatedProduct,
         deliveryRows,
         cohortRows,
@@ -1075,26 +1076,31 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return true;
   }
 
-  private updateExperimentRecovery(
+  private updateMonitoringSnapshots(
     product: GrowthProduct,
     deliveryRows: DorisRow[],
     cohortRows: DorisRow[],
   ): void {
-    const cases: GrowthDecisionCase[] = this.database
+    const records: Array<GrowthDecisionCase | GrowthJudgment> = this.database
       .listDecisionRecords(5000)
       .filter(
-        (record): record is GrowthDecisionCase =>
-          !('preliminaryJudgment' in record) &&
+        (record): record is GrowthDecisionCase | GrowthJudgment =>
           record.productId === product.id &&
-          (record.status === 'accepted' || record.status === 'observing'),
+          (record.status === 'judgment_observing' ||
+            record.status === 'accepted' ||
+            record.status === 'observing'),
       );
     const now: string = new Date().toISOString();
     const nowMs: number = new Date(now).getTime();
+    const latestDeliveryDate: string = this.latestDate(
+      deliveryRows,
+      'report_date',
+    );
 
-    for (const experiment of cases) {
+    for (const record of records) {
       const metric: GrowthMetricDefinition | undefined = product.metrics.find(
         (item: GrowthMetricDefinition): boolean =>
-          item.key === experiment.targetMetric,
+          item.key === record.targetMetric,
       );
       if (
         !metric ||
@@ -1103,7 +1109,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       const currentValue: number | undefined = this.latestExperimentValue(
-        experiment,
+        record,
         metric.key,
         deliveryRows,
         cohortRows,
@@ -1116,30 +1122,76 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         metric.upperBound === undefined || currentValue <= metric.upperBound;
       const isNormal: boolean = withinLower && withinUpper;
       const normalSince: string | undefined = isNormal
-        ? experiment.normalSince || now
+        ? this.monitoringNormalSince(record) || now
         : undefined;
       const recoveryReadyAt: string | undefined =
         isNormal &&
         normalSince &&
         nowMs - new Date(normalSince).getTime() >= 24 * 60 * 60 * 1000
-          ? experiment.recoveryReadyAt || now
+          ? this.monitoringRecoveryReadyAt(record) || now
           : undefined;
       const becameReady: boolean = Boolean(
-        recoveryReadyAt && !experiment.recoveryReadyAt,
+        recoveryReadyAt && !this.monitoringRecoveryReadyAt(record),
       );
-
-      this.database.saveDecisionRecord({
-        ...experiment,
-        latestObservedValue: currentValue,
-        normalSince,
-        recoveryReadyAt,
+      const latestMatches: DorisRow[] = deliveryRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'report_date') === latestDeliveryDate &&
+          this.rowMatchesCase(row, record),
+      );
+      const metrics: GrowthDeliveryMetricValues = latestMatches.length
+        ? this.deliveryDiagnosticValues(
+            this.aggregateDeliveryRows(latestMatches),
+          )
+        : {};
+      if (metric.key === 'd0_roas') metrics.d0_roas = currentValue;
+      const previous: GrowthMonitoringSnapshot | undefined =
+        this.database.listMonitoringSnapshots(record.id, 1)[0];
+      const changesPct: GrowthDeliveryMetricValues =
+        this.calculateMonitoringChanges(metrics, previous?.metrics || {});
+      this.database.saveMonitoringSnapshot({
+        id: randomUUID(),
+        recordId: record.id,
+        productId: product.id,
+        subjectType:
+          record.status === 'judgment_observing'
+            ? 'judgment_observation'
+            : 'experiment',
+        observedAt: now,
+        dataDate: latestDeliveryDate || now.slice(0, 10),
+        campaignId: record.campaignId,
+        campaignName: record.campaignName,
+        adsetId: record.adsetId,
+        adsetName: record.adsetName,
+        metrics,
+        previousMetrics: previous?.metrics || {},
+        changesPct,
+        isWithinNormalRange: isNormal,
+        source: 'hourly_doris_monitoring',
       });
+      const updatedRecord: GrowthDecisionCase | GrowthJudgment =
+        record.status === 'judgment_observing'
+          ? {
+              ...record,
+              latestObservedValue: currentValue,
+              observationNormalSince: normalSince,
+              observationRecoveryReadyAt: recoveryReadyAt,
+            }
+          : {
+              ...record,
+              latestObservedValue: currentValue,
+              normalSince,
+              recoveryReadyAt,
+            };
+      this.database.saveDecisionRecord(updatedRecord);
       if (becameReady) {
         this.database.appendActivity({
-          caseId: experiment.id,
-          action: 'experiment_recovery_ready',
+          caseId: record.id,
+          action:
+            record.status === 'judgment_observing'
+              ? 'observation_recovery_ready'
+              : 'experiment_recovery_ready',
           actor: 'hourly_doris_threshold_compare',
-          detail: '目标指标已连续 24 小时处于产品指标库正常范围，可人工结束实验',
+          detail: '目标指标已连续 24 小时处于产品指标库正常范围，可人工审核并移出观察',
           metadata: {
             source: 'doris_mcp',
             targetMetric: metric.key,
@@ -1150,8 +1202,45 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private monitoringNormalSince(
+    record: GrowthDecisionCase | GrowthJudgment,
+  ): string | undefined {
+    return 'preliminaryJudgment' in record
+      ? record.observationNormalSince
+      : record.normalSince;
+  }
+
+  private monitoringRecoveryReadyAt(
+    record: GrowthDecisionCase | GrowthJudgment,
+  ): string | undefined {
+    return 'preliminaryJudgment' in record
+      ? record.observationRecoveryReadyAt
+      : record.recoveryReadyAt;
+  }
+
+  private calculateMonitoringChanges(
+    current: GrowthDeliveryMetricValues,
+    previous: GrowthDeliveryMetricValues,
+  ): GrowthDeliveryMetricValues {
+    const changes: GrowthDeliveryMetricValues = {};
+    for (const key of DELIVERY_METRIC_KEYS) {
+      const currentValue: number | undefined = current[key];
+      const previousValue: number | undefined = previous[key];
+      if (
+        currentValue !== undefined &&
+        previousValue !== undefined &&
+        previousValue !== 0
+      ) {
+        changes[key] = Number(
+          (((currentValue - previousValue) / previousValue) * 100).toFixed(2),
+        );
+      }
+    }
+    return changes;
+  }
+
   private latestExperimentValue(
-    experiment: GrowthDecisionCase,
+    experiment: GrowthDecisionCase | GrowthJudgment,
     metricKey: GrowthMetricKey,
     deliveryRows: DorisRow[],
     cohortRows: DorisRow[],
@@ -1199,7 +1288,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
   private rowMatchesCase(
     row: DorisRow,
-    experiment: GrowthDecisionCase,
+    experiment: GrowthDecisionCase | GrowthJudgment,
     matchAdset = true,
   ): boolean {
     const campaignMatches: boolean = experiment.campaignId
@@ -1207,10 +1296,16 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       : experiment.campaignName
         ? dorisString(row, 'campaign_name') === experiment.campaignName
         : true;
-    if (!campaignMatches || !matchAdset || !experiment.adsetId) {
+    if (!campaignMatches || !matchAdset) {
       return campaignMatches;
     }
-    return dorisString(row, 'adgroup_id') === experiment.adsetId;
+    if (experiment.adsetId) {
+      return dorisString(row, 'adgroup_id') === experiment.adsetId;
+    }
+    if (experiment.adsetName) {
+      return dorisString(row, 'adgroup_name') === experiment.adsetName;
+    }
+    return campaignMatches;
   }
 
   private findRecentJudgment(

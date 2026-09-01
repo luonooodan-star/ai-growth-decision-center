@@ -13,6 +13,7 @@ import type {
   GrowthJudgment,
   GrowthMavisJob,
   GrowthMetricDefinition,
+  GrowthMonitoringSnapshot,
   GrowthProduct,
 } from '@shared/api.interface';
 
@@ -312,6 +313,39 @@ export class LocalDatabaseService implements OnModuleDestroy {
       );
   }
 
+  listMonitoringSnapshots(
+    recordId: string,
+    limit = 240,
+  ): GrowthMonitoringSnapshot[] {
+    const rows: Record<string, unknown>[] = this.database
+      .prepare(
+        `SELECT payload FROM growth_monitoring_snapshot
+         WHERE record_id = ? ORDER BY observed_at DESC LIMIT ?`,
+      )
+      .all(recordId, limit);
+    return rows.map(
+      (row: Record<string, unknown>): GrowthMonitoringSnapshot =>
+        this.parsePayload<GrowthMonitoringSnapshot>(row.payload),
+    );
+  }
+
+  saveMonitoringSnapshot(snapshot: GrowthMonitoringSnapshot): void {
+    this.database
+      .prepare(
+        `INSERT INTO growth_monitoring_snapshot (
+           id, record_id, product_id, subject_type, observed_at, payload
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        snapshot.id,
+        snapshot.recordId,
+        snapshot.productId,
+        snapshot.subjectType,
+        snapshot.observedAt,
+        JSON.stringify(snapshot),
+      );
+  }
+
   resetGrowthHistory(): GrowthHistoryResetResult {
     const countRows = (tableName: string): number => {
       const row: Record<string, unknown> = this.database
@@ -325,6 +359,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       decisionRecords: countRows('growth_decision_record'),
       activities: countRows('growth_decision_activity'),
       mavisJobs: countRows('growth_mavis_job'),
+      monitoringSnapshots: countRows('growth_monitoring_snapshot'),
     };
     const products: GrowthProduct[] = this.listProducts();
     const resetAt: string = new Date().toISOString();
@@ -337,6 +372,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
         DELETE FROM growth_decision_record;
         DELETE FROM growth_fetch_run;
         DELETE FROM growth_metric_snapshot;
+        DELETE FROM growth_monitoring_snapshot;
       `);
       const updateProduct = this.database.prepare(
         'UPDATE growth_product SET payload = ?, updated_at = ? WHERE id = ?',
@@ -511,6 +547,19 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
       CREATE INDEX IF NOT EXISTS idx_growth_snapshot_product_date
         ON growth_metric_snapshot(product_id, data_date DESC);
+
+      CREATE TABLE IF NOT EXISTS growth_monitoring_snapshot (
+        id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        subject_type TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        FOREIGN KEY (product_id) REFERENCES growth_product(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_growth_monitoring_record_time
+        ON growth_monitoring_snapshot(record_id, observed_at DESC);
 
       CREATE TABLE IF NOT EXISTS growth_mavis_job (
         id TEXT PRIMARY KEY,

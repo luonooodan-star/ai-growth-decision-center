@@ -19,6 +19,8 @@ import type {
   GrowthDecisionHistoryResponse,
   GrowthJudgment,
   GrowthHistoryResetResult,
+  GrowthMonitoringHistoryResponse,
+  GrowthMonitoringSnapshot,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
@@ -57,6 +59,13 @@ export class GrowthDecisionService {
 
   resetHistory(): GrowthHistoryResetResult {
     return this.database.resetGrowthHistory();
+  }
+
+  getMonitoringHistory(id: string): GrowthMonitoringHistoryResponse {
+    if (!this.database.getDecisionRecord(id)) {
+      throw new NotFoundException('决策记录不存在');
+    }
+    return { items: this.database.listMonitoringSnapshots(id) };
   }
 
   async getHourlyMaintenanceStatus(): Promise<Record<string, number>> {
@@ -162,23 +171,43 @@ export class GrowthDecisionService {
     actor: string,
   ): Promise<GrowthJudgment> {
     const current: GrowthJudgment = this.getJudgment(id);
-    if (
-      current.status !== 'judgment_pending' &&
-      current.status !== 'judgment_deferred'
-    ) {
+    const canStartReview: boolean =
+      current.status === 'judgment_pending' ||
+      current.status === 'judgment_deferred';
+    const canResolveObservation: boolean =
+      current.status === 'judgment_observing' && request.action === 'resolved';
+    if (!canStartReview && !canResolveObservation) {
       throw new BadRequestException('该判断已完成审核');
     }
-    const nextStatus: string = `judgment_${request.action}`;
+    if (canResolveObservation && !current.observationRecoveryReadyAt) {
+      throw new BadRequestException(
+        '目标指标尚未连续 24 小时回归正常范围，暂不能移出观察队列',
+      );
+    }
+    const now: string = new Date().toISOString();
+    const nextStatus: string =
+      request.action === 'resolved'
+        ? 'judgment_observation_resolved'
+        : `judgment_${request.action}`;
     const updated: GrowthJudgment = {
       ...current,
       status: nextStatus,
       reviewReason: request.reason,
       reviewedBy: actor,
-      reviewedAt: new Date().toISOString(),
+      reviewedAt: now,
+      observationStartedAt:
+        request.action === 'observing'
+          ? current.observationStartedAt || now
+          : current.observationStartedAt,
+      observationResolvedAt:
+        request.action === 'resolved' ? now : current.observationResolvedAt,
       skillRuleCandidate:
         request.skillRuleCandidate || current.skillRuleCandidate,
     };
     this.database.saveDecisionRecord(updated);
+    if (request.action === 'observing') {
+      this.saveObservationBaseline(updated, now);
+    }
     this.database.appendActivity({
       caseId: id,
       action: nextStatus,
@@ -392,31 +421,28 @@ export class GrowthDecisionService {
   ): Promise<GrowthDecisionCase> {
     const current: GrowthDecisionCase = this.getCase(id);
     const now: string = new Date().toISOString();
-    const experimentExpiresAt: string = new Date(
-      Date.now() + 7 * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    if (request.action === 'accepted') {
+      this.completeSupersededExperiments(current, now);
+    }
     const updated: GrowthDecisionCase = {
       ...current,
       status: request.action,
       decisionReason: request.reason,
       decidedBy: actor,
       decidedAt: now,
-      observationEndsAt:
-        request.action === 'accepted'
-          ? experimentExpiresAt
-          : undefined,
+      observationEndsAt: undefined,
       experimentStartedAt:
         request.action === 'accepted' ? now : current.experimentStartedAt,
-      experimentExpiresAt:
-        request.action === 'accepted'
-          ? experimentExpiresAt
-          : current.experimentExpiresAt,
+      experimentExpiresAt: undefined,
       normalSince:
         request.action === 'accepted' ? undefined : current.normalSince,
       recoveryReadyAt:
         request.action === 'accepted' ? undefined : current.recoveryReadyAt,
     };
     this.database.saveDecisionRecord(updated);
+    if (request.action === 'accepted') {
+      this.saveExperimentBaseline(updated, now);
+    }
     this.database.appendActivity({
       caseId: id,
       action: request.action,
@@ -437,13 +463,18 @@ export class GrowthDecisionService {
     actor: string,
   ): Promise<GrowthDecisionCase> {
     const current: GrowthDecisionCase = this.getCase(id);
+    const completedAt: string = new Date().toISOString();
     const updated: GrowthDecisionCase = {
       ...current,
       status: 'completed',
       resultClassification: request.classification,
       actualChangePct: request.actualChangePct,
       actualResult: request.actualResult,
-      completedAt: new Date().toISOString(),
+      completedAt,
+      observationEndedAt: completedAt,
+      hideAfterAt: new Date(
+        new Date(completedAt).getTime() + 7 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
     };
     this.database.saveDecisionRecord(updated);
     this.database.appendActivity({
@@ -458,6 +489,109 @@ export class GrowthDecisionService {
       },
     });
     return updated;
+  }
+
+  private completeSupersededExperiments(
+    next: GrowthDecisionCase,
+    now: string,
+  ): void {
+    const active: GrowthDecisionCase[] = this.database
+      .listDecisionRecords(5000)
+      .filter(
+        (record: DecisionRecord): record is GrowthDecisionCase =>
+          !this.isJudgmentRecord(record) &&
+          record.id !== next.id &&
+          record.productId === next.productId &&
+          (record.status === 'accepted' || record.status === 'observing') &&
+          this.sameAdset(record, next),
+      );
+    for (const previous of active) {
+      const updated: GrowthDecisionCase = {
+        ...previous,
+        status: 'completed',
+        resultClassification: previous.resultClassification || 'neutral',
+        actualResult:
+          `同一广告组出现新异常并采取新措施，原实验结束观测。` +
+          (previous.actualResult ? ` ${previous.actualResult}` : ''),
+        completedAt: now,
+        observationEndedAt: now,
+        hideAfterAt: new Date(
+          new Date(now).getTime() + 7 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        supersededByCaseId: next.id,
+      };
+      this.database.saveDecisionRecord(updated);
+      this.database.appendActivity({
+        caseId: previous.id,
+        action: 'experiment_superseded',
+        actor: '系统',
+        detail: '同一广告组出现新异常和新措施，本次观测自动结束',
+        metadata: { supersededByCaseId: next.id },
+      });
+    }
+  }
+
+  private sameAdset(
+    left: GrowthDecisionCase,
+    right: GrowthDecisionCase,
+  ): boolean {
+    if (left.adsetId && right.adsetId) return left.adsetId === right.adsetId;
+    if (left.adsetName && right.adsetName) {
+      return left.adsetName === right.adsetName;
+    }
+    return Boolean(
+      left.campaignId && right.campaignId && left.campaignId === right.campaignId,
+    );
+  }
+
+  private saveExperimentBaseline(
+    item: GrowthDecisionCase,
+    observedAt: string,
+  ): void {
+    const metrics = item.diagnosticContext?.current || {};
+    const snapshot: GrowthMonitoringSnapshot = {
+      id: randomUUID(),
+      recordId: item.id,
+      productId: item.productId,
+      subjectType: 'experiment',
+      observedAt,
+      dataDate: item.diagnosticContext?.dataDate || observedAt.slice(0, 10),
+      campaignId: item.campaignId,
+      campaignName: item.campaignName,
+      adsetId: item.adsetId,
+      adsetName: item.adsetName,
+      metrics,
+      previousMetrics: {},
+      changesPct: {},
+      isWithinNormalRange: false,
+      isBaseline: true,
+      source: 'decision_baseline',
+    };
+    this.database.saveMonitoringSnapshot(snapshot);
+  }
+
+  private saveObservationBaseline(
+    item: GrowthJudgment,
+    observedAt: string,
+  ): void {
+    this.database.saveMonitoringSnapshot({
+      id: randomUUID(),
+      recordId: item.id,
+      productId: item.productId,
+      subjectType: 'judgment_observation',
+      observedAt,
+      dataDate: item.diagnosticContext?.dataDate || observedAt.slice(0, 10),
+      campaignId: item.campaignId,
+      campaignName: item.campaignName,
+      adsetId: item.adsetId,
+      adsetName: item.adsetName,
+      metrics: item.diagnosticContext?.current || {},
+      previousMetrics: {},
+      changesPct: {},
+      isWithinNormalRange: false,
+      isBaseline: true,
+      source: 'observation_baseline',
+    });
   }
 
   updateRecordFocus(
