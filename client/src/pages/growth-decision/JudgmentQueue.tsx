@@ -1,18 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Bot,
   BrainCircuit,
-  Check,
-  Clock3,
+  ChevronRight,
   SearchCheck,
-  Sparkles,
   WalletCards,
-  X,
 } from 'lucide-react';
 
 import type {
   GrowthJudgment,
-  GrowthMetricKey,
   ReviewJudgmentRequest,
 } from '@shared/api.interface';
 
@@ -35,7 +30,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
-import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
+import { JudgmentDetailDrawer } from './JudgmentDetailDrawer';
 
 interface JudgmentQueueProps {
   judgments: GrowthJudgment[];
@@ -62,32 +57,10 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
   rejected: '否决判断',
 };
 
-const AI_JUDGMENT_LABELS: Record<string, string> = {
+const COMPACT_AI_JUDGMENT_LABELS: Record<string, string> = {
   confirmed: 'Marvis 判断成立',
   uncertain: 'Marvis 判断待定',
   rejected: 'Marvis 判断不成立',
-};
-
-const DEFAULT_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
-  { key: 'cpi', label: 'CPI' },
-  { key: 'cpa', label: 'CPA' },
-  { key: 'd0_roas', label: 'D0 ROAS' },
-  { key: 'ecpm', label: 'ECPM' },
-  { key: 'retention_d1', label: '次留' },
-  { key: 'ipu', label: 'IPU' },
-  { key: 'arpu', label: 'ARPU' },
-];
-
-const metricValue = (item: GrowthJudgment, key: GrowthMetricKey): string => {
-  const value =
-    item.metricValues?.[key] ??
-    (item.targetMetric === key ? item.currentValue : undefined);
-  if (value === undefined) return '—';
-  if (key === 'd0_roas' || key === 'retention_d1')
-    return `${(value * 100).toFixed(2)}%`;
-  if (key === 'cpi' || key === 'cpa' || key === 'ecpm' || key === 'arpu')
-    return `$${value.toFixed(3)}`;
-  return value.toFixed(3);
 };
 
 const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
@@ -101,6 +74,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   mavisRuntimeMode,
   mavisQueuedJobs,
 }) => {
+  const [detailId, setDetailId] = useState<string>('');
   const [selected, setSelected] = useState<GrowthJudgment | null>(null);
   const [reviewAction, setReviewAction] = useState<
     ReviewJudgmentRequest['action'] | null
@@ -121,6 +95,10 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
       }),
     [judgments],
   );
+  const detailItem: GrowthJudgment | null =
+    judgments.find(
+      (item: GrowthJudgment): boolean => item.id === detailId,
+    ) || null;
 
   const openReview = (
     item: GrowthJudgment,
@@ -179,207 +157,77 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
         <CardContent>
           {orderedJudgments.length ? (
             <div className="space-y-3" data-ai-section-type="card-list">
-              {orderedJudgments.map((item: GrowthJudgment) => {
-                const canReview: boolean =
-                  item.status === 'judgment_pending' ||
-                  item.status === 'judgment_deferred';
-                return (
-                  <article
-                    key={item.id}
-                    className="rounded-xl border border-slate-200 p-4"
-                  >
-                    <div className="flex flex-col justify-between gap-4 lg:flex-row">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">
-                            {STATUS_LABELS[item.status] || item.status}
-                          </Badge>
-                          <span className="text-xs text-slate-500">
-                            {item.productName}
-                          </span>
-                          <span className="truncate text-xs text-slate-500">
-                            Campaign：
-                            {item.campaignName || item.campaignId || '产品级'}
-                          </span>
-                          <span className="truncate text-xs text-slate-500">
-                            广告组：{item.adsetName || item.adsetId || '未定位'}
-                          </span>
-                        </div>
-                        <h2 className="mt-3 text-sm font-semibold text-slate-950">
-                          {item.anomalyType} · {item.targetMetric.toUpperCase()}
-                          {typeof item.deviationPct === 'number'
-                            ? ` ${item.deviationPct > 0 ? '+' : ''}${item.deviationPct}%`
-                            : ''}
-                        </h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                          {item.preliminaryJudgment}
-                        </p>
-                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
-                          <div className="rounded-lg bg-blue-50 px-2.5 py-2">
-                            <p className="flex items-center gap-1 text-[10px] font-medium text-blue-600">
-                              <WalletCards className="size-3" /> 消耗
-                            </p>
-                            <p className="mt-1 text-xs font-semibold text-slate-900">
-                              {item.spend === undefined
-                                ? '—'
-                                : `$${item.spend.toFixed(2)}`}
-                            </p>
-                          </div>
-                          {DEFAULT_METRICS.map((metric) => (
-                            <div
-                              key={metric.key}
-                              className="rounded-lg bg-slate-50 px-2.5 py-2"
-                            >
-                              <p className="text-[10px] font-medium text-slate-500">
-                                {metric.label}
-                              </p>
-                              <p className="mt-1 text-xs font-semibold text-slate-900">
-                                {metricValue(item, metric.key)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
-                          <span className="flex items-center gap-1.5">
-                            <Bot className="size-3.5" />
-                            判断置信度 {item.confidence}%
-                          </span>
-                          {item.skillRuleCandidate ? (
-                            <span className="flex items-center gap-1.5">
-                              <SearchCheck className="size-3.5" />
-                              已生成 Skill 候选规则
-                            </span>
-                          ) : null}
-                        </div>
-                        {item.aiAnalysisStatus === 'running' ? (
-                          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
-                            Marvis 正在完成第一波分析…
-                          </div>
-                        ) : null}
-                        {item.aiAnalysis ? (
-                          <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/60 p-4">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <BrainCircuit className="size-4 text-violet-700" />
-                              <Badge
-                                variant="outline"
-                                className="border-violet-200 bg-white text-violet-700"
-                              >
-                                {AI_JUDGMENT_LABELS[item.aiAnalysis.judgment]}
-                              </Badge>
-                              <span className="text-xs text-violet-600">
-                                {item.aiAnalysis.model} · 置信度{' '}
-                                {item.aiAnalysis.confidence}%
-                              </span>
-                              {item.aiAnalysis.provider === 'product_skill' ? (
-                                <Badge
-                                  variant="outline"
-                                  className="border-amber-200 bg-amber-50 text-amber-700"
-                                >
-                                  已使用产品 Skill 兜底
-                                </Badge>
-                              ) : null}
-                            </div>
-                            <p className="mt-3 text-sm font-medium leading-6 text-slate-900">
-                              {item.aiAnalysis.summary}
-                            </p>
-                            <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
-                              <div>
-                                <dt className="font-medium text-slate-500">
-                                  首要原因
-                                </dt>
-                                <dd className="mt-1 leading-5 text-slate-700">
-                                  {item.aiAnalysis.primaryCause}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="font-medium text-slate-500">
-                                  建议下一步
-                                </dt>
-                                <dd className="mt-1 leading-5 text-slate-700">
-                                  {item.aiAnalysis.recommendedNextStep}
-                                </dd>
-                              </div>
-                            </dl>
-                            {item.aiAnalysis.fallbackReason ? (
-                              <p className="mt-3 text-xs leading-5 text-amber-700">
-                                降级原因：{item.aiAnalysis.fallbackReason}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
+              {orderedJudgments.map((item: GrowthJudgment) => (
+                <article
+                  key={item.id}
+                  className="rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-blue-300 hover:bg-blue-50/20"
+                >
+                  <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          {STATUS_LABELS[item.status] || item.status}
+                        </Badge>
+                        <span className="text-xs font-medium text-slate-600">
+                          {item.productName}
+                        </span>
+                        <span className="max-w-full truncate text-xs text-slate-500 lg:max-w-md">
+                          Campaign：
+                          {item.campaignName || item.campaignId || '产品级'}
+                        </span>
+                        <span className="max-w-full truncate text-xs text-slate-500 lg:max-w-64">
+                          广告组：{item.adsetName || item.adsetId || '未定位'}
+                        </span>
                       </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <DecisionHistoryDrawer
-                          recordId={item.id}
-                          title={`${item.productName} · ${item.anomalyType}`}
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={() => void onAnalyze(item.id)}
-                          disabled={
-                            saving ||
-                            !mavisConfigured ||
-                            item.aiAnalysisStatus === 'running'
-                          }
-                          title={
-                            mavisConfigured
-                              ? `创建 ${mavisModel} 分析任务并记录完整过程`
-                              : 'Marvis 任务桥尚未启用'
-                          }
-                        >
-                          <BrainCircuit className="size-4" />
-                          {item.aiAnalysisStatus === 'running'
-                            ? 'Marvis 分析中'
-                            : item.aiAnalysis?.provider === 'mavis'
-                              ? '重新运行 Marvis'
-                              : '使用 Marvis 分析'}
-                        </Button>
-                        {item.status === 'judgment_confirmed' ? (
-                          item.recommendationCaseId ? (
-                            <Badge className="h-9 px-3" variant="secondary">
-                              建议已生成
-                            </Badge>
-                          ) : (
-                            <Button
-                              onClick={() =>
-                                void onGenerateRecommendation(item.id)
-                              }
-                              disabled={saving}
-                            >
-                              <Sparkles className="size-4" />
-                              生成调整建议
-                            </Button>
-                          )
-                        ) : null}
-                        {canReview ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              onClick={() => openReview(item, 'deferred')}
-                            >
-                              <Clock3 className="size-4" />
-                              待定
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => openReview(item, 'rejected')}
-                            >
-                              <X className="size-4" />
-                              否决
-                            </Button>
-                            <Button
-                              onClick={() => openReview(item, 'confirmed')}
-                            >
-                              <Check className="size-4" />
-                              确认判断
-                            </Button>
-                          </>
+                      <h2 className="mt-2 truncate text-sm font-semibold text-slate-950">
+                        {item.anomalyType}
+                        {typeof item.deviationPct === 'number'
+                          ? ` · ${item.deviationPct > 0 ? '+' : ''}${item.deviationPct}%`
+                          : ''}
+                      </h2>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700">
+                          <WalletCards className="size-3" /> 消耗{' '}
+                          {item.spend === undefined
+                            ? '—'
+                            : `$${item.spend.toFixed(2)}`}
+                        </span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1">
+                          {item.targetMetric.toUpperCase()} 当前值{' '}
+                          {item.currentValue === undefined
+                            ? '—'
+                            : item.targetMetric === 'd0_roas' ||
+                                item.targetMetric === 'retention_d1'
+                              ? `${(item.currentValue * 100).toFixed(2)}%`
+                              : item.currentValue.toFixed(3)}
+                        </span>
+                        <span>置信度 {item.confidence}%</span>
+                        {item.aiAnalysisStatus === 'running' ? (
+                          <Badge variant="outline">Marvis 分析中</Badge>
+                        ) : item.aiAnalysis ? (
+                          <Badge
+                            variant="outline"
+                            className="border-violet-200 bg-violet-50 text-violet-700"
+                          >
+                            <BrainCircuit className="size-3" />
+                            {COMPACT_AI_JUDGMENT_LABELS[
+                              item.aiAnalysis.judgment
+                            ] || item.aiAnalysis.judgment}
+                          </Badge>
                         ) : null}
                       </div>
                     </div>
-                  </article>
-                );
-              })}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setDetailId(item.id)}
+                    >
+                      查看与处理 <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </article>
+              ))}
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
@@ -394,6 +242,20 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           )}
         </CardContent>
       </Card>
+
+      <JudgmentDetailDrawer
+        item={detailItem}
+        open={Boolean(detailItem)}
+        saving={saving}
+        mavisConfigured={mavisConfigured}
+        mavisModel={mavisModel}
+        onOpenChange={(open: boolean) => {
+          if (!open) setDetailId('');
+        }}
+        onAnalyze={onAnalyze}
+        onGenerateRecommendation={onGenerateRecommendation}
+        onReview={openReview}
+      />
 
       <Dialog open={Boolean(reviewAction)} onOpenChange={closeReview}>
         <DialogContent className="max-w-xl">
