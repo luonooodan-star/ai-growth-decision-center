@@ -30,6 +30,7 @@ import {
   dorisNumber,
   dorisString,
   normalizeDorisQueryResult,
+  parseMcpHttpPayload,
   type DorisQueryResult,
   type DorisRow,
 } from './doris-result-normalizer';
@@ -147,6 +148,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     this.database.saveFetchRun(run);
 
     try {
+      const degradationNotes: string[] = [];
       const endDate = this.dateString(new Date());
       const start = new Date();
       start.setDate(start.getDate() - 8);
@@ -177,14 +179,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           metrics: [
             'spend',
             'impressions',
-            'media_clicks',
-            'media_installs',
             'adjust_installs',
             'adjust_revenue',
-            'cpi',
-            'ctr',
-            'ipm',
-            'roas',
           ],
           limit: 30,
         }),
@@ -209,56 +205,90 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
       const [delivery, cohort] = await Promise.all([
         deliveryDate
-          ? this.queryMetric({
-              dataset: 'bi_ads.ads_paid_acquisition_daily',
-              dimensions: [
-                'report_date',
-                'country_code',
-                'campaign_id',
-                'campaign_name',
-                'adgroup_id',
-                'adgroup_name',
-              ],
-              start_date: startDate,
-              end_date: deliveryDate,
-              filters_json: JSON.stringify(filters),
-              metrics: [
-                'spend',
-                'impressions',
-                'media_clicks',
-                'media_installs',
-                'adjust_installs',
-                'adjust_revenue',
-                'cpi',
-                'ctr',
-                'ipm',
-                'roas',
-              ],
-              limit: 5000,
-            })
+          ? this.queryMetricWithFallback(
+              {
+                dataset: 'bi_ads.ads_paid_acquisition_daily',
+                dimensions: [
+                  'report_date',
+                  'country_code',
+                  'campaign_id',
+                  'campaign_name',
+                  'adgroup_id',
+                  'adgroup_name',
+                ],
+                start_date: startDate,
+                end_date: deliveryDate,
+                filters_json: JSON.stringify(filters),
+                metrics: [
+                  'spend',
+                  'impressions',
+                  'media_clicks',
+                  'media_installs',
+                  'adjust_installs',
+                  'adjust_revenue',
+                  'cpi',
+                  'ctr',
+                  'ipm',
+                  'roas',
+                ],
+                limit: 5000,
+              },
+              {
+                dataset: 'bi_ads.ads_paid_acquisition_daily',
+                dimensions: [
+                  'report_date',
+                  'campaign_id',
+                  'campaign_name',
+                  'adgroup_id',
+                  'adgroup_name',
+                ],
+                start_date: startDate,
+                end_date: deliveryDate,
+                filters_json: JSON.stringify(filters),
+                metrics: [
+                  'spend',
+                  'impressions',
+                  'adjust_installs',
+                  'adjust_revenue',
+                  'cpi',
+                ],
+                limit: 1000,
+              },
+              '投放明细',
+              degradationNotes,
+            )
           : Promise.resolve({ rows: [], row_count: 0 }),
         cohortDate
-          ? this.queryMetric({
-              dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
-              dimensions: [
-                'install_date',
-                'campaign_id',
-                'campaign_name',
-              ],
-              start_date: startDate,
-              end_date: cohortDate,
-              filters_json: JSON.stringify(cohortFilters),
-              metrics: [
-                'cohort_spend',
-                'metric_value',
-                'cumulative_metric_value',
-                'd0_roas',
-                'd7_roas',
-                'd30_roas',
-                'cohort_roas',
-              ],
-              limit: 5000,
-            })
+          ? this.queryMetricWithFallback(
+              {
+                dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
+                dimensions: ['install_date', 'campaign_id', 'campaign_name'],
+                start_date: startDate,
+                end_date: cohortDate,
+                filters_json: JSON.stringify(cohortFilters),
+                metrics: [
+                  'cohort_spend',
+                  'metric_value',
+                  'cumulative_metric_value',
+                  'd0_roas',
+                  'd7_roas',
+                  'd30_roas',
+                  'cohort_roas',
+                ],
+                limit: 5000,
+              },
+              {
+                dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
+                dimensions: ['install_date', 'campaign_id', 'campaign_name'],
+                start_date: startDate,
+                end_date: cohortDate,
+                filters_json: JSON.stringify(cohortFilters),
+                metrics: ['cohort_spend', 'd0_roas'],
+                limit: 1000,
+              },
+              'cohort 明细',
+              degradationNotes,
+            )
           : Promise.resolve({ rows: [], row_count: 0 }),
       ]);
 
@@ -296,7 +326,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? spendMissing
             ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
             : '连接成功，但当前时间窗口没有返回可用数据'
-          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写上下界的指标不参与判断`,
+          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写上下界的指标不参与判断${
+              degradationNotes.length ? `；${degradationNotes.join('；')}` : ''
+            }`,
       } satisfies Partial<GrowthFetchRun>);
     } catch (error: unknown) {
       Object.assign(run, {
@@ -497,7 +529,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const needsAnalysisRefresh: boolean =
         !existingJudgment.diagnosticContext ||
         existingJudgment.diagnosticContext.dataDate !==
-          diagnosticContext.dataDate;
+          diagnosticContext.dataDate ||
+        existingJudgment.diagnosticContext.availableFields.join(',') !==
+          diagnosticContext.availableFields.join(',') ||
+        existingJudgment.aiAnalysis?.model.includes('Simulation') === true;
       this.database.saveDecisionRecord({
         ...existingJudgment,
         campaignName:
@@ -605,15 +640,15 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return this.database
       .listDecisionRecords(1000)
       .find((record): record is GrowthJudgment => {
-      if (!('preliminaryJudgment' in record)) return false;
-      const judgment: GrowthJudgment = record;
-      return (
-        judgment.productId === productId &&
-        judgment.targetMetric === metricKey &&
-        judgment.campaignId === campaignId &&
-        judgment.adsetId === adsetId &&
-        new Date(judgment.createdAt).getTime() >= cutoff
-      );
+        if (!('preliminaryJudgment' in record)) return false;
+        const judgment: GrowthJudgment = record;
+        return (
+          judgment.productId === productId &&
+          judgment.targetMetric === metricKey &&
+          judgment.campaignId === campaignId &&
+          judgment.adsetId === adsetId &&
+          new Date(judgment.createdAt).getTime() >= cutoff
+        );
       });
   }
 
@@ -727,32 +762,28 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const adjustRevenue: number = sum('adjust_revenue');
     return {
       report_date: dorisString(first, 'report_date'),
-      country_code:
-        rows.every(
-          (row: DorisRow): boolean =>
-            dorisString(row, 'country_code') ===
-            dorisString(first, 'country_code'),
-        )
-          ? dorisString(first, 'country_code')
-          : undefined,
+      country_code: rows.every(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'country_code') ===
+          dorisString(first, 'country_code'),
+      )
+        ? dorisString(first, 'country_code')
+        : undefined,
       campaign_id: dorisString(first, 'campaign_id'),
       campaign_name: dorisString(first, 'campaign_name'),
-      adgroup_id:
-        rows.every(
-          (row: DorisRow): boolean =>
-            dorisString(row, 'adgroup_id') ===
-            dorisString(first, 'adgroup_id'),
-        )
-          ? dorisString(first, 'adgroup_id')
-          : undefined,
-      adgroup_name:
-        rows.every(
-          (row: DorisRow): boolean =>
-            dorisString(row, 'adgroup_name') ===
-            dorisString(first, 'adgroup_name'),
-        )
-          ? dorisString(first, 'adgroup_name')
-          : undefined,
+      adgroup_id: rows.every(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'adgroup_id') === dorisString(first, 'adgroup_id'),
+      )
+        ? dorisString(first, 'adgroup_id')
+        : undefined,
+      adgroup_name: rows.every(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'adgroup_name') ===
+          dorisString(first, 'adgroup_name'),
+      )
+        ? dorisString(first, 'adgroup_name')
+        : undefined,
       spend,
       impressions,
       media_clicks: mediaClicks,
@@ -794,8 +825,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
     const previousSnapshots: GrowthDeliveryMetricValues[] = Array.from(
       rowsByDate.values(),
-    ).map((rows: DorisRow[]): GrowthDeliveryMetricValues =>
-      this.deliveryDiagnosticValues(this.aggregateDeliveryRows(rows)),
+    ).map(
+      (rows: DorisRow[]): GrowthDeliveryMetricValues =>
+        this.deliveryDiagnosticValues(this.aggregateDeliveryRows(rows)),
     );
     const previousAverage: GrowthDeliveryMetricValues =
       this.averageDiagnosticMetrics(previousSnapshots);
@@ -823,7 +855,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           )
         : []);
     const breakdowns: GrowthDiagnosticBreakdown[] = [
-      ...this.buildBreakdowns(latestGroup, 'adset', 'adgroup_id', 'adgroup_name'),
+      ...this.buildBreakdowns(
+        latestGroup,
+        'adset',
+        'adgroup_id',
+        'adgroup_name',
+      ),
       ...this.buildBreakdowns(
         latestGroup,
         'country',
@@ -907,8 +944,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         );
       if (values.length) {
         result[key] =
-          values.reduce((total: number, value: number): number => total + value, 0) /
-          values.length;
+          values.reduce(
+            (total: number, value: number): number => total + value,
+            0,
+          ) / values.length;
       }
     }
     return result;
@@ -928,7 +967,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
     return Array.from(groups.entries())
       .map(
-        ([value, groupRows]: [string, DorisRow[]]): GrowthDiagnosticBreakdown => ({
+        ([value, groupRows]: [
+          string,
+          DorisRow[],
+        ]): GrowthDiagnosticBreakdown => ({
           dimension,
           value,
           label: dorisString(groupRows[0] || {}, labelField) || value,
@@ -971,24 +1013,66 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       typeof result === 'object' && result !== null
         ? (result as Record<string, unknown>)
         : undefined;
+    const content: unknown = object?.content;
+    const textItem: unknown = Array.isArray(content)
+      ? content.find(
+          (item: unknown): boolean =>
+            typeof item === 'object' &&
+            item !== null &&
+            Reflect.get(item, 'type') === 'text',
+        )
+      : undefined;
+    const textObject: Record<string, unknown> | undefined =
+      typeof textItem === 'object' && textItem !== null
+        ? (textItem as Record<string, unknown>)
+        : undefined;
+    const text: unknown = textObject?.text;
+    if (object?.isError === true) {
+      throw new Error(
+        `Doris MCP 查询失败：${
+          typeof text === 'string' ? text.slice(0, 500) : '未知错误'
+        }`,
+      );
+    }
     const structured: unknown = object?.structuredContent;
     if (structured) return normalizeDorisQueryResult(structured);
-    const content: unknown = object?.content;
     if (Array.isArray(content)) {
-      const textItem: unknown = content.find(
-        (item: unknown): boolean =>
-          typeof item === 'object' &&
-          item !== null &&
-          Reflect.get(item, 'type') === 'text',
-      );
-      const textObject: Record<string, unknown> | undefined =
-        typeof textItem === 'object' && textItem !== null
-          ? (textItem as Record<string, unknown>)
-          : undefined;
-      const text: unknown = textObject?.text;
       if (typeof text === 'string') return normalizeDorisQueryResult(text);
     }
     throw new Error('Doris MCP 未返回可解析的查询结果');
+  }
+
+  private async queryMetricWithFallback(
+    primaryArguments: Record<string, unknown>,
+    fallbackArguments: Record<string, unknown>,
+    label: string,
+    degradationNotes: string[],
+  ): Promise<DorisQueryResult> {
+    try {
+      return await this.queryMetric(primaryArguments);
+    } catch (primaryError: unknown) {
+      const detail: string =
+        primaryError instanceof Error
+          ? primaryError.message
+          : String(primaryError);
+      this.logger.warn(`${label}完整查询失败，改用基础字段：${detail}`);
+      try {
+        const result: DorisQueryResult =
+          await this.queryMetric(fallbackArguments);
+        degradationNotes.push(
+          `${label}的可选指标/维度未被当前 Doris 接口接受，已自动改用基础数据`,
+        );
+        return result;
+      } catch (fallbackError: unknown) {
+        const fallbackDetail: string =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+        throw new Error(
+          `${label}查询失败；完整查询：${detail}；基础查询：${fallbackDetail}`,
+        );
+      }
+    }
   }
 
   private async callMcpTool(
@@ -1053,17 +1137,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     if (!response.ok)
       throw new Error(`Doris MCP HTTP ${response.status}: ${raw}`);
     const contentType = response.headers.get('content-type') || '';
-    const payload = contentType.includes('text/event-stream')
-      ? JSON.parse(
-          raw
-            .split(/\r?\n/u)
-            .find((line) => line.startsWith('data:'))
-            ?.slice(5)
-            .trim() || '{}',
-        )
-      : raw
-        ? JSON.parse(raw)
-        : null;
+    const payload: unknown = parseMcpHttpPayload(raw, contentType);
     return {
       payload,
       sessionId: response.headers.get('mcp-session-id') || sessionId,

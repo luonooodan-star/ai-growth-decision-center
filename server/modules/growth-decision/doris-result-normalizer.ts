@@ -17,9 +17,14 @@ const DORIS_COLUMN_ALIASES: Record<string, string[]> = {
   ],
   cohort_spend: ['cohort_spend', 'spend', 'amount_spent', 'cost'],
   impressions: ['impressions', 'media_impressions', 'total_impressions'],
+  media_clicks: ['media_clicks', 'clicks', 'link_clicks'],
+  media_installs: ['media_installs', 'installs', 'facebook_installs'],
   adjust_installs: ['adjust_installs', 'installs', 'media_installs'],
   adjust_revenue: ['adjust_revenue', 'revenue', 'total_revenue'],
   cpi: ['cpi', 'cost_per_install'],
+  ctr: ['ctr', 'click_through_rate'],
+  ipm: ['ipm', 'installs_per_mille'],
+  roas: ['roas', 'return_on_ad_spend'],
   d0_roas: ['d0_roas', 'roas_d0', 'cohort_roas', 'roas'],
   report_date: ['report_date', 'date', 'stat_date', 'day'],
   install_date: ['install_date', 'cohort_date', 'report_date', 'date'],
@@ -27,6 +32,7 @@ const DORIS_COLUMN_ALIASES: Record<string, string[]> = {
   campaign_name: ['campaign_name', 'campaign'],
   adgroup_id: ['adgroup_id', 'adset_id', 'ad_group_id'],
   adgroup_name: ['adgroup_name', 'adset_name', 'ad_group_name'],
+  country_code: ['country_code', 'country', 'market'],
 };
 
 const normalizeColumnName = (value: string): string =>
@@ -53,6 +59,8 @@ const rowsFrom = (value: unknown): DorisRow[] | undefined => {
 
 const findRows = (value: unknown, depth = 0): DorisRow[] | undefined => {
   if (depth > 4) return undefined;
+  const directRows: DorisRow[] | undefined = rowsFrom(value);
+  if (directRows) return directRows;
   if (typeof value === 'string') {
     try {
       return findRows(parseJsonText(value), depth + 1);
@@ -94,16 +102,130 @@ const rowCountFrom = (value: unknown): number | undefined => {
   return undefined;
 };
 
-const parseJsonText = (text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const start: number = text.indexOf('{');
-    const end: number = text.lastIndexOf('}');
-    if (start < 0 || end <= start)
-      throw new Error('Doris MCP 返回了非 JSON 数据');
-    return JSON.parse(text.slice(start, end + 1));
+const tableCells = (line: string): string[] =>
+  line
+    .trim()
+    .replace(/^\|/u, '')
+    .replace(/\|$/u, '')
+    .split('|')
+    .map((cell: string): string => cell.trim());
+
+const parseMarkdownTable = (text: string): DorisQueryResult | undefined => {
+  const lines: string[] = text
+    .split(/\r?\n/u)
+    .map((line: string): string => line.trim())
+    .filter(Boolean);
+  const separatorIndex: number = lines.findIndex(
+    (line: string, index: number) => {
+      if (index === 0 || !line.includes('|')) return false;
+      const cells: string[] = tableCells(line);
+      return (
+        cells.length > 0 &&
+        cells.every((cell: string): boolean => /^:?-{3,}:?$/u.test(cell))
+      );
+    },
+  );
+  if (separatorIndex < 1) return undefined;
+  const headers: string[] = tableCells(lines[separatorIndex - 1]);
+  const rows: DorisRow[] = [];
+  for (const line of lines.slice(separatorIndex + 1)) {
+    if (!line.includes('|')) break;
+    const cells: string[] = tableCells(line);
+    if (cells.length !== headers.length) continue;
+    rows.push(
+      Object.fromEntries(
+        headers.map((header: string, index: number): [string, string] => [
+          header,
+          cells[index] || '',
+        ]),
+      ),
+    );
   }
+  return rows.length ? { rows, row_count: rows.length } : undefined;
+};
+
+const parseTabbedTable = (text: string): DorisQueryResult | undefined => {
+  const lines: string[] = text
+    .split(/\r?\n/u)
+    .map((line: string): string => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2 || !lines[0]?.includes('\t')) return undefined;
+  const headers: string[] = lines[0]
+    .split('\t')
+    .map((cell: string) => cell.trim());
+  const rows: DorisRow[] = lines
+    .slice(1)
+    .flatMap((line: string): DorisRow[] => {
+      const cells: string[] = line
+        .split('\t')
+        .map((cell: string) => cell.trim());
+      return cells.length === headers.length
+        ? [
+            Object.fromEntries(
+              headers.map((header: string, index: number) => [
+                header,
+                cells[index],
+              ]),
+            ),
+          ]
+        : [];
+    });
+  return rows.length ? { rows, row_count: rows.length } : undefined;
+};
+
+const parseJsonText = (text: string): unknown => {
+  const trimmed: string = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const fenced: RegExpMatchArray | null = trimmed.match(
+      /```(?:json)?\s*([\s\S]*?)```/iu,
+    );
+    if (fenced?.[1]) {
+      try {
+        return JSON.parse(fenced[1].trim());
+      } catch {
+        // Continue with table and embedded JSON parsing.
+      }
+    }
+    const markdownTable: DorisQueryResult | undefined =
+      parseMarkdownTable(trimmed);
+    if (markdownTable) return markdownTable;
+    const tabbedTable: DorisQueryResult | undefined = parseTabbedTable(trimmed);
+    if (tabbedTable) return tabbedTable;
+    for (const [opening, closing] of [
+      ['{', '}'],
+      ['[', ']'],
+    ] as const) {
+      const start: number = trimmed.indexOf(opening);
+      const end: number = trimmed.lastIndexOf(closing);
+      if (start < 0 || end <= start) continue;
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        // Try the next supported representation.
+      }
+    }
+    const excerpt: string = trimmed.replace(/\s+/gu, ' ').slice(0, 240);
+    throw new Error(
+      excerpt ? `Doris MCP 查询失败：${excerpt}` : 'Doris MCP 未返回数据',
+    );
+  }
+};
+
+const parseMcpHttpPayload = (raw: string, contentType: string): unknown => {
+  if (!raw.trim()) return null;
+  if (!contentType.includes('text/event-stream')) return JSON.parse(raw);
+  const payloads: unknown[] = raw
+    .split(/\r?\n/u)
+    .filter((line: string): boolean => line.startsWith('data:'))
+    .map((line: string): string => line.slice(5).trim())
+    .filter((line: string): boolean => Boolean(line) && line !== '[DONE]')
+    .map((line: string): unknown => JSON.parse(line));
+  if (!payloads.length) {
+    throw new Error('Doris MCP SSE 未返回可解析事件');
+  }
+  return payloads[payloads.length - 1];
 };
 
 const normalizeDorisQueryResult = (value: unknown): DorisQueryResult => {
@@ -175,5 +297,10 @@ const dorisString = (
   return text || undefined;
 };
 
-export { dorisNumber, dorisString, normalizeDorisQueryResult };
+export {
+  dorisNumber,
+  dorisString,
+  normalizeDorisQueryResult,
+  parseMcpHttpPayload,
+};
 export type { DorisQueryResult, DorisRow };
