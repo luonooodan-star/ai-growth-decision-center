@@ -100,9 +100,9 @@ zsh "$HOME/Downloads/ai-growth-marvis/configure-marvis-remote.sh" setup
 
 按提示输入公司 Mac 的局域网页面地址、页面访问密码和 `X-Marvis-Token`。
 安全代理只把认证信息存入分析 Mac 的 Keychain，不会写入 Skill 或提示词；配置完成会自动执行无副作用连接检查。
-在 Marvis 中导入生成的 `growth-decision-analyst.zip`，再创建每 1 分钟运行一次的
+在 Marvis 中导入生成的 `growth-decision-analyst.zip`，再创建每 30 分钟运行一次的
 自动任务并粘贴生成的提示词。网页点击“使用 Marvis 分析”后，任务会先进入本地队列，
-分析 Mac 上的 Marvis 在下一次轮询中通过局域网领取、分析并回写，通常等待不超过 1 分钟。
+分析 Mac 上的 Marvis 在下一次轮询中通过局域网领取、分析并回写，自动等待最长约 30 分钟。需要立即分析时，可在 Marvis 中手动点击该自动任务的“运行”。
 两台 Mac 必须能互相访问公司 Mac 的 8081 端口；跨网络使用时应通过公司 VPN，不把该端口直接暴露到公网。当前 Marvis 桌面版
 没有公开的外部对话唤醒接口，因此不使用易失效的界面模拟点击方案。
 

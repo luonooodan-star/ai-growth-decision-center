@@ -208,7 +208,11 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         </span>
                         <span>置信度 {item.confidence}%</span>
                         {item.aiAnalysisStatus === 'running' ? (
-                          <Badge variant="outline">Marvis 分析中</Badge>
+                          <Badge variant="outline">
+                            {mavisRuntimeMode === 'external_worker'
+                              ? 'Marvis 等待/分析中'
+                              : 'Marvis 分析中'}
+                          </Badge>
                         ) : item.aiAnalysis ? (
                           <Badge
                             variant="outline"

@@ -387,7 +387,9 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                 </h3>
                 {item.aiAnalysisStatus === 'running' ? (
                   <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
-                    Marvis 正在完成第一波分析…
+                    {mavisRuntimeMode === 'external_worker'
+                      ? 'Marvis 任务已入队；自动轮询最长约 30 分钟，需要立即结果可在 Marvis 中手动运行该任务。'
+                      : 'Marvis 正在完成第一波分析…'}
                   </div>
                 ) : null}
                 {item.aiAnalysis ? (
