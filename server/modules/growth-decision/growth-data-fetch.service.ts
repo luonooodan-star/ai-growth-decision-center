@@ -152,7 +152,32 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const endDate = this.dateString(new Date());
       const start = new Date();
       start.setDate(start.getDate() - 8);
-      const startDate = this.dateString(start);
+      const defaultStartDate: string = this.dateString(start);
+      const historyCutoff = new Date();
+      historyCutoff.setDate(historyCutoff.getDate() - 30);
+      const historyCutoffDate: string = this.dateString(historyCutoff);
+      const earliestStoredDate: string | undefined =
+        trigger === 'manual'
+          ? this.database
+              .listDecisionRecords(5000)
+              .filter(
+                (record): record is GrowthJudgment =>
+                  'preliminaryJudgment' in record &&
+                  record.productId === product.id,
+              )
+              .map((judgment: GrowthJudgment): string | undefined =>
+                this.judgmentDataDate(judgment),
+              )
+              .filter(
+                (date: string | undefined): date is string =>
+                  date !== undefined && date >= historyCutoffDate,
+              )
+              .sort()[0]
+          : undefined;
+      const startDate: string =
+        earliestStoredDate && earliestStoredDate < defaultStartDate
+          ? earliestStoredDate
+          : defaultStartDate;
       const filters = {
         app_name:
           product.name.toLowerCase() === 'wingslite'
@@ -309,6 +334,14 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         latestMetricValues,
       };
       this.database.saveProduct(updatedProduct);
+      const historicalBackfillCount: number =
+        trigger === 'manual'
+          ? await this.backfillHistoricalJudgments(
+              updatedProduct,
+              deliveryRows,
+              cohortRows,
+            )
+          : 0;
       const anomalyCount: number = await this.detectAnomalies(
         updatedProduct,
         deliveryRows,
@@ -326,7 +359,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? spendMissing
             ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
             : '连接成功，但当前时间窗口没有返回可用数据'
-          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常；未填写上下界的指标不参与判断${
+          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常${
+              trigger === 'manual'
+                ? `，历史核对/回填 ${historicalBackfillCount} 条`
+                : ''
+            }；未填写上下界的指标不参与判断${
               degradationNotes.length ? `；${degradationNotes.join('；')}` : ''
             }`,
       } satisfies Partial<GrowthFetchRun>);
@@ -396,6 +433,113 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       ...(impressions ? { ecpm: (spend / impressions) * 1000 } : {}),
       ...(weightedRoas !== undefined ? { d0_roas: weightedRoas } : {}),
     };
+  }
+
+  private async backfillHistoricalJudgments(
+    product: GrowthProduct,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
+  ): Promise<number> {
+    const judgments: GrowthJudgment[] = this.database
+      .listDecisionRecords(5000)
+      .filter(
+        (record): record is GrowthJudgment =>
+          'preliminaryJudgment' in record && record.productId === product.id,
+      );
+    let updatedCount = 0;
+    for (const judgment of judgments) {
+      const dataDate: string | undefined = this.judgmentDataDate(judgment);
+      if (!dataDate) continue;
+      const matchedDeliveryRows: DorisRow[] = deliveryRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'report_date') === dataDate &&
+          this.rowMatchesJudgment(row, judgment),
+      );
+      const matchedCohort: DorisRow | undefined = cohortRows.find(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'install_date') === dataDate &&
+          this.rowMatchesJudgment(row, judgment, false),
+      );
+      if (!matchedDeliveryRows.length && !matchedCohort) continue;
+
+      const deliverySnapshot: DorisRow | undefined = matchedDeliveryRows.length
+        ? this.aggregateDeliveryRows(matchedDeliveryRows)
+        : undefined;
+      const metricValues: GrowthMetricValues = {
+        ...(deliverySnapshot
+          ? this.deliveryMetricValues(deliverySnapshot)
+          : judgment.metricValues),
+        ...(matchedCohort && dorisNumber(matchedCohort, 'd0_roas') !== undefined
+          ? { d0_roas: dorisNumber(matchedCohort, 'd0_roas') }
+          : {}),
+      };
+      const diagnosticContext: GrowthDiagnosticContext =
+        this.buildDiagnosticContext(
+          deliveryRows,
+          deliverySnapshot,
+          dataDate,
+          matchedCohort,
+          matchedDeliveryRows,
+        );
+      const currentValue: number | undefined =
+        metricValues[judgment.targetMetric];
+      const previousContext: string = JSON.stringify(
+        judgment.diagnosticContext || null,
+      );
+      const nextContext: string = JSON.stringify(diagnosticContext);
+      const needsAnalysisRefresh: boolean =
+        previousContext !== nextContext ||
+        judgment.aiAnalysis?.model.includes('Simulation') === true;
+      const sourceRow: DorisRow = deliverySnapshot || matchedCohort || {};
+      this.database.saveDecisionRecord({
+        ...judgment,
+        campaignName:
+          dorisString(sourceRow, 'campaign_name') || judgment.campaignName,
+        adsetName: dorisString(sourceRow, 'adgroup_name') || judgment.adsetName,
+        currentValue: currentValue ?? judgment.currentValue,
+        metricValues: { ...judgment.metricValues, ...metricValues },
+        diagnosticContext,
+        spend:
+          dorisNumber(sourceRow, 'spend') ??
+          dorisNumber(sourceRow, 'cohort_spend') ??
+          judgment.spend,
+        evidence: judgment.evidence.includes('历史快照已回填')
+          ? judgment.evidence
+          : `${judgment.evidence}；${dataDate} 历史快照已回填。`,
+      });
+      updatedCount += 1;
+      if (needsAnalysisRefresh) {
+        await this.growthMavisAnalysisService.analyzeJudgment(
+          judgment.id,
+          'default',
+          'manual',
+        );
+      }
+    }
+    return updatedCount;
+  }
+
+  private judgmentDataDate(judgment: GrowthJudgment): string | undefined {
+    if (judgment.diagnosticContext?.dataDate) {
+      return judgment.diagnosticContext.dataDate;
+    }
+    return judgment.evidence.match(/\b\d{4}-\d{2}-\d{2}\b/u)?.[0];
+  }
+
+  private rowMatchesJudgment(
+    row: DorisRow,
+    judgment: GrowthJudgment,
+    matchAdset = true,
+  ): boolean {
+    const campaignMatches: boolean = judgment.campaignId
+      ? dorisString(row, 'campaign_id') === judgment.campaignId
+      : judgment.campaignName
+        ? dorisString(row, 'campaign_name') === judgment.campaignName
+        : true;
+    if (!campaignMatches || !matchAdset || !judgment.adsetId) {
+      return campaignMatches;
+    }
+    return dorisString(row, 'adgroup_id') === judgment.adsetId;
   }
 
   private async detectAnomalies(
@@ -813,7 +957,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const entityRows: DorisRow[] = currentRow
       ? deliveryRows.filter(
           (row: DorisRow): boolean =>
-            dorisString(row, 'report_date') !== dataDate &&
+            (dorisString(row, 'report_date') || '') < dataDate &&
             this.sameDeliveryEntity(currentRow, row),
         )
       : [];
