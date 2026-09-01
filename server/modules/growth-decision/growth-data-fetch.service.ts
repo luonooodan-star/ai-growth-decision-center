@@ -143,17 +143,16 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? String(product.thresholds.markets).split(',')
           : undefined,
       };
+      const cohortFilters = {
+        ...filters,
+        cohort_index: 0,
+        observation_complete: true,
+      };
 
-      const [delivery, cohort] = await Promise.all([
+      const [deliveryDates, cohortDates] = await Promise.all([
         this.queryMetric({
           dataset: 'bi_ads.ads_paid_acquisition_daily',
-          dimensions: [
-            'report_date',
-            'campaign_id',
-            'campaign_name',
-            'adgroup_id',
-            'adgroup_name',
-          ],
+          dimensions: ['report_date'],
           start_date: startDate,
           end_date: endDate,
           filters_json: JSON.stringify(filters),
@@ -162,23 +161,67 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             'impressions',
             'adjust_installs',
             'adjust_revenue',
-            'cpi',
           ],
-          limit: 1000,
+          limit: 30,
         }),
         this.queryMetric({
           dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
-          dimensions: ['install_date', 'campaign_id', 'campaign_name'],
+          dimensions: ['install_date'],
           start_date: startDate,
           end_date: endDate,
-          filters_json: JSON.stringify({
-            ...filters,
-            cohort_index: 0,
-            observation_complete: true,
-          }),
+          filters_json: JSON.stringify(cohortFilters),
           metrics: ['cohort_spend', 'd0_roas'],
-          limit: 1000,
+          limit: 30,
         }),
+      ]);
+      const deliveryDate: string = this.latestDate(
+        deliveryDates.rows || [],
+        'report_date',
+      );
+      const cohortDate: string = this.latestDate(
+        cohortDates.rows || [],
+        'install_date',
+      );
+
+      const [delivery, cohort] = await Promise.all([
+        deliveryDate
+          ? this.queryMetric({
+              dataset: 'bi_ads.ads_paid_acquisition_daily',
+              dimensions: [
+                'report_date',
+                'campaign_id',
+                'campaign_name',
+                'adgroup_id',
+                'adgroup_name',
+              ],
+              start_date: deliveryDate,
+              end_date: deliveryDate,
+              filters_json: JSON.stringify(filters),
+              metrics: [
+                'spend',
+                'impressions',
+                'adjust_installs',
+                'adjust_revenue',
+                'cpi',
+              ],
+              limit: 1000,
+            })
+          : Promise.resolve({ rows: [], row_count: 0 }),
+        cohortDate
+          ? this.queryMetric({
+              dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
+              dimensions: [
+                'install_date',
+                'campaign_id',
+                'campaign_name',
+              ],
+              start_date: cohortDate,
+              end_date: cohortDate,
+              filters_json: JSON.stringify(cohortFilters),
+              metrics: ['cohort_spend', 'd0_roas'],
+              limit: 1000,
+            })
+          : Promise.resolve({ rows: [], row_count: 0 }),
       ]);
 
       const rowsFetched =
