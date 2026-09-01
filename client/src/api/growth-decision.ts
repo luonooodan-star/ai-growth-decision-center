@@ -2,6 +2,8 @@ import axios from 'axios';
 
 import type {
   GrowthAiProviderStatus,
+  GrowthAnalysisMode,
+  GrowthBatchAnalysisResponse,
   GrowthDashboardResponse,
   GrowthDataHistoryResponse,
   GrowthDecisionCase,
@@ -18,9 +20,32 @@ import type {
   UpdateResultRequest,
 } from '@shared/api.interface';
 
-async function getAiStatus(): Promise<GrowthAiProviderStatus> {
+async function getAiStatus(
+  productId?: string,
+): Promise<GrowthAiProviderStatus> {
   const response = await axios.get<GrowthAiProviderStatus>(
     '/api/growth-decision/mavis/status',
+    { params: productId ? { productId } : undefined },
+  );
+  return response.data;
+}
+
+async function updateAnalysisMode(
+  productId: string,
+  mode: GrowthAnalysisMode,
+): Promise<GrowthProduct> {
+  const response = await axios.patch<GrowthProduct>(
+    `/api/growth-decision/products/${productId}/analysis-mode`,
+    { mode },
+  );
+  return response.data;
+}
+
+async function analyzeProductBatch(
+  productId: string,
+): Promise<GrowthBatchAnalysisResponse> {
+  const response = await axios.post<GrowthBatchAnalysisResponse>(
+    `/api/growth-decision/products/${productId}/analyze-batch`,
   );
   return response.data;
 }
@@ -154,6 +179,7 @@ async function updateResult(
 }
 
 export {
+  analyzeProductBatch,
   analyzeJudgment,
   backfillHistory,
   getAiStatus,
@@ -166,6 +192,7 @@ export {
   reviewJudgment,
   resetHistory,
   triggerFetch,
+  updateAnalysisMode,
   updateDecision,
   updateMetricStandards,
   updateResult,

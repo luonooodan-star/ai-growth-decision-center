@@ -27,7 +27,6 @@ import type {
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
-import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import {
   dorisNumber,
   dorisString,
@@ -65,7 +64,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly database: LocalDatabaseService,
     private readonly growthDecisionService: GrowthDecisionService,
-    private readonly growthMavisAnalysisService: GrowthMavisAnalysisService,
   ) {}
 
   onModuleInit(): void {
@@ -164,7 +162,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         trigger === 'manual' && historyDays
           ? Math.min(30, Math.max(1, Math.round(historyDays)))
           : 8;
-      start.setDate(start.getDate() - requestedHistoryDays);
+      // 包含今天在内恰好 N 天，避免“补近 7 天”实际查询 8 天。
+      start.setDate(start.getDate() - (requestedHistoryDays - 1));
       const defaultStartDate: string = this.dateString(start);
       const historyCutoff = new Date();
       historyCutoff.setDate(historyCutoff.getDate() - 30);
@@ -188,7 +187,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               .sort()[0]
           : undefined;
       const startDate: string =
-        !historyDays && earliestStoredDate && earliestStoredDate < defaultStartDate
+        !historyDays &&
+        earliestStoredDate &&
+        earliestStoredDate < defaultStartDate
           ? earliestStoredDate
           : defaultStartDate;
       const filters = {
@@ -220,7 +221,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             'adjust_installs',
             'adjust_revenue',
           ],
-          limit: 30,
+          limit: 100,
         }),
         this.queryMetric({
           dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
@@ -229,7 +230,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           end_date: endDate,
           filters_json: JSON.stringify(cohortFilters),
           metrics: ['cohort_spend', 'd0_roas'],
-          limit: 30,
+          limit: 100,
         }),
       ]);
       const deliveryDate: string = this.latestDate(
@@ -243,6 +244,15 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const discoveredAppId: number | undefined =
         dorisNumber((deliveryDates.rows || [])[0] || {}, 'app_id') ??
         product.dorisAppId;
+      const deliveryDataDates: string[] = Array.from(
+        new Set(
+          (deliveryDates.rows || [])
+            .map(
+              (row: DorisRow): string => dorisString(row, 'report_date') || '',
+            )
+            .filter(Boolean),
+        ),
+      ).sort();
       let accountProduct: GrowthProduct = product;
       let accountRowsFetched = 0;
       let newAccountCount = 0;
@@ -269,58 +279,64 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
       const [delivery, cohort] = await Promise.all([
         deliveryDate
-          ? this.queryMetricWithFallback(
-              {
-                dataset: 'bi_ads.ads_paid_acquisition_daily',
-                dimensions: [
-                  'report_date',
-                  'country_code',
-                  'campaign_id',
-                  'campaign_name',
-                  'adgroup_id',
-                  'adgroup_name',
-                ],
-                start_date: startDate,
-                end_date: deliveryDate,
-                filters_json: JSON.stringify(filters),
-                metrics: [
-                  'spend',
-                  'impressions',
-                  'media_clicks',
-                  'media_installs',
-                  'adjust_installs',
-                  'adjust_revenue',
-                  'cpi',
-                  'ctr',
-                  'ipm',
-                  'roas',
-                ],
-                limit: 5000,
-              },
-              {
-                dataset: 'bi_ads.ads_paid_acquisition_daily',
-                dimensions: [
-                  'report_date',
-                  'campaign_id',
-                  'campaign_name',
-                  'adgroup_id',
-                  'adgroup_name',
-                ],
-                start_date: startDate,
-                end_date: deliveryDate,
-                filters_json: JSON.stringify(filters),
-                metrics: [
-                  'spend',
-                  'impressions',
-                  'adjust_installs',
-                  'adjust_revenue',
-                  'cpi',
-                ],
-                limit: 1000,
-              },
-              '投放明细',
-              degradationNotes,
-            )
+          ? trigger === 'manual' && Boolean(historyDays)
+            ? this.queryDeliveryDetailsByDate(
+                deliveryDataDates,
+                filters,
+                degradationNotes,
+              )
+            : this.queryMetricWithFallback(
+                {
+                  dataset: 'bi_ads.ads_paid_acquisition_daily',
+                  dimensions: [
+                    'report_date',
+                    'country_code',
+                    'campaign_id',
+                    'campaign_name',
+                    'adgroup_id',
+                    'adgroup_name',
+                  ],
+                  start_date: startDate,
+                  end_date: deliveryDate,
+                  filters_json: JSON.stringify(filters),
+                  metrics: [
+                    'spend',
+                    'impressions',
+                    'media_clicks',
+                    'media_installs',
+                    'adjust_installs',
+                    'adjust_revenue',
+                    'cpi',
+                    'ctr',
+                    'ipm',
+                    'roas',
+                  ],
+                  limit: 5000,
+                },
+                {
+                  dataset: 'bi_ads.ads_paid_acquisition_daily',
+                  dimensions: [
+                    'report_date',
+                    'campaign_id',
+                    'campaign_name',
+                    'adgroup_id',
+                    'adgroup_name',
+                  ],
+                  start_date: startDate,
+                  end_date: deliveryDate,
+                  filters_json: JSON.stringify(filters),
+                  metrics: [
+                    'spend',
+                    'impressions',
+                    'adjust_installs',
+                    'adjust_revenue',
+                    'cpi',
+                  ],
+                  limit: 1000,
+                },
+                '投放明细',
+                degradationNotes,
+              )
           : Promise.resolve({ rows: [], row_count: 0 }),
         cohortDate
           ? this.queryMetricWithFallback(
@@ -377,8 +393,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       this.database.saveProduct(updatedProduct);
       const snapshotCount: number = this.saveDailySnapshots(
         updatedProduct,
+        deliveryDates.rows || [],
+        cohortDates.rows || [],
         deliveryRows,
-        cohortRows,
       );
       const historicalBackfillCount: number =
         trigger === 'manual'
@@ -465,23 +482,23 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const rows: DorisRow[] = historyResult.rows || [];
     const recentlyActiveIds: Set<string> = new Set(
       (recentResult.rows || [])
-        .map((row: DorisRow): string =>
-          dorisString(row, 'advertiser_id') || '',
-        )
+        .map((row: DorisRow): string => dorisString(row, 'advertiser_id') || '')
         .filter(Boolean),
     );
     const now: string = new Date().toISOString();
     const existingAccounts: GrowthAdAccount[] =
       product.adAccounts ||
-      product.accountIds.map((id: string): GrowthAdAccount => ({
-        id,
-        activityStatus: 'unknown',
-        spend30d: 0,
-        impressions30d: 0,
-        discoveredAt: product.lastSyncAt || now,
-        updatedAt: product.lastSyncAt || now,
-        source: 'legacy_config',
-      }));
+      product.accountIds.map(
+        (id: string): GrowthAdAccount => ({
+          id,
+          activityStatus: 'unknown',
+          spend30d: 0,
+          impressions30d: 0,
+          discoveredAt: product.lastSyncAt || now,
+          updatedAt: product.lastSyncAt || now,
+          source: 'legacy_config',
+        }),
+      );
     const existingById: Map<string, GrowthAdAccount> = new Map(
       existingAccounts.map(
         (account: GrowthAdAccount): [string, GrowthAdAccount] => [
@@ -537,8 +554,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     });
     const undiscoveredAccounts: GrowthAdAccount[] = existingAccounts
       .filter(
-        (account: GrowthAdAccount): boolean =>
-          !rowsByAccount.has(account.id),
+        (account: GrowthAdAccount): boolean => !rowsByAccount.has(account.id),
       )
       .map(
         (account: GrowthAdAccount): GrowthAdAccount => ({
@@ -591,19 +607,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
   private saveDailySnapshots(
     product: GrowthProduct,
-    deliveryRows: DorisRow[],
-    cohortRows: DorisRow[],
+    deliveryAggregateRows: DorisRow[],
+    cohortAggregateRows: DorisRow[],
+    deliveryDetailRows: DorisRow[],
   ): number {
     const dataDates: string[] = Array.from(
       new Set<string>([
-        ...deliveryRows
-          .map((row: DorisRow): string =>
-            dorisString(row, 'report_date') || '',
-          )
+        ...deliveryAggregateRows
+          .map((row: DorisRow): string => dorisString(row, 'report_date') || '')
           .filter(Boolean),
-        ...cohortRows
-          .map((row: DorisRow): string =>
-            dorisString(row, 'install_date') || '',
+        ...cohortAggregateRows
+          .map(
+            (row: DorisRow): string => dorisString(row, 'install_date') || '',
           )
           .filter(Boolean),
       ]),
@@ -611,16 +626,22 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const fetchedAt: string = new Date().toISOString();
 
     for (const dataDate of dataDates) {
-      const dailyDelivery: DorisRow[] = deliveryRows.filter(
+      const dailyDeliveryAggregates: DorisRow[] = deliveryAggregateRows.filter(
         (row: DorisRow): boolean =>
           dorisString(row, 'report_date') === dataDate,
       );
-      const dailyCohort: DorisRow[] = cohortRows.filter(
+      const dailyDeliveryDetails: DorisRow[] = deliveryDetailRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'report_date') === dataDate,
+      );
+      const dailyCohort: DorisRow[] = cohortAggregateRows.filter(
         (row: DorisRow): boolean =>
           dorisString(row, 'install_date') === dataDate,
       );
-      const aggregate: DorisRow | undefined = dailyDelivery.length
-        ? this.aggregateDeliveryRows(dailyDelivery)
+      // 日期聚合查询行数很小且不会被 Doris MCP 的明细 1000 行上限截断。
+      // 明细仅用于补 Campaign/广告组数量，不能再作为每日指标的主数据源。
+      const aggregate: DorisRow | undefined = dailyDeliveryAggregates.length
+        ? this.aggregateDeliveryRows(dailyDeliveryAggregates)
         : undefined;
       const cohortSpend: number = dailyCohort.reduce(
         (total: number, row: DorisRow): number =>
@@ -643,29 +664,32 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         dataDate,
         metrics: {
           ...this.deliveryDiagnosticValues(aggregate),
-          ...(weightedD0Roas === undefined
-            ? {}
-            : { d0_roas: weightedD0Roas }),
+          ...(weightedD0Roas === undefined ? {} : { d0_roas: weightedD0Roas }),
         },
         campaignCount: new Set(
-          dailyDelivery
-            .map((row: DorisRow): string =>
-              dorisString(row, 'campaign_id') ||
-              dorisString(row, 'campaign_name') ||
-              '',
+          dailyDeliveryDetails
+            .map(
+              (row: DorisRow): string =>
+                dorisString(row, 'campaign_id') ||
+                dorisString(row, 'campaign_name') ||
+                '',
             )
             .filter(Boolean),
         ).size,
         adsetCount: new Set(
-          dailyDelivery
-            .map((row: DorisRow): string =>
-              dorisString(row, 'adgroup_id') ||
-              dorisString(row, 'adgroup_name') ||
-              '',
+          dailyDeliveryDetails
+            .map(
+              (row: DorisRow): string =>
+                dorisString(row, 'adgroup_id') ||
+                dorisString(row, 'adgroup_name') ||
+                '',
             )
             .filter(Boolean),
         ).size,
-        sourceRows: dailyDelivery.length + dailyCohort.length,
+        sourceRows:
+          dailyDeliveryAggregates.length +
+          dailyDeliveryDetails.length +
+          dailyCohort.length,
         fetchedAt,
       };
       this.database.saveDataSnapshot(snapshot);
@@ -782,9 +806,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         judgment.diagnosticContext || null,
       );
       const nextContext: string = JSON.stringify(diagnosticContext);
-      const needsAnalysisRefresh: boolean =
-        previousContext !== nextContext ||
-        judgment.aiAnalysis?.model.includes('Simulation') === true;
+      const needsAnalysisRefresh: boolean = previousContext !== nextContext;
       const sourceRow: DorisRow = deliverySnapshot || matchedCohort || {};
       this.database.saveDecisionRecord({
         ...judgment,
@@ -801,15 +823,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         evidence: judgment.evidence.includes('历史快照已回填')
           ? judgment.evidence
           : `${judgment.evidence}；${dataDate} 历史快照已回填。`,
+        ...(needsAnalysisRefresh
+          ? { aiAnalysisStatus: undefined, aiAnalysis: undefined }
+          : {}),
       });
       updatedCount += 1;
-      if (needsAnalysisRefresh) {
-        await this.growthMavisAnalysisService.analyzeJudgment(
-          judgment.id,
-          'default',
-          'manual',
-        );
-      }
     }
     return updatedCount;
   }
@@ -991,18 +1009,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         evidence: existingJudgment.evidence.includes(dataDate)
           ? existingJudgment.evidence
           : `${existingJudgment.evidence}；${dataDate} 已补齐完整投放快照。`,
+        ...(needsAnalysisRefresh
+          ? { aiAnalysisStatus: undefined, aiAnalysis: undefined }
+          : {}),
       });
-      if (needsAnalysisRefresh) {
-        void this.growthMavisAnalysisService
-          .analyzeJudgment(existingJudgment.id, 'default', 'automatic')
-          .catch((error: unknown): void => {
-            this.logger.error(
-              `异常 ${existingJudgment.id} 的补充分析失败：` +
-                (error instanceof Error ? error.message : String(error)),
-              error instanceof Error ? error.stack : undefined,
-            );
-          });
-      }
       return false;
     }
     const baselineValue: number =
@@ -1028,44 +1038,34 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       ? Math.abs(((currentValue - triggeredBound) / triggeredBound) * 100)
       : 100;
 
-    const judgment: GrowthJudgment =
-      await this.growthDecisionService.ingestJudgment(
-        {
-          productId: product.id,
-          anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
-          severity: thresholdGapPct >= 30 ? 'high' : 'medium',
-          channel: product.channel,
-          campaignId,
-          campaignName: dorisString(row, 'campaign_name'),
-          adsetId,
-          adsetName: dorisString(row, 'adgroup_name'),
-          targetMetric: key,
-          currentValue,
-          baselineValue,
-          deviationPct,
-          metricValues,
-          diagnosticContext,
-          spend: dorisNumber(row, 'spend') ?? dorisNumber(row, 'cohort_spend'),
-          evidence:
-            `${dataDate} ${entityDescription} 的 ${metric.label} 实际值 ` +
-            `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation} ` +
-            `${this.formatMetricValue(metric, triggeredBound)}。`,
-          rootCause:
-            '指标已越过人工阈值；当前只确认异常条件成立，具体原因仍需结合投放、归因和产品链路继续分析。',
-          confidence: 95,
-          preliminaryJudgment: `按 ${product.name} 指标库规则，${metric.label} 异常条件成立，等待人工确认、待定或否决。`,
-        },
-        'hourly_doris_threshold_compare',
-      );
-    void this.growthMavisAnalysisService
-      .analyzeJudgment(judgment.id, 'default', 'automatic')
-      .catch((error: unknown): void => {
-        this.logger.error(
-          `异常 ${judgment.id} 的第一波分析失败：` +
-            (error instanceof Error ? error.message : String(error)),
-          error instanceof Error ? error.stack : undefined,
-        );
-      });
+    await this.growthDecisionService.ingestJudgment(
+      {
+        productId: product.id,
+        anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
+        severity: thresholdGapPct >= 30 ? 'high' : 'medium',
+        channel: product.channel,
+        campaignId,
+        campaignName: dorisString(row, 'campaign_name'),
+        adsetId,
+        adsetName: dorisString(row, 'adgroup_name'),
+        targetMetric: key,
+        currentValue,
+        baselineValue,
+        deviationPct,
+        metricValues,
+        diagnosticContext,
+        spend: dorisNumber(row, 'spend') ?? dorisNumber(row, 'cohort_spend'),
+        evidence:
+          `${dataDate} ${entityDescription} 的 ${metric.label} 实际值 ` +
+          `${this.formatMetricValue(metric, currentValue)}，${thresholdRelation} ` +
+          `${this.formatMetricValue(metric, triggeredBound)}。`,
+        rootCause:
+          '指标已越过人工阈值；当前只确认异常条件成立，具体原因仍需结合投放、归因和产品链路继续分析。',
+        confidence: 95,
+        preliminaryJudgment: `按 ${product.name} 指标库规则，${metric.label} 异常条件成立，等待人工确认、待定或否决。`,
+      },
+      'hourly_doris_threshold_compare',
+    );
     return true;
   }
 
@@ -1439,6 +1439,73 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     if (metric.unit === 'percent') return `${(value * 100).toFixed(2)}%`;
     if (metric.unit === 'usd') return `$${value.toFixed(3)}`;
     return value.toFixed(3);
+  }
+
+  private async queryDeliveryDetailsByDate(
+    dates: string[],
+    filters: Record<string, unknown>,
+    degradationNotes: string[],
+  ): Promise<DorisQueryResult> {
+    const rows: DorisRow[] = [];
+    let rowCount = 0;
+    // 按天拆分，规避 Doris MCP 对跨日明细查询的行数截断。
+    for (const dataDate of dates) {
+      const result: DorisQueryResult = await this.queryMetricWithFallback(
+        {
+          dataset: 'bi_ads.ads_paid_acquisition_daily',
+          dimensions: [
+            'report_date',
+            'country_code',
+            'campaign_id',
+            'campaign_name',
+            'adgroup_id',
+            'adgroup_name',
+          ],
+          start_date: dataDate,
+          end_date: dataDate,
+          filters_json: JSON.stringify(filters),
+          metrics: [
+            'spend',
+            'impressions',
+            'media_clicks',
+            'media_installs',
+            'adjust_installs',
+            'adjust_revenue',
+            'cpi',
+            'ctr',
+            'ipm',
+            'roas',
+          ],
+          limit: 1000,
+        },
+        {
+          dataset: 'bi_ads.ads_paid_acquisition_daily',
+          dimensions: [
+            'report_date',
+            'campaign_id',
+            'campaign_name',
+            'adgroup_id',
+            'adgroup_name',
+          ],
+          start_date: dataDate,
+          end_date: dataDate,
+          filters_json: JSON.stringify(filters),
+          metrics: [
+            'spend',
+            'impressions',
+            'adjust_installs',
+            'adjust_revenue',
+            'cpi',
+          ],
+          limit: 1000,
+        },
+        `${dataDate} 投放明细`,
+        degradationNotes,
+      );
+      rows.push(...(result.rows || []));
+      rowCount += Number(result.row_count || result.rows?.length || 0);
+    }
+    return { rows, row_count: rowCount };
   }
 
   private async queryMetric(

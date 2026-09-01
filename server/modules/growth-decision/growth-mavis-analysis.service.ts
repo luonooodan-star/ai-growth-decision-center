@@ -12,15 +12,18 @@ import {
   type DecisionRecord,
 } from '@server/database/local-database.service';
 import type {
+  CompleteGrowthMavisBatchJobRequest,
   CompleteGrowthMavisJobRequest,
   FailGrowthMavisJobRequest,
   GrowthAiAnalysis,
   GrowthAiProviderStatus,
+  GrowthBatchAnalysisResponse,
   GrowthJudgment,
   GrowthMavisJob,
   GrowthMavisJobContext,
   GrowthMavisJobListResponse,
   GrowthProduct,
+  GrowthAnalysisMode,
 } from '@shared/api.interface';
 
 import { buildProductSkillDiagnostic } from './growth-diagnostic-analysis';
@@ -32,25 +35,126 @@ const LOCAL_WORKER_ID = 'mavis-skill-simulator';
 export class GrowthMavisAnalysisService {
   constructor(private readonly database: LocalDatabaseService) {}
 
-  getStatus(): GrowthAiProviderStatus {
+  getStatus(productId?: string): GrowthAiProviderStatus {
     const jobs: GrowthMavisJob[] = this.database.listMavisJobs(undefined, 1000);
+    const selectedMode: GrowthAnalysisMode = productId
+      ? this.getProduct(productId).analysisMode || 'product_skill'
+      : 'product_skill';
     const runtimeMode: GrowthAiProviderStatus['runtimeMode'] =
-      this.runtimeMode();
+      selectedMode === 'marvis_bridge' ? 'external_worker' : 'skill_simulation';
     const mcpConfigured: boolean = Boolean(this.mcpToken());
+    const productJobs: GrowthMavisJob[] = productId
+      ? jobs.filter(
+          (job: GrowthMavisJob): boolean => job.productId === productId,
+        )
+      : jobs;
     return {
       provider: 'mavis',
       model: process.env.MAVIS_MODEL || 'Marvis Growth Analyst',
-      configured: runtimeMode === 'skill_simulation' || mcpConfigured,
+      configured: selectedMode === 'product_skill' || mcpConfigured,
       runtimeMode,
+      selectedMode,
       mcpConfigured,
-      queuedJobs: jobs.filter(
+      queuedJobs: productJobs.filter(
         (job: GrowthMavisJob): boolean => job.status === 'queued',
       ).length,
-      runningJobs: jobs.filter(
+      runningJobs: productJobs.filter(
         (job: GrowthMavisJob): boolean => job.status === 'running',
       ).length,
       fallbackProvider: 'product_skill',
       fallbackAvailable: true,
+    };
+  }
+
+  updateAnalysisMode(
+    productId: string,
+    mode: GrowthAnalysisMode,
+  ): GrowthProduct {
+    const product: GrowthProduct = this.getProduct(productId);
+    if (!['product_skill', 'marvis_bridge'].includes(mode)) {
+      throw new BadRequestException('未知的分析模式');
+    }
+    this.cancelOpenJobs(productId, '分析模式已切换，旧任务已取消');
+    const updated: GrowthProduct = { ...product, analysisMode: mode };
+    this.database.saveProduct(updated);
+    return updated;
+  }
+
+  async analyzeProductBatch(
+    productId: string,
+  ): Promise<GrowthBatchAnalysisResponse> {
+    const product: GrowthProduct = this.getProduct(productId);
+    const judgments: GrowthJudgment[] = this.database
+      .listDecisionRecords(5000)
+      .filter(
+        (record): record is GrowthJudgment =>
+          'preliminaryJudgment' in record &&
+          record.productId === productId &&
+          (record.status === 'judgment_pending' ||
+            record.status === 'judgment_deferred'),
+      );
+    if (!judgments.length) {
+      return {
+        mode: product.analysisMode || 'product_skill',
+        analyzedCount: 0,
+        message: '当前没有待分析的异常',
+      };
+    }
+
+    const mode: GrowthAnalysisMode = product.analysisMode || 'product_skill';
+    if (mode === 'marvis_bridge' && !this.mcpToken()) {
+      throw new BadRequestException(
+        'Marvis 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Marvis 接入',
+      );
+    }
+    this.cancelOpenJobs(productId, '已由新的整批分析任务替代');
+    const job: GrowthMavisJob = {
+      id: randomUUID(),
+      judgmentId: judgments[0].id,
+      judgmentIds: judgments.map(
+        (judgment: GrowthJudgment): string => judgment.id,
+      ),
+      productId: product.id,
+      productName: product.name,
+      jobType: 'batch_anomaly_assessment',
+      trigger: 'manual',
+      status: 'queued',
+      skillVersion: product.skillVersion,
+      attempt: 0,
+      createdAt: new Date().toISOString(),
+    };
+    this.database.saveMavisJob(job);
+    for (const judgment of judgments) {
+      this.database.saveDecisionRecord({
+        ...judgment,
+        aiAnalysisStatus: 'running',
+      });
+    }
+
+    if (mode === 'product_skill') {
+      for (const judgment of judgments) {
+        this.runSkillSimulationForJudgment(job, product, judgment);
+      }
+      this.database.saveMavisJob({
+        ...job,
+        status: 'completed',
+        workerId: LOCAL_WORKER_ID,
+        startedAt: job.createdAt,
+        completedAt: new Date().toISOString(),
+      });
+      return {
+        mode,
+        analyzedCount: judgments.length,
+        job: this.getJob(job.id),
+        message: `产品 Skill 已完成 ${judgments.length} 条异常的整批分析`,
+      };
+    }
+
+    return {
+      mode,
+      analyzedCount: judgments.length,
+      job,
+      message: `已创建 1 条 Marvis 整批任务，包含 ${judgments.length} 条异常`,
     };
   }
 
@@ -65,6 +169,15 @@ export class GrowthMavisAnalysisService {
   ): Promise<GrowthJudgment> {
     const judgment: GrowthJudgment = this.getJudgment(id);
     const product: GrowthProduct = this.getProduct(judgment.productId);
+    if (
+      (mode === 'external_only' ||
+        (product.analysisMode || 'product_skill') === 'marvis_bridge') &&
+      !this.mcpToken()
+    ) {
+      throw new BadRequestException(
+        'Marvis 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Marvis 接入',
+      );
+    }
     const existing: GrowthMavisJob | undefined = this.database
       .listMavisJobs(id)
       .find(
@@ -102,7 +215,10 @@ export class GrowthMavisAnalysisService {
       },
     });
 
-    if (mode === 'external_only' || this.runtimeMode() === 'external_worker') {
+    if (
+      mode === 'external_only' ||
+      (product.analysisMode || 'product_skill') === 'marvis_bridge'
+    ) {
       return this.getJudgment(id);
     }
     return this.runSkillSimulation(job, product, judgment);
@@ -116,11 +232,18 @@ export class GrowthMavisAnalysisService {
   getJobContext(id: string): GrowthMavisJobContext {
     const job: GrowthMavisJob = this.getJob(id);
     const product: GrowthProduct = this.getProduct(job.productId);
-    const judgment: GrowthJudgment = this.getJudgment(job.judgmentId);
+    const judgmentIds: string[] = job.judgmentIds?.length
+      ? job.judgmentIds
+      : [job.judgmentId];
+    const judgments: GrowthJudgment[] = judgmentIds.map(
+      (judgmentId: string): GrowthJudgment => this.getJudgment(judgmentId),
+    );
+    const judgment: GrowthJudgment = judgments[0];
     return {
       job,
       product,
       judgment,
+      judgments,
       metricStandards: product.metrics,
       outputContract: {
         judgment: ['confirmed', 'uncertain', 'rejected'],
@@ -147,12 +270,56 @@ export class GrowthMavisAnalysisService {
     };
   }
 
+  completeBatchJob(
+    id: string,
+    request: CompleteGrowthMavisBatchJobRequest,
+  ): GrowthJudgment[] {
+    const job: GrowthMavisJob = this.getJob(id);
+    this.ensureWorkerOwnsJob(job, request.workerId);
+    const expectedIds = new Set(job.judgmentIds || [job.judgmentId]);
+    if (
+      job.jobType !== 'batch_anomaly_assessment' ||
+      request.analyses.length !== expectedIds.size ||
+      request.analyses.some((item) => !expectedIds.has(item.judgmentId))
+    ) {
+      throw new BadRequestException('整批分析结果必须完整对应任务中的异常');
+    }
+    const generatedAt: string = new Date().toISOString();
+    const updated: GrowthJudgment[] = request.analyses.map((item) => {
+      this.validateAnalysis(item.analysis);
+      return this.saveAnalysis(
+        job,
+        {
+          provider: 'mavis',
+          model: request.model.trim() || 'Marvis Growth Analyst',
+          ...item.analysis,
+          confidence: Math.round(item.analysis.confidence),
+          observationHours: Math.round(item.analysis.observationHours),
+          generatedAt,
+        },
+        item.judgmentId,
+      );
+    });
+    this.database.saveMavisJob({
+      ...job,
+      status: 'completed',
+      completedAt: generatedAt,
+      error: undefined,
+    });
+    return updated;
+  }
+
   completeJob(
     id: string,
     request: CompleteGrowthMavisJobRequest,
   ): GrowthJudgment {
     const job: GrowthMavisJob = this.getJob(id);
     this.ensureWorkerOwnsJob(job, request.workerId);
+    if (job.jobType === 'batch_anomaly_assessment') {
+      throw new BadRequestException(
+        '整批任务必须使用 submit_batch_analysis 一次回写全部异常',
+      );
+    }
     this.validateAnalysis(request.analysis);
     const analysis: GrowthAiAnalysis = {
       provider: 'mavis',
@@ -185,18 +352,20 @@ export class GrowthMavisAnalysisService {
       completedAt: new Date().toISOString(),
     };
     this.database.saveMavisJob(failed);
-    const judgment: GrowthJudgment = this.getJudgment(job.judgmentId);
-    this.database.saveDecisionRecord({
-      ...judgment,
-      aiAnalysisStatus: 'failed',
-    });
-    this.database.appendActivity({
-      caseId: judgment.id,
-      action: 'mavis_analysis_failed',
-      actor: request.workerId,
-      detail: failed.error || 'Marvis 分析失败',
-      metadata: { source: 'mavis', requestId: job.id },
-    });
+    for (const judgmentId of job.judgmentIds || [job.judgmentId]) {
+      const judgment: GrowthJudgment = this.getJudgment(judgmentId);
+      this.database.saveDecisionRecord({
+        ...judgment,
+        aiAnalysisStatus: 'failed',
+      });
+      this.database.appendActivity({
+        caseId: judgment.id,
+        action: 'mavis_analysis_failed',
+        actor: request.workerId,
+        detail: failed.error || 'Marvis 分析失败',
+        metadata: { source: 'mavis', requestId: job.id },
+      });
+    }
     return failed;
   }
 
@@ -238,11 +407,26 @@ export class GrowthMavisAnalysisService {
     return updated;
   }
 
+  private runSkillSimulationForJudgment(
+    job: GrowthMavisJob,
+    product: GrowthProduct,
+    judgment: GrowthJudgment,
+  ): GrowthJudgment {
+    const analysis: GrowthAiAnalysis = {
+      provider: 'product_skill',
+      model: `${product.name} Product Skill Diagnostic`,
+      ...buildProductSkillDiagnostic(product, judgment),
+      generatedAt: new Date().toISOString(),
+    };
+    return this.saveAnalysis(job, analysis, judgment.id);
+  }
+
   private saveAnalysis(
     job: GrowthMavisJob,
     analysis: GrowthAiAnalysis,
+    judgmentId: string = job.judgmentId,
   ): GrowthJudgment {
-    const judgment: GrowthJudgment = this.getJudgment(job.judgmentId);
+    const judgment: GrowthJudgment = this.getJudgment(judgmentId);
     const updated: GrowthJudgment = {
       ...judgment,
       aiAnalysisStatus: 'completed',
@@ -262,6 +446,32 @@ export class GrowthMavisAnalysisService {
       },
     });
     return updated;
+  }
+
+  private cancelOpenJobs(productId: string, reason: string): void {
+    const completedAt: string = new Date().toISOString();
+    const jobs: GrowthMavisJob[] = this.database
+      .listMavisJobs(undefined, 5000)
+      .filter(
+        (job: GrowthMavisJob): boolean =>
+          job.productId === productId &&
+          (job.status === 'queued' || job.status === 'running'),
+      );
+    for (const job of jobs) {
+      this.database.saveMavisJob({
+        ...job,
+        status: 'cancelled',
+        error: reason,
+        completedAt,
+      });
+      for (const judgmentId of job.judgmentIds || [job.judgmentId]) {
+        const judgment: GrowthJudgment = this.getJudgment(judgmentId);
+        this.database.saveDecisionRecord({
+          ...judgment,
+          aiAnalysisStatus: undefined,
+        });
+      }
+    }
   }
 
   private getJudgment(id: string): GrowthJudgment {
@@ -294,7 +504,9 @@ export class GrowthMavisAnalysisService {
     }
   }
 
-  private validateAnalysis(analysis: CompleteGrowthMavisJobRequest['analysis']): void {
+  private validateAnalysis(
+    analysis: CompleteGrowthMavisJobRequest['analysis'],
+  ): void {
     const metricLists: string[][] = [
       analysis.evidence,
       analysis.alternativeCauses,
@@ -334,12 +546,6 @@ export class GrowthMavisAnalysisService {
     ) {
       throw new BadRequestException('Marvis 分析结果不符合结构化输出合同');
     }
-  }
-
-  private runtimeMode(): GrowthAiProviderStatus['runtimeMode'] {
-    return process.env.MAVIS_WORKER_MODE === 'external'
-      ? 'external_worker'
-      : 'skill_simulation';
   }
 
   private mcpToken(): string {

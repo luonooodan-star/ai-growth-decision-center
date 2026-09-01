@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 
 import type {
+  CompleteGrowthMavisBatchJobRequest,
   CompleteGrowthMavisJobRequest,
   GrowthMavisJob,
 } from '@shared/api.interface';
@@ -33,7 +34,7 @@ interface MavisMcpResponse {
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: 'claim_analysis_job',
-    description: '领取一个等待 Marvis 分析的广告异常任务',
+    description: '领取一个等待 Marvis 分析的整批广告异常任务',
     inputSchema: {
       type: 'object',
       properties: { workerId: { type: 'string' } },
@@ -43,11 +44,26 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: 'get_anomaly_context',
     description:
-      '读取异常、完整交付指标、历史对照、Campaign/广告组/国家拆分、缺失维度、产品标准和 Skill 版本',
+      '读取单条或整批异常、完整交付指标、历史对照、Campaign/广告组/国家拆分、缺失维度、产品标准和 Skill 版本',
     inputSchema: {
       type: 'object',
       properties: { jobId: { type: 'string' } },
       required: ['jobId'],
+    },
+  },
+  {
+    name: 'submit_batch_analysis',
+    description:
+      '一次回写整批任务中全部异常的结构化分析，服务会按 judgmentId 拆分到各异常记录',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        jobId: { type: 'string' },
+        workerId: { type: 'string' },
+        model: { type: 'string' },
+        analyses: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['jobId', 'workerId', 'model', 'analyses'],
     },
   },
   {
@@ -158,6 +174,29 @@ export class GrowthMavisMcpController {
         },
       );
     }
+    if (name === 'submit_batch_analysis') {
+      const analyses: unknown = args.analyses;
+      if (
+        !Array.isArray(analyses) ||
+        analyses.some(
+          (item: unknown): boolean =>
+            typeof item !== 'object' ||
+            item === null ||
+            typeof Reflect.get(item, 'judgmentId') !== 'string' ||
+            !this.isAnalysis(Reflect.get(item, 'analysis')),
+        )
+      ) {
+        throw new BadRequestException('analyses 不符合整批结构化输出合同');
+      }
+      return this.growthMavisAnalysisService.completeBatchJob(
+        this.stringArg(args, 'jobId'),
+        {
+          workerId: this.stringArg(args, 'workerId'),
+          model: this.stringArg(args, 'model'),
+          analyses,
+        } as CompleteGrowthMavisBatchJobRequest,
+      );
+    }
     if (name === 'fail_analysis_job') {
       return this.growthMavisAnalysisService.failJob(
         this.stringArg(args, 'jobId'),
@@ -210,7 +249,10 @@ export class GrowthMavisMcpController {
     );
   }
 
-  private success(id: string | number | undefined, result: unknown): MavisMcpResponse {
+  private success(
+    id: string | number | undefined,
+    result: unknown,
+  ): MavisMcpResponse {
     return { jsonrpc: '2.0', id, result };
   }
 

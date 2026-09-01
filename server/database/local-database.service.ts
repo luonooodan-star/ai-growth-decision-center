@@ -29,13 +29,72 @@ interface DecisionActivityInput {
 const WINGSLITE_PRODUCT_ID = '579150cc-4ebe-4f27-891d-2dbc375d7889';
 
 const DEFAULT_GROWTH_METRICS: GrowthMetricDefinition[] = [
-  { key: 'cpi', label: 'CPI', unit: 'usd', direction: 'lower', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_daily.cpi', description: '每个 Adjust 安装对应的广告消耗。' },
-  { key: 'cpa', label: 'CPA', unit: 'usd', direction: 'lower', availability: 'pending', source: '待产品侧转化事件口径确认', description: '每个目标转化对应的广告消耗；当前 Doris 权限未提供目标转化指标。' },
-  { key: 'd0_roas', label: 'D0 ROAS', unit: 'percent', direction: 'higher', availability: 'direct', source: 'bi_ads.ads_paid_acquisition_cohort_metric.d0_roas', description: '成熟 cohort 的首日广告支出回报。' },
-  { key: 'ecpm', label: 'ECPM', unit: 'usd', direction: 'lower', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'spend / impressions × 1000', description: '每千次广告展示对应的消耗。' },
-  { key: 'retention_d1', label: '次留', unit: 'percent', direction: 'higher', availability: 'pending', source: '待产品后台次日留存数据集接入', description: '安装用户次日留存率。' },
-  { key: 'ipu', label: 'IPU', unit: 'number', direction: 'higher', availability: 'pending', source: '待产品负责人确认业务定义与数据字段', description: '保留产品原始 IPU 口径，不在未确认前推导。' },
-  { key: 'arpu', label: 'ARPU', unit: 'usd', direction: 'higher', availability: 'derived', source: 'bi_ads.ads_paid_acquisition_daily', formula: 'adjust_revenue / adjust_installs', description: '每个 Adjust 安装用户对应的收入。' },
+  {
+    key: 'cpi',
+    label: 'CPI',
+    unit: 'usd',
+    direction: 'lower',
+    availability: 'direct',
+    source: 'bi_ads.ads_paid_acquisition_daily.cpi',
+    description: '每个 Adjust 安装对应的广告消耗。',
+  },
+  {
+    key: 'cpa',
+    label: 'CPA',
+    unit: 'usd',
+    direction: 'lower',
+    availability: 'pending',
+    source: '待产品侧转化事件口径确认',
+    description:
+      '每个目标转化对应的广告消耗；当前 Doris 权限未提供目标转化指标。',
+  },
+  {
+    key: 'd0_roas',
+    label: 'D0 ROAS',
+    unit: 'percent',
+    direction: 'higher',
+    availability: 'direct',
+    source: 'bi_ads.ads_paid_acquisition_cohort_metric.d0_roas',
+    description: '成熟 cohort 的首日广告支出回报。',
+  },
+  {
+    key: 'ecpm',
+    label: 'ECPM',
+    unit: 'usd',
+    direction: 'lower',
+    availability: 'derived',
+    source: 'bi_ads.ads_paid_acquisition_daily',
+    formula: 'spend / impressions × 1000',
+    description: '每千次广告展示对应的消耗。',
+  },
+  {
+    key: 'retention_d1',
+    label: '次留',
+    unit: 'percent',
+    direction: 'higher',
+    availability: 'pending',
+    source: '待产品后台次日留存数据集接入',
+    description: '安装用户次日留存率。',
+  },
+  {
+    key: 'ipu',
+    label: 'IPU',
+    unit: 'number',
+    direction: 'higher',
+    availability: 'pending',
+    source: '待产品负责人确认业务定义与数据字段',
+    description: '保留产品原始 IPU 口径，不在未确认前推导。',
+  },
+  {
+    key: 'arpu',
+    label: 'ARPU',
+    unit: 'usd',
+    direction: 'higher',
+    availability: 'derived',
+    source: 'bi_ads.ads_paid_acquisition_daily',
+    formula: 'adjust_revenue / adjust_installs',
+    description: '每个 Adjust 安装用户对应的收入。',
+  },
 ];
 
 @Injectable()
@@ -186,17 +245,22 @@ export class LocalDatabaseService implements OnModuleDestroy {
   listFetchRuns(productId?: string, limit = 100): GrowthFetchRun[] {
     const rows: Record<string, unknown>[] = productId
       ? this.database
-          .prepare('SELECT payload FROM growth_fetch_run WHERE product_id = ? ORDER BY started_at DESC LIMIT ?')
+          .prepare(
+            'SELECT payload FROM growth_fetch_run WHERE product_id = ? ORDER BY started_at DESC LIMIT ?',
+          )
           .all(productId, limit)
       : this.database
-          .prepare('SELECT payload FROM growth_fetch_run ORDER BY started_at DESC LIMIT ?')
+          .prepare(
+            'SELECT payload FROM growth_fetch_run ORDER BY started_at DESC LIMIT ?',
+          )
           .all(limit);
     return rows.map((row) => this.parsePayload<GrowthFetchRun>(row.payload));
   }
 
   saveFetchRun(run: GrowthFetchRun): void {
     this.database
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO growth_fetch_run (id, product_id, status, started_at, payload)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -204,8 +268,15 @@ export class LocalDatabaseService implements OnModuleDestroy {
           status = excluded.status,
           started_at = excluded.started_at,
           payload = excluded.payload
-      `)
-      .run(run.id, run.productId || null, run.status, run.startedAt, JSON.stringify(run));
+      `,
+      )
+      .run(
+        run.id,
+        run.productId || null,
+        run.status,
+        run.startedAt,
+        JSON.stringify(run),
+      );
   }
 
   listDataSnapshots(productId: string, limit = 90): GrowthDataSnapshot[] {
@@ -358,8 +429,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
       )
       .get();
     if (!row) return undefined;
-    const queued: GrowthMavisJob =
-      this.parsePayload<GrowthMavisJob>(row.payload);
+    const queued: GrowthMavisJob = this.parsePayload<GrowthMavisJob>(
+      row.payload,
+    );
     const claimed: GrowthMavisJob = {
       ...queued,
       status: 'running',
@@ -485,6 +557,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       ],
       dataDelayMinutes: 60,
       skillVersion: 'wingslite-facebook-decision',
+      analysisMode: 'product_skill',
       dorisSource:
         'bi_ads.ads_paid_acquisition_daily + ' +
         'bi_ads.ads_paid_acquisition_cohort_metric',
@@ -513,6 +586,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
     );
     return {
       ...product,
+      analysisMode: product.analysisMode || 'product_skill',
       accountIds: product.accountIds || [],
       adAccounts:
         product.adAccounts ||
@@ -528,9 +602,11 @@ export class LocalDatabaseService implements OnModuleDestroy {
       metrics: DEFAULT_GROWTH_METRICS.map((definition) => {
         const saved = savedMetrics.get(definition.key);
         const legacyThreshold = saved?.anomalyThreshold;
-        const lowerBound = saved?.lowerBound ??
+        const lowerBound =
+          saved?.lowerBound ??
           (saved?.direction === 'higher' ? legacyThreshold : undefined);
-        const upperBound = saved?.upperBound ??
+        const upperBound =
+          saved?.upperBound ??
           (saved?.direction === 'lower' ? legacyThreshold : undefined);
         return {
           ...definition,

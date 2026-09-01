@@ -20,6 +20,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import type {
   GrowthAdAccount,
+  GrowthAnalysisMode,
   GrowthAiProviderStatus,
   GrowthDashboardResponse,
   GrowthDecisionCase,
@@ -139,7 +140,7 @@ const GrowthDecisionPage: React.FC = () => {
 
   useEffect((): void => {
     void loadDashboard();
-  }, []);
+  }, [productId]);
 
   useEffect((): (() => void) | undefined => {
     const hasRunningAnalysis: boolean = Boolean(
@@ -163,7 +164,7 @@ const GrowthDecisionPage: React.FC = () => {
         GrowthAiProviderStatus,
       ] = await Promise.all([
         growthDecision.getDashboard(),
-        growthDecision.getAiStatus(),
+        growthDecision.getAiStatus(productId),
       ]);
       setDashboardData(response);
       setAiStatus(providerStatus);
@@ -303,6 +304,44 @@ const GrowthDecisionPage: React.FC = () => {
     }
   };
 
+  const handleBatchAnalysis = async (): Promise<void> => {
+    if (!productId) return;
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.analyzeProductBatch(productId);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '整批异常分析创建失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAnalysisModeChange = async (
+    mode: GrowthAnalysisMode,
+  ): Promise<void> => {
+    if (!productId || aiStatus?.selectedMode === mode) return;
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.updateAnalysisMode(productId, mode);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '分析模式切换失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const pendingCases: GrowthDecisionCase[] = useMemo(
     (): GrowthDecisionCase[] =>
       dashboard?.cases.filter(
@@ -435,11 +474,12 @@ const GrowthDecisionPage: React.FC = () => {
             onReview={handleJudgmentReview}
             onGenerateRecommendation={handleGenerateRecommendation}
             onAnalyze={handleAiAnalysis}
+            onAnalyzeBatch={handleBatchAnalysis}
+            onAnalysisModeChange={handleAnalysisModeChange}
+            analysisMode={aiStatus?.selectedMode || 'product_skill'}
             mavisConfigured={Boolean(aiStatus?.configured)}
             mavisModel={aiStatus?.model || 'Marvis Growth Analyst'}
-            mavisRuntimeMode={
-              aiStatus?.runtimeMode || 'skill_simulation'
-            }
+            mavisRuntimeMode={aiStatus?.runtimeMode || 'skill_simulation'}
             mavisQueuedJobs={aiStatus?.queuedJobs || 0}
           />
 
@@ -681,11 +721,13 @@ const GrowthDecisionPage: React.FC = () => {
                       <span>延迟：{product.dataDelayMinutes} 分钟</span>
                       <span>
                         活跃账户：
-                        {(product.adAccounts || []).filter(
-                          (account: GrowthAdAccount): boolean =>
-                            account.activityStatus === 'active' ||
-                            account.activityStatus === 'new',
-                        ).length}{' '}
+                        {
+                          (product.adAccounts || []).filter(
+                            (account: GrowthAdAccount): boolean =>
+                              account.activityStatus === 'active' ||
+                              account.activityStatus === 'new',
+                          ).length
+                        }{' '}
                         个
                       </span>
                       <span>渠道：{product.channel.toUpperCase()}</span>
@@ -742,7 +784,8 @@ const GrowthDecisionPage: React.FC = () => {
                         ) : null}
                       </div>
                       <p className="mt-2 text-[10px] leading-4 text-slate-400">
-                        “无近期投放”仅表示最近 3 天 Doris 无消耗，封户状态仍需 Facebook API 确认；历史账户不会被自动删除。
+                        “无近期投放”仅表示最近 3 天 Doris 无消耗，封户状态仍需
+                        Facebook API 确认；历史账户不会被自动删除。
                       </p>
                     </div>
                     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">

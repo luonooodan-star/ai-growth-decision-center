@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 
 import type {
@@ -13,6 +14,7 @@ import type {
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
   GrowthAiProviderStatus,
+  GrowthBatchAnalysisResponse,
   GrowthDataHistoryResponse,
   GrowthDashboardResponse,
   GrowthFetchHistoryResponse,
@@ -30,6 +32,7 @@ import type {
   TriggerGrowthFetchRequest,
   UpdateDecisionRequest,
   UpdateMetricStandardsRequest,
+  UpdateGrowthAnalysisModeRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -56,14 +59,12 @@ export class GrowthDecisionController {
   }
 
   @Get('mavis/status')
-  getAiStatus(): GrowthAiProviderStatus {
-    return this.growthMavisAnalysisService.getStatus();
+  getAiStatus(@Query('productId') productId?: string): GrowthAiProviderStatus {
+    return this.growthMavisAnalysisService.getStatus(productId);
   }
 
   @Get('judgments/:id/mavis-jobs')
-  getMavisJobs(
-    @Param('id') id: string,
-  ): GrowthMavisJobListResponse {
+  getMavisJobs(@Param('id') id: string): GrowthMavisJobListResponse {
     return this.growthMavisAnalysisService.listJobs(id);
   }
 
@@ -126,6 +127,24 @@ export class GrowthDecisionController {
       request,
       '人工决策负责人',
     );
+  }
+
+  @Patch('products/:productId/analysis-mode')
+  updateAnalysisMode(
+    @Param('productId') productId: string,
+    @Body() request: UpdateGrowthAnalysisModeRequest,
+  ): GrowthProduct {
+    return this.growthMavisAnalysisService.updateAnalysisMode(
+      productId,
+      request.mode,
+    );
+  }
+
+  @Post('products/:productId/analyze-batch')
+  analyzeProductBatch(
+    @Param('productId') productId: string,
+  ): Promise<GrowthBatchAnalysisResponse> {
+    return this.growthMavisAnalysisService.analyzeProductBatch(productId);
   }
 
   @Post('judgments/ingest')

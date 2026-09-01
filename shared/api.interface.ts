@@ -16,7 +16,10 @@ export interface GrowthProduct {
   thresholds: Record<string, number | string | boolean | null>;
   metrics: GrowthMetricDefinition[];
   latestMetricValues?: GrowthMetricValues;
+  analysisMode?: GrowthAnalysisMode;
 }
+
+export type GrowthAnalysisMode = 'product_skill' | 'marvis_bridge';
 
 export type GrowthAdAccountActivityStatus =
   | 'new'
@@ -337,6 +340,18 @@ export interface GrowthAiProviderStatus {
   runningJobs: number;
   fallbackProvider: 'product_skill';
   fallbackAvailable: true;
+  selectedMode: GrowthAnalysisMode;
+}
+
+export interface UpdateGrowthAnalysisModeRequest {
+  mode: GrowthAnalysisMode;
+}
+
+export interface GrowthBatchAnalysisResponse {
+  mode: GrowthAnalysisMode;
+  analyzedCount: number;
+  job?: GrowthMavisJob;
+  message: string;
 }
 
 export interface AnalyzeJudgmentRequest {
@@ -347,14 +362,16 @@ export type GrowthMavisJobStatus =
   | 'queued'
   | 'running'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 export interface GrowthMavisJob {
   id: string;
   judgmentId: string;
   productId: string;
   productName: string;
-  jobType: 'anomaly_assessment';
+  judgmentIds?: string[];
+  jobType: 'anomaly_assessment' | 'batch_anomaly_assessment';
   trigger: 'automatic' | 'manual';
   status: GrowthMavisJobStatus;
   workerId?: string;
@@ -378,6 +395,7 @@ export interface GrowthMavisJobContext {
   job: GrowthMavisJob;
   product: GrowthProduct;
   judgment: GrowthJudgment;
+  judgments: GrowthJudgment[];
   metricStandards: GrowthMetricDefinition[];
   outputContract: {
     judgment: GrowthAiJudgment[];
@@ -386,6 +404,15 @@ export interface GrowthMavisJobContext {
     requiredAnalysis: string[];
     supportedActionTypes: GrowthActionProposal['actionType'][];
   };
+}
+
+export interface CompleteGrowthMavisBatchJobRequest {
+  workerId: string;
+  model: string;
+  analyses: Array<{
+    judgmentId: string;
+    analysis: CompleteGrowthMavisJobRequest['analysis'];
+  }>;
 }
 
 export interface CompleteGrowthMavisJobRequest {

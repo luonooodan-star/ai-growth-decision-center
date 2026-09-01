@@ -88,19 +88,17 @@ const DETAIL_DELIVERY_METRICS: Array<{
   { key: 'd0_roas', label: 'D0 ROAS' },
 ];
 
-const DETAIL_ACTION_LABELS: Record<
-  GrowthActionProposal['actionType'],
-  string
-> = {
-  increase_budget: '提高预算',
-  decrease_budget: '降低预算',
-  hold_budget: '保持预算',
-  exclude_target: '排除对象',
-  rotate_creative: '更换素材',
-  create_experiment: '新建对照实验',
-  observe: '继续观察',
-  investigate_data: '补查数据',
-};
+const DETAIL_ACTION_LABELS: Record<GrowthActionProposal['actionType'], string> =
+  {
+    increase_budget: '提高预算',
+    decrease_budget: '降低预算',
+    hold_budget: '保持预算',
+    exclude_target: '排除对象',
+    rotate_creative: '更换素材',
+    create_experiment: '新建对照实验',
+    observe: '继续观察',
+    investigate_data: '补查数据',
+  };
 
 const diagnosticMetricValue = (
   key: GrowthDeliveryMetricKey,
@@ -148,8 +146,7 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
 }) => {
   const canReview: boolean = Boolean(
     item &&
-      (item.status === 'judgment_pending' ||
-        item.status === 'judgment_deferred'),
+    (item.status === 'judgment_pending' || item.status === 'judgment_deferred'),
   );
 
   return (
@@ -363,8 +360,9 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                     <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
                       <div className="rounded-lg bg-emerald-50 px-3 py-2 leading-5 text-emerald-800">
                         已获取维度：
-                        {item.diagnosticContext.availableDimensions.join('、') ||
-                          '暂无'}
+                        {item.diagnosticContext.availableDimensions.join(
+                          '、',
+                        ) || '暂无'}
                       </div>
                       <div className="rounded-lg bg-amber-50 px-3 py-2 leading-5 text-amber-800">
                         待补维度：
@@ -428,7 +426,9 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                         </dd>
                       </div>
                       <div>
-                        <dt className="font-medium text-slate-500">建议下一步</dt>
+                        <dt className="font-medium text-slate-500">
+                          建议下一步
+                        </dt>
                         <dd className="mt-1 leading-5 text-slate-700">
                           {item.aiAnalysis.recommendedNextStep}
                         </dd>
@@ -459,9 +459,13 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                                 className="rounded-lg border border-blue-200 bg-white p-3"
                               >
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <Badge>{
-                                    DETAIL_ACTION_LABELS[actionItem.actionType]
-                                  }</Badge>
+                                  <Badge>
+                                    {
+                                      DETAIL_ACTION_LABELS[
+                                        actionItem.actionType
+                                      ]
+                                    }
+                                  </Badge>
                                   <span className="text-xs font-medium text-slate-700">
                                     {actionItem.targetName ||
                                       actionItem.targetId}
@@ -505,7 +509,8 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                   </div>
                 ) : item.aiAnalysisStatus !== 'running' ? (
                   <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                    尚未生成第一波分析，可在下方手动运行 Marvis。
+                    尚未运行深度分析。当前仅展示 Doris
+                    历史快照的明显升降对比；可在异常队列统一整批分析，或在下方单独分析此异常。
                   </p>
                 ) : null}
               </section>
@@ -530,8 +535,8 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                     mavisRuntimeMode === 'skill_simulation'
                       ? '使用完整投放快照运行产品 Skill 深度诊断'
                       : mavisConfigured
-                      ? `创建 ${mavisModel} 分析任务并记录完整过程`
-                      : 'Marvis 任务桥尚未启用'
+                        ? `创建 ${mavisModel} 分析任务并记录完整过程`
+                        : 'Marvis 任务桥尚未启用'
                   }
                 >
                   <BrainCircuit className="size-4" />
@@ -576,7 +581,10 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                     >
                       <X className="size-4" /> 否决
                     </Button>
-                    <Button size="sm" onClick={() => onReview(item, 'confirmed')}>
+                    <Button
+                      size="sm"
+                      onClick={() => onReview(item, 'confirmed')}
+                    >
                       <Check className="size-4" /> 确认判断
                     </Button>
                   </>

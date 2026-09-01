@@ -8,21 +8,15 @@ const ACCESS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-access';
 const MARVIS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-mavis-mcp';
 const REMOTE_URL_SERVICE = 'ai-growth-decision-center-marvis-remote-url';
 const REMOTE_USER_SERVICE = 'ai-growth-decision-center-marvis-remote-user';
-const REMOTE_PASSWORD_SERVICE = 'ai-growth-decision-center-marvis-remote-password';
+const REMOTE_PASSWORD_SERVICE =
+  'ai-growth-decision-center-marvis-remote-password';
 const REMOTE_TOKEN_SERVICE = 'ai-growth-decision-center-marvis-remote-token';
 const DEFAULT_WORKER_ID = 'marvis-analysis-mac';
 
 function secret(service) {
   return execFileSync(
     'security',
-    [
-      'find-generic-password',
-      '-a',
-      userInfo().username,
-      '-s',
-      service,
-      '-w',
-    ],
+    ['find-generic-password', '-a', userInfo().username, '-s', service, '-w'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
   ).trim();
 }
@@ -63,7 +57,8 @@ function connectionConfig() {
     );
   }
   return {
-    url: process.env.AI_GROWTH_MCP_URL ||
+    url:
+      process.env.AI_GROWTH_MCP_URL ||
       'http://127.0.0.1:8081/mcp/growth-decision',
     username: 'growth',
     password,
@@ -94,10 +89,13 @@ async function callMcp(method, params = undefined) {
   });
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`决策中心 MCP 请求失败（HTTP ${response.status}）：${text}`);
+    throw new Error(
+      `决策中心 MCP 请求失败（HTTP ${response.status}）：${text}`,
+    );
   }
   const payload = JSON.parse(text);
-  if (payload.error) throw new Error(payload.error.message || 'MCP 工具调用失败');
+  if (payload.error)
+    throw new Error(payload.error.message || 'MCP 工具调用失败');
   return payload.result;
 }
 
@@ -143,15 +141,40 @@ async function main() {
     const analysisPath = process.argv[4];
     const workerId = process.argv[5] || DEFAULT_WORKER_ID;
     if (!jobId || !analysisPath) {
-      throw new Error('用法：marvis-worker.mjs submit <jobId> <analysis.json> [workerId]');
+      throw new Error(
+        '用法：marvis-worker.mjs submit <jobId> <analysis.json> [workerId]',
+      );
     }
     const analysis = JSON.parse(await readFile(analysisPath, 'utf8'));
-    printJson(await callTool('submit_anomaly_analysis', {
-      jobId,
-      workerId,
-      model: 'Marvis Growth Analyst',
-      analysis,
-    }));
+    printJson(
+      await callTool('submit_anomaly_analysis', {
+        jobId,
+        workerId,
+        model: 'Marvis Growth Analyst',
+        analysis,
+      }),
+    );
+    return;
+  }
+
+  if (command === 'submit-batch') {
+    const jobId = process.argv[3];
+    const analysesPath = process.argv[4];
+    const workerId = process.argv[5] || DEFAULT_WORKER_ID;
+    if (!jobId || !analysesPath) {
+      throw new Error(
+        '用法：marvis-worker.mjs submit-batch <jobId> <analyses.json> [workerId]',
+      );
+    }
+    const analyses = JSON.parse(await readFile(analysesPath, 'utf8'));
+    printJson(
+      await callTool('submit_batch_analysis', {
+        jobId,
+        workerId,
+        model: 'Marvis Growth Analyst',
+        analyses,
+      }),
+    );
     return;
   }
 
@@ -161,18 +184,22 @@ async function main() {
     if (!jobId || !error) {
       throw new Error('用法：marvis-worker.mjs fail <jobId> <错误原因>');
     }
-    printJson(await callTool('fail_analysis_job', {
-      jobId,
-      workerId: DEFAULT_WORKER_ID,
-      error,
-    }));
+    printJson(
+      await callTool('fail_analysis_job', {
+        jobId,
+        workerId: DEFAULT_WORKER_ID,
+        error,
+      }),
+    );
     return;
   }
 
-  throw new Error('支持的命令：check、claim、submit、fail');
+  throw new Error('支持的命令：check、claim、submit、submit-batch、fail');
 }
 
 main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n`,
+  );
   process.exitCode = 1;
 });

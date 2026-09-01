@@ -303,6 +303,7 @@ export class GrowthDecisionService {
       accountIds,
       dataDelayMinutes: request.dataDelayMinutes || 60,
       skillVersion: 'product-standard-pending',
+      analysisMode: 'product_skill',
       dorisSource: request.dorisSource,
       thresholds: { configuredBy: userId || 'local_operator' },
       metrics: DEFAULT_GROWTH_METRICS,
@@ -317,16 +318,20 @@ export class GrowthDecisionService {
     actor: string,
   ): Promise<GrowthProduct> {
     const product: GrowthProduct = this.getProduct(productId);
-    const requested = new Map(
-      request.metrics.map((item) => [item.key, item]),
-    );
+    const requested = new Map(request.metrics.map((item) => [item.key, item]));
     const updatedAt: string = new Date().toISOString();
     const metrics = product.metrics.map((metric) => {
       const input = requested.get(metric.key);
       if (!input) return metric;
-      for (const value of [input.standardValue, input.lowerBound, input.upperBound]) {
+      for (const value of [
+        input.standardValue,
+        input.lowerBound,
+        input.upperBound,
+      ]) {
         if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
-          throw new BadRequestException(`${metric.label} 必须填写大于或等于 0 的数字`);
+          throw new BadRequestException(
+            `${metric.label} 必须填写大于或等于 0 的数字`,
+          );
         }
       }
       if (

@@ -5,12 +5,12 @@ description: 领取 AI 增长决策中心的广告异常任务，结合产品指
 
 # 增长异常判断
 
-通过分析 Mac 上的安全代理调用公司 Mac 托管的 `ai-growth-decision-center` MCP，处理一个等待中的异常任务。代理位于 `$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs`，只从当前 Mac 的 Keychain 读取远程认证信息，不得要求用户把密码或 Token 写进提示词。判断与调整建议是两个阶段：本 Skill 只完成异常是否成立、初步原因和下一步核查建议，不把判断结果计入建议采纳率。
+通过分析 Mac 上的安全代理调用公司 Mac 托管的 `ai-growth-decision-center` MCP，处理一个等待中的整批异常任务。代理位于 `$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs`，只从当前 Mac 的 Keychain 读取远程认证信息，不得要求用户把密码或 Token 写进提示词。判断与调整建议是两个阶段；本 Skill 先逐条完成异常是否成立与根因分析，同时给出候选投放动作，候选动作尚未被人工采纳前不计入建议采纳率。
 
 ## 工作流
 
 1. 用 shell 执行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" claim`。该命令会依次调用 `claim_analysis_job` 和 `get_anomaly_context`。若输出中的 `job` 为 `null`，静默结束，不生成空报告。
-2. 从命令输出读取任务对应的产品、异常、指标库标准、数据更新时间和产品 Skill 版本。不要再次领取任务。
+2. 从命令输出的 `judgments` 读取本批次全部异常，以及产品、指标库标准、数据更新时间和产品 Skill 版本。不要再次领取任务。若为兼容旧任务且只有 `judgment`，按单条任务处理。
 3. 先验证数据口径，再判断异常：
    - 当前值是否真的越过指标库上下边界；
    - 数据是否覆盖完整观察窗口，是否仍在 Doris/归因延迟期；
@@ -21,7 +21,7 @@ description: 领取 AI 增长决策中心的广告异常任务，结合产品指
    - `confirmed`：现有证据足以确认异常现象成立；
    - `uncertain`：疑似异常，但延迟、样本量或维度证据不足；
    - `rejected`：口径、时间窗或补充数据表明异常不成立。
-5. 把以下结构化结果写到 `$HOME/Downloads/ai-growth-marvis/analysis-<jobId>.json`：
+5. 对每条异常生成以下结构化结果：
    - `judgment`
    - `summary`
    - `primaryCause`
@@ -31,7 +31,8 @@ description: 领取 AI 增长决策中心的广告异常任务，结合产品指
    - `risk`
    - `confidence`（0–100）
    - `observationHours`（1–168）
-6. 执行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" submit <jobId> <analysis.json路径>`。该命令通过 `submit_anomaly_analysis` 回写结果。只有看到成功响应后才算完成。
+   - `recommendedActions`：具体广告投放候选动作，必须含动作类型、对象、步骤、护栏、观察窗口与回滚条件；证据不足时使用 `observe` 或 `investigate_data`，不得臆测。
+6. 整批任务把结果保存为 `$HOME/Downloads/ai-growth-marvis/analyses-<jobId>.json`，根节点为数组，每项格式为 `{ "judgmentId": "...", "analysis": { ... } }`，且必须覆盖任务内每个 judgmentId。执行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" submit-batch <jobId> <analyses.json路径>`。旧单条任务仍使用 `submit`。只有看到成功响应后才算完成。
 7. 如果已经领取任务但无法完成，执行 `node "$HOME/Downloads/ai-growth-marvis/marvis-worker.mjs" fail <jobId> <错误原因>`，禁止让任务永久停在运行中。
 
 ## 判断边界
@@ -40,6 +41,6 @@ description: 领取 AI 增长决策中心的广告异常任务，结合产品指
 - 指标库阈值用于确认异常现象，不足以单独证明根因。根因必须区分“已验证”和“可能相关”。
 - 优先使用产品指标库和该产品 Skill；不得把其他产品的阈值套用到当前产品。
 - 数据延迟期间优先返回 `uncertain` 并给出建议观察小时数，不强行确认。
-- `recommendedNextStep` 是核查/诊断动作，不是预算或状态调整指令。
-- 每次只处理一个任务，让下一分钟的自动任务继续领取，避免一次运行失控。
+- 预算增减、排除、素材轮换和新建实验只能作为 `recommendedActions` 候选，不得直接执行。
+- 每次只领取一个整批任务，并完整处理其中全部异常；不要将一批异常再次拆成多个排队任务。
 - 不得读取、显示或复制 Keychain 中的访问密码与 Marvis Token。

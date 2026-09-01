@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 
 import type {
+  GrowthAnalysisMode,
   GrowthJudgment,
   ReviewJudgmentRequest,
 } from '@shared/api.interface';
@@ -38,6 +39,9 @@ interface JudgmentQueueProps {
   onReview: (id: string, request: ReviewJudgmentRequest) => Promise<void>;
   onGenerateRecommendation: (id: string) => Promise<void>;
   onAnalyze: (id: string) => Promise<void>;
+  onAnalyzeBatch: () => Promise<void>;
+  onAnalysisModeChange: (mode: GrowthAnalysisMode) => Promise<void>;
+  analysisMode: GrowthAnalysisMode;
   mavisConfigured: boolean;
   mavisModel: string;
   mavisRuntimeMode: 'external_worker' | 'skill_simulation';
@@ -69,6 +73,9 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   onReview,
   onGenerateRecommendation,
   onAnalyze,
+  onAnalyzeBatch,
+  onAnalysisModeChange,
+  analysisMode,
   mavisConfigured,
   mavisModel,
   mavisRuntimeMode,
@@ -96,9 +103,12 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
     [judgments],
   );
   const detailItem: GrowthJudgment | null =
-    judgments.find(
-      (item: GrowthJudgment): boolean => item.id === detailId,
-    ) || null;
+    judgments.find((item: GrowthJudgment): boolean => item.id === detailId) ||
+    null;
+  const openJudgmentCount: number = judgments.filter(
+    (item: GrowthJudgment): boolean =>
+      item.status === 'judgment_pending' || item.status === 'judgment_deferred',
+  ).length;
 
   const openReview = (
     item: GrowthJudgment,
@@ -139,17 +149,41 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
               先确认异常与原因是否成立，再进入调整建议阶段
             </CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={mavisConfigured ? 'secondary' : 'outline'}>
-              {mavisRuntimeMode === 'external_worker'
-                ? `Marvis ${mavisConfigured ? '任务桥已启用' : '未启用'}`
-                : '产品 Skill 深度诊断已启用'}
-            </Badge>
-            <Badge variant="outline">
-              {mavisRuntimeMode === 'external_worker'
-                ? '外部 Marvis Worker'
-                : '本地指标链路诊断'}
-            </Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <Button
+                size="sm"
+                variant={analysisMode === 'marvis_bridge' ? 'default' : 'ghost'}
+                className="h-7 px-2 text-xs"
+                disabled={saving}
+                onClick={() => void onAnalysisModeChange('marvis_bridge')}
+              >
+                Marvis 任务桥
+              </Button>
+              <Button
+                size="sm"
+                variant={analysisMode === 'product_skill' ? 'default' : 'ghost'}
+                className="h-7 px-2 text-xs"
+                disabled={saving}
+                onClick={() => void onAnalysisModeChange('product_skill')}
+              >
+                产品 Skill
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              disabled={
+                saving ||
+                openJudgmentCount === 0 ||
+                (analysisMode === 'marvis_bridge' && !mavisConfigured)
+              }
+              onClick={() => void onAnalyzeBatch()}
+            >
+              <BrainCircuit className="size-4" />
+              {analysisMode === 'marvis_bridge'
+                ? `创建整批分析（${openJudgmentCount}）`
+                : `运行 Skill 分析（${openJudgmentCount}）`}
+            </Button>
             {mavisQueuedJobs > 0 ? (
               <Badge variant="outline">排队 {mavisQueuedJobs}</Badge>
             ) : null}
@@ -207,6 +241,24 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                               : item.currentValue.toFixed(3)}
                         </span>
                         <span>置信度 {item.confidence}%</span>
+                        {item.diagnosticContext?.changesPct[
+                          item.targetMetric
+                        ] !== undefined ? (
+                          <Badge variant="outline">
+                            较历史均值{' '}
+                            {item.diagnosticContext.changesPct[
+                              item.targetMetric
+                            ]! > 0
+                              ? '提升'
+                              : '下降'}{' '}
+                            {Math.abs(
+                              item.diagnosticContext.changesPct[
+                                item.targetMetric
+                              ]!,
+                            ).toFixed(1)}
+                            %
+                          </Badge>
+                        ) : null}
                         {item.aiAnalysisStatus === 'running' ? (
                           <Badge variant="outline">
                             {mavisRuntimeMode === 'external_worker'
@@ -253,7 +305,8 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                 暂无异常判断
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Doris 发现异常后，第一波分析会先进入这里。
+                Doris
+                发现异常后，会先展示历史升降对比；深度分析由上方按钮统一触发。
               </p>
             </div>
           )}
