@@ -129,6 +129,7 @@ export class GrowthDecisionService {
       baselineValue: request.baselineValue,
       deviationPct: request.deviationPct,
       metricValues: request.metricValues,
+      diagnosticContext: request.diagnosticContext,
       spend: request.spend,
       evidence: request.evidence,
       rootCause: request.rootCause,
@@ -221,6 +222,7 @@ export class GrowthDecisionService {
       baselineValue: judgment.baselineValue,
       deviationPct: judgment.deviationPct,
       metricValues: judgment.metricValues,
+      diagnosticContext: judgment.diagnosticContext,
       spend: judgment.spend,
       sourceJudgmentId: judgment.id,
       evidence: judgment.aiAnalysis

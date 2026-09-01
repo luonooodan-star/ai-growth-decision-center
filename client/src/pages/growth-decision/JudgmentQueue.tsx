@@ -141,12 +141,14 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={mavisConfigured ? 'secondary' : 'outline'}>
-              Marvis {mavisConfigured ? '任务桥已启用' : '未启用'}
+              {mavisRuntimeMode === 'external_worker'
+                ? `Marvis ${mavisConfigured ? '任务桥已启用' : '未启用'}`
+                : '产品 Skill 深度诊断已启用'}
             </Badge>
             <Badge variant="outline">
               {mavisRuntimeMode === 'external_worker'
                 ? '外部 Marvis Worker'
-                : '产品 Skill 模拟运行'}
+                : '本地指标链路诊断'}
             </Badge>
             {mavisQueuedJobs > 0 ? (
               <Badge variant="outline">排队 {mavisQueuedJobs}</Badge>
@@ -156,7 +158,10 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
         </CardHeader>
         <CardContent>
           {orderedJudgments.length ? (
-            <div className="space-y-3" data-ai-section-type="card-list">
+            <div
+              className="max-h-[34rem] space-y-3 overflow-y-auto overscroll-contain pr-2"
+              data-ai-section-type="card-list"
+            >
               {orderedJudgments.map((item: GrowthJudgment) => (
                 <article
                   key={item.id}
@@ -210,9 +215,17 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                             className="border-violet-200 bg-violet-50 text-violet-700"
                           >
                             <BrainCircuit className="size-3" />
-                            {COMPACT_AI_JUDGMENT_LABELS[
-                              item.aiAnalysis.judgment
-                            ] || item.aiAnalysis.judgment}
+                            {item.aiAnalysis.provider === 'product_skill'
+                              ? `Skill ${
+                                  item.aiAnalysis.judgment === 'confirmed'
+                                    ? '判断成立'
+                                    : item.aiAnalysis.judgment === 'uncertain'
+                                      ? '判断待定'
+                                      : '判断不成立'
+                                }`
+                              : COMPACT_AI_JUDGMENT_LABELS[
+                                  item.aiAnalysis.judgment
+                                ] || item.aiAnalysis.judgment}
                           </Badge>
                         ) : null}
                       </div>
@@ -249,6 +262,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
         saving={saving}
         mavisConfigured={mavisConfigured}
         mavisModel={mavisModel}
+        mavisRuntimeMode={mavisRuntimeMode}
         onOpenChange={(open: boolean) => {
           if (!open) setDetailId('');
         }}

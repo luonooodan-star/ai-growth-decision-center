@@ -42,7 +42,8 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: 'get_anomaly_context',
-    description: '读取异常、产品指标标准和 Skill 版本上下文',
+    description:
+      '读取异常、完整交付指标、历史对照、Campaign/广告组/国家拆分、缺失维度、产品标准和 Skill 版本',
     inputSchema: {
       type: 'object',
       properties: { jobId: { type: 'string' } },
@@ -51,7 +52,8 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: 'submit_anomaly_analysis',
-    description: '回写结构化异常判断、证据、原因和下一步诊断建议',
+    description:
+      '回写结构化深度分析、指标链路根因、具体投放动作、观察护栏和回滚条件',
     inputSchema: {
       type: 'object',
       properties: {

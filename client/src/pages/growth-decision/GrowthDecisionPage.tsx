@@ -454,7 +454,10 @@ const GrowthDecisionPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               {pendingCases.length ? (
-                <div className="space-y-3" data-ai-section-type="card-list">
+                <div
+                  className="max-h-[34rem] space-y-3 overflow-y-auto overscroll-contain pr-2"
+                  data-ai-section-type="card-list"
+                >
                   {pendingCases.map((item: GrowthDecisionCase) => (
                     <article
                       key={item.id}
@@ -566,8 +569,11 @@ const GrowthDecisionPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               {activeCases.length ? (
-                <div className="divide-y divide-slate-100">
-                  {activeCases.slice(0, 8).map((item: GrowthDecisionCase) => (
+                <div
+                  className="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto overscroll-contain pr-2"
+                  data-ai-section-type="card-list"
+                >
+                  {activeCases.map((item: GrowthDecisionCase) => (
                     <button
                       key={item.id}
                       type="button"

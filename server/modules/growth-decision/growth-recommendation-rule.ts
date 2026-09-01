@@ -1,5 +1,6 @@
 import type {
   CreateRecommendationFromJudgmentRequest,
+  GrowthActionProposal,
   GrowthJudgment,
 } from '@shared/api.interface';
 
@@ -12,22 +13,49 @@ const buildSkillRecommendation = (
   judgment: GrowthJudgment,
 ): CreateRecommendationFromJudgmentRequest => {
   if (judgment.aiAnalysis) {
+    const actionProposal: GrowthActionProposal | undefined =
+      judgment.aiAnalysis.recommendedActions?.[0];
+    const recommendation: string = actionProposal
+      ? [
+          judgment.aiAnalysis.recommendedNextStep,
+          `执行步骤：${actionProposal.steps.join('；')}`,
+        ].join(' ')
+      : judgment.aiAnalysis.recommendedNextStep;
     return {
-      recommendation: judgment.aiAnalysis.recommendedNextStep,
+      recommendation,
       recommendedAction: {
-        actionType: 'investigate_metric_anomaly',
-        targetLevel: judgment.adsetId ? 'adset' : 'campaign',
-        targetId: judgment.adsetId || judgment.campaignId || judgment.productId,
+        actionType:
+          actionProposal?.actionType || 'investigate_metric_anomaly',
+        targetLevel:
+          actionProposal?.targetLevel ||
+          (judgment.adsetId ? 'adset' : 'campaign'),
+        targetId:
+          actionProposal?.targetId ||
+          judgment.adsetId ||
+          judgment.campaignId ||
+          judgment.productId,
+        changePct: actionProposal?.changePct,
         parameters: {
           source: judgment.aiAnalysis.provider,
-          budgetChangePct: 0,
-          observationHours: judgment.aiAnalysis.observationHours,
+          observationHours:
+            actionProposal?.observationHours ||
+            judgment.aiAnalysis.observationHours,
+          steps: actionProposal?.steps.join('；') || '',
+          guardrails: actionProposal?.guardrails.join('；') || '',
+          rollbackCondition: actionProposal?.rollbackCondition || '',
         },
       },
       expectedImpact:
-        `在 ${judgment.aiAnalysis.observationHours} 小时观察窗口内验证：` +
-        judgment.aiAnalysis.primaryCause,
-      riskNote: judgment.aiAnalysis.risk,
+        `在 ${actionProposal?.observationHours || judgment.aiAnalysis.observationHours} 小时观察窗口内验证：` +
+        (actionProposal?.rationale || judgment.aiAnalysis.primaryCause),
+      riskNote: [
+        judgment.aiAnalysis.risk,
+        actionProposal
+          ? `回滚条件：${actionProposal.rollbackCondition}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('；'),
     };
   }
   const targetName: string =

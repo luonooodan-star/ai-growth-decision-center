@@ -53,6 +53,30 @@ describe('GrowthMavisAnalysisService', (): void => {
       baselineValue: 1.5,
       deviationPct: 33.33,
       metricValues: { cpi: 2 },
+      diagnosticContext: {
+        dataDate: '2026-08-31',
+        comparisonDays: 3,
+        current: { spend: 100, cpi: 2, ecpm: 8, ctr: 0.01, ipm: 2 },
+        previousAverage: {
+          spend: 80,
+          cpi: 1.5,
+          ecpm: 5,
+          ctr: 0.02,
+          ipm: 4,
+        },
+        changesPct: {
+          spend: 25,
+          cpi: 33.33,
+          ecpm: 60,
+          ctr: -50,
+          ipm: -50,
+        },
+        breakdowns: [],
+        availableFields: ['spend', 'cpi', 'ecpm', 'ctr', 'ipm'],
+        missingFields: ['adjust_revenue', 'roas', 'd0_roas'],
+        availableDimensions: ['campaign', 'adset'],
+        missingDimensions: ['placement', 'age', 'gender', 'audience'],
+      },
       spend: 100,
       evidence: 'CPI $2.000，高于上界 $1.500。',
       rootCause: '待进一步分析',
@@ -70,8 +94,11 @@ describe('GrowthMavisAnalysisService', (): void => {
     const jobs: GrowthMavisJob[] = service.listJobs(judgment.id).items;
 
     expect(result.aiAnalysisStatus).toBe('completed');
-    expect(result.aiAnalysis?.provider).toBe('mavis');
+    expect(result.aiAnalysis?.provider).toBe('product_skill');
     expect(result.aiAnalysis?.judgment).toBe('confirmed');
+    expect(result.aiAnalysis?.recommendedActions?.[0].actionType).toBe(
+      'rotate_creative',
+    );
     expect(jobs).toHaveLength(1);
     expect(jobs[0].status).toBe('completed');
     expect(jobs[0].skillVersion).toBe(product.skillVersion);

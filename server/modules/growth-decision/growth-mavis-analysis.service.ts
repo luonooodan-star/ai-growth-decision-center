@@ -23,6 +23,8 @@ import type {
   GrowthProduct,
 } from '@shared/api.interface';
 
+import { buildProductSkillDiagnostic } from './growth-diagnostic-analysis';
+
 const MAVIS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-mavis-mcp';
 const LOCAL_WORKER_ID = 'mavis-skill-simulator';
 
@@ -32,12 +34,15 @@ export class GrowthMavisAnalysisService {
 
   getStatus(): GrowthAiProviderStatus {
     const jobs: GrowthMavisJob[] = this.database.listMavisJobs(undefined, 1000);
+    const runtimeMode: GrowthAiProviderStatus['runtimeMode'] =
+      this.runtimeMode();
+    const mcpConfigured: boolean = Boolean(this.mcpToken());
     return {
       provider: 'mavis',
       model: process.env.MAVIS_MODEL || 'Marvis Growth Analyst',
-      configured: true,
-      runtimeMode: this.runtimeMode(),
-      mcpConfigured: Boolean(this.mcpToken()),
+      configured: runtimeMode === 'skill_simulation' || mcpConfigured,
+      runtimeMode,
+      mcpConfigured,
       queuedJobs: jobs.filter(
         (job: GrowthMavisJob): boolean => job.status === 'queued',
       ).length,
@@ -121,6 +126,23 @@ export class GrowthMavisAnalysisService {
         judgment: ['confirmed', 'uncertain', 'rejected'],
         confidenceRange: [0, 100],
         observationHoursRange: [1, 168],
+        requiredAnalysis: [
+          '不能只复述指标库越界；必须解释指标链路和可能原因',
+          '对比消耗、ECPM、CTR、IPM、CPI、安装、收入和 ROAS 趋势',
+          '使用可用的 Campaign、广告组、国家、版位、年龄和人群拆分',
+          '缺失的字段或维度必须明确列为缺口，不能臆测',
+          '给出可执行的投放动作、步骤、观察窗口、护栏和回滚条件',
+        ],
+        supportedActionTypes: [
+          'increase_budget',
+          'decrease_budget',
+          'hold_budget',
+          'exclude_target',
+          'rotate_creative',
+          'create_experiment',
+          'observe',
+          'investigate_data',
+        ],
       },
     };
   }
@@ -199,36 +221,21 @@ export class GrowthMavisAnalysisService {
       startedAt: new Date().toISOString(),
     };
     this.database.saveMavisJob(running);
-    const target: string =
-      judgment.adsetName ||
-      judgment.adsetId ||
-      judgment.campaignName ||
-      judgment.campaignId ||
-      '产品级';
-    return this.completeJob(running.id, {
-      workerId: LOCAL_WORKER_ID,
-      model: 'Marvis Bridge · Product Skill Simulation',
-      analysis: {
-        judgment: 'confirmed',
-        summary:
-          `${product.name} Skill 判定 ${target} 的 ` +
-          `${judgment.targetMetric.toUpperCase()} 已越过人工指标边界。`,
-        primaryCause: '当前值越过指标库中的产品正常边界',
-        evidence: [judgment.evidence],
-        alternativeCauses: [
-          'Doris 数据延迟或归因尚未完整',
-          'Facebook 竞价、素材效率或产品转化链路发生变化',
-        ],
-        recommendedNextStep:
-          '先核对数据时间与归因完整性，再按 Campaign 和广告组拆解。',
-        risk: '阈值只能确认异常现象，不能单独证明具体根因。',
-        confidence: Math.min(95, Math.max(0, judgment.confidence)),
-        observationHours: Math.max(
-          1,
-          Math.ceil(product.dataDelayMinutes / 60),
-        ),
-      },
+    const analysis: GrowthAiAnalysis = {
+      provider: 'product_skill',
+      model: `${product.name} Product Skill Diagnostic`,
+      ...buildProductSkillDiagnostic(product, judgment),
+      fallbackReason:
+        '当前未运行外部 Marvis Worker，已使用产品 Skill 诊断引擎；结果不会冒充 Marvis 模型分析。',
+      generatedAt: new Date().toISOString(),
+    };
+    const updated: GrowthJudgment = this.saveAnalysis(running, analysis);
+    this.database.saveMavisJob({
+      ...running,
+      status: 'completed',
+      completedAt: analysis.generatedAt,
     });
+    return updated;
   }
 
   private saveAnalysis(
@@ -308,7 +315,22 @@ export class GrowthMavisAnalysisService {
       analysis.confidence > 100 ||
       !Number.isInteger(analysis.observationHours) ||
       analysis.observationHours < 1 ||
-      analysis.observationHours > 168
+      analysis.observationHours > 168 ||
+      (analysis.recommendedActions !== undefined &&
+        (!Array.isArray(analysis.recommendedActions) ||
+          analysis.recommendedActions.some(
+            (action): boolean =>
+              !action.actionType ||
+              !action.targetLevel ||
+              !action.targetId.trim() ||
+              !action.rationale.trim() ||
+              !action.rollbackCondition.trim() ||
+              !Array.isArray(action.steps) ||
+              !action.steps.length ||
+              !Array.isArray(action.guardrails) ||
+              action.observationHours < 1 ||
+              action.observationHours > 168,
+          )))
     ) {
       throw new BadRequestException('Marvis 分析结果不符合结构化输出合同');
     }

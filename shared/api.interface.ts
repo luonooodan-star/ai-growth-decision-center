@@ -46,6 +46,44 @@ export interface GrowthMetricDefinition {
 
 export type GrowthMetricValues = Partial<Record<GrowthMetricKey, number>>;
 
+export type GrowthDeliveryMetricKey =
+  | 'spend'
+  | 'impressions'
+  | 'media_clicks'
+  | 'media_installs'
+  | 'adjust_installs'
+  | 'adjust_revenue'
+  | 'cpi'
+  | 'ecpm'
+  | 'ctr'
+  | 'ipm'
+  | 'roas'
+  | 'd0_roas';
+
+export type GrowthDeliveryMetricValues = Partial<
+  Record<GrowthDeliveryMetricKey, number>
+>;
+
+export interface GrowthDiagnosticBreakdown {
+  dimension: 'country' | 'adset' | 'placement' | 'age' | 'gender' | 'audience';
+  value: string;
+  label?: string;
+  metrics: GrowthDeliveryMetricValues;
+}
+
+export interface GrowthDiagnosticContext {
+  dataDate: string;
+  comparisonDays: number;
+  current: GrowthDeliveryMetricValues;
+  previousAverage: GrowthDeliveryMetricValues;
+  changesPct: GrowthDeliveryMetricValues;
+  breakdowns: GrowthDiagnosticBreakdown[];
+  availableFields: string[];
+  missingFields: string[];
+  availableDimensions: string[];
+  missingDimensions: string[];
+}
+
 export interface GrowthFetchRun {
   id: string;
   productId?: string;
@@ -112,6 +150,7 @@ export interface GrowthDecisionCase {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  diagnosticContext?: GrowthDiagnosticContext;
   spend?: number;
   sourceJudgmentId?: string;
   evidence: string;
@@ -174,6 +213,7 @@ export interface GrowthJudgment {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  diagnosticContext?: GrowthDiagnosticContext;
   spend?: number;
   recommendationCaseId?: string;
   recommendationCreatedAt?: string;
@@ -204,8 +244,30 @@ export interface GrowthAiAnalysis {
   risk: string;
   confidence: number;
   observationHours: number;
+  recommendedActions?: GrowthActionProposal[];
   fallbackReason?: string;
   generatedAt: string;
+}
+
+export interface GrowthActionProposal {
+  actionType:
+    | 'increase_budget'
+    | 'decrease_budget'
+    | 'hold_budget'
+    | 'exclude_target'
+    | 'rotate_creative'
+    | 'create_experiment'
+    | 'observe'
+    | 'investigate_data';
+  targetLevel: 'product' | 'campaign' | 'adset' | 'ad' | 'creative';
+  targetId: string;
+  targetName?: string;
+  changePct?: number;
+  rationale: string;
+  steps: string[];
+  guardrails: string[];
+  rollbackCondition: string;
+  observationHours: number;
 }
 
 export interface GrowthAiProviderStatus {
@@ -264,6 +326,8 @@ export interface GrowthMavisJobContext {
     judgment: GrowthAiJudgment[];
     confidenceRange: [number, number];
     observationHoursRange: [number, number];
+    requiredAnalysis: string[];
+    supportedActionTypes: GrowthActionProposal['actionType'][];
   };
 }
 
@@ -322,6 +386,7 @@ export interface IngestDecisionCaseRequest {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  diagnosticContext?: GrowthDiagnosticContext;
   spend?: number;
   evidence: string;
   rootCause: string;
@@ -352,6 +417,7 @@ export interface IngestJudgmentRequest {
   baselineValue?: number;
   deviationPct?: number;
   metricValues?: GrowthMetricValues;
+  diagnosticContext?: GrowthDiagnosticContext;
   spend?: number;
   evidence: string;
   rootCause: string;
