@@ -6,13 +6,34 @@ export interface GrowthProduct {
   channel: string;
   accountId?: string;
   accountIds: string[];
+  adAccounts?: GrowthAdAccount[];
+  accountSyncAt?: string;
   dataDelayMinutes: number;
   skillVersion: string;
   dorisSource?: string;
+  dorisAppId?: number;
   lastSyncAt?: string;
   thresholds: Record<string, number | string | boolean | null>;
   metrics: GrowthMetricDefinition[];
   latestMetricValues?: GrowthMetricValues;
+}
+
+export type GrowthAdAccountActivityStatus =
+  | 'new'
+  | 'active'
+  | 'inactive'
+  | 'unknown';
+
+export interface GrowthAdAccount {
+  id: string;
+  activityStatus: GrowthAdAccountActivityStatus;
+  firstSeenDate?: string;
+  lastSeenDate?: string;
+  spend30d: number;
+  impressions30d: number;
+  discoveredAt: string;
+  updatedAt: string;
+  source: 'doris_facebook_campaign_daily' | 'legacy_config';
 }
 
 export type GrowthMetricKey =

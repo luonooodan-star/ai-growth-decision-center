@@ -513,6 +513,18 @@ export class LocalDatabaseService implements OnModuleDestroy {
     );
     return {
       ...product,
+      accountIds: product.accountIds || [],
+      adAccounts:
+        product.adAccounts ||
+        (product.accountIds || []).map((accountId: string) => ({
+          id: accountId,
+          activityStatus: 'unknown',
+          spend30d: 0,
+          impressions30d: 0,
+          discoveredAt: product.lastSyncAt || '1970-01-01T00:00:00.000Z',
+          updatedAt: product.lastSyncAt || '1970-01-01T00:00:00.000Z',
+          source: 'legacy_config',
+        })),
       metrics: DEFAULT_GROWTH_METRICS.map((definition) => {
         const saved = savedMetrics.get(definition.key);
         const legacyThreshold = saved?.anomalyThreshold;

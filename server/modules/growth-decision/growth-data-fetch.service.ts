@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 import type {
+  GrowthAdAccount,
   GrowthDeliveryMetricKey,
   GrowthDeliveryMetricValues,
   GrowthDataSnapshot,
@@ -209,7 +210,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const [deliveryDates, cohortDates] = await Promise.all([
         this.queryMetric({
           dataset: 'bi_ads.ads_paid_acquisition_daily',
-          dimensions: ['report_date'],
+          dimensions: ['report_date', 'app_id'],
           start_date: startDate,
           end_date: endDate,
           filters_json: JSON.stringify(filters),
@@ -239,6 +240,32 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         cohortDates.rows || [],
         'install_date',
       );
+      const discoveredAppId: number | undefined =
+        dorisNumber((deliveryDates.rows || [])[0] || {}, 'app_id') ??
+        product.dorisAppId;
+      let accountProduct: GrowthProduct = product;
+      let accountRowsFetched = 0;
+      let newAccountCount = 0;
+      let inactiveAccountCount = 0;
+      if (discoveredAppId && product.channel.toLowerCase() === 'facebook') {
+        try {
+          const accountSync = await this.synchronizeFacebookAccounts(
+            product,
+            discoveredAppId,
+            endDate,
+          );
+          accountProduct = accountSync.product;
+          accountRowsFetched = accountSync.rowsFetched;
+          newAccountCount = accountSync.newAccountCount;
+          inactiveAccountCount = accountSync.inactiveAccountCount;
+        } catch (error: unknown) {
+          degradationNotes.push(
+            `广告账户清单同步失败，已保留上次清单：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
 
       const [delivery, cohort] = await Promise.all([
         deliveryDate
@@ -329,8 +356,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           : Promise.resolve({ rows: [], row_count: 0 }),
       ]);
 
-      const rowsFetched =
+      const metricRowsFetched =
         Number(delivery.row_count || 0) + Number(cohort.row_count || 0);
+      const rowsFetched = metricRowsFetched + accountRowsFetched;
       const deliveryRows: DorisRow[] = delivery.rows || [];
       const cohortRows: DorisRow[] = cohort.rows || [];
       const spendRows: number = deliveryRows.filter(
@@ -341,7 +369,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         cohortRows,
       );
       const updatedProduct: GrowthProduct = {
-        ...product,
+        ...accountProduct,
+        dorisAppId: discoveredAppId || accountProduct.dorisAppId,
         lastSyncAt: new Date().toISOString(),
         latestMetricValues,
       };
@@ -366,7 +395,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       );
 
       const spendMissing: boolean = deliveryRows.length > 0 && spendRows === 0;
-      const isPartial: boolean = rowsFetched === 0 || spendMissing;
+      const isPartial: boolean = metricRowsFetched === 0 || spendMissing;
       Object.assign(run, {
         status: isPartial ? 'partial' : 'success',
         finishedAt: new Date().toISOString(),
@@ -376,7 +405,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? spendMissing
             ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
             : '连接成功，但当前时间窗口没有返回可用数据'
-          : `抓取完成，已读取 ${rowsFetched} 行，发现 ${anomalyCount} 条新异常${
+          : `抓取完成，已读取 ${rowsFetched} 行，动态同步 ${updatedProduct.adAccounts?.length || 0} 个广告账户` +
+            `（新增 ${newAccountCount}，无近期投放 ${inactiveAccountCount}），发现 ${anomalyCount} 条新异常${
               trigger === 'manual'
                 ? `，保存/更新 ${snapshotCount} 天历史快照，历史异常回填 ${historicalBackfillCount} 条`
                 : ''
@@ -393,6 +423,170 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
     this.database.saveFetchRun(run);
     return run;
+  }
+
+  private async synchronizeFacebookAccounts(
+    product: GrowthProduct,
+    dorisAppId: number,
+    endDate: string,
+  ): Promise<{
+    product: GrowthProduct;
+    rowsFetched: number;
+    newAccountCount: number;
+    inactiveAccountCount: number;
+  }> {
+    const start: Date = new Date(`${endDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 29);
+    const startDate: string = this.dateString(start);
+    const recentStart: Date = new Date(`${endDate}T00:00:00Z`);
+    recentStart.setUTCDate(recentStart.getUTCDate() - 2);
+    const recentStartDate: string = this.dateString(recentStart);
+    const [historyResult, recentResult]: [DorisQueryResult, DorisQueryResult] =
+      await Promise.all([
+        this.queryMetric({
+          dataset: 'bi_dwd.dwd_facebook_campaign_daily',
+          dimensions: ['advertiser_id'],
+          start_date: startDate,
+          end_date: endDate,
+          filters_json: JSON.stringify({ app_id: dorisAppId }),
+          metrics: ['spend', 'impressions'],
+          limit: 1000,
+        }),
+        this.queryMetric({
+          dataset: 'bi_dwd.dwd_facebook_campaign_daily',
+          dimensions: ['advertiser_id'],
+          start_date: recentStartDate,
+          end_date: endDate,
+          filters_json: JSON.stringify({ app_id: dorisAppId }),
+          metrics: ['spend', 'impressions'],
+          limit: 1000,
+        }),
+      ]);
+    const rows: DorisRow[] = historyResult.rows || [];
+    const recentlyActiveIds: Set<string> = new Set(
+      (recentResult.rows || [])
+        .map((row: DorisRow): string =>
+          dorisString(row, 'advertiser_id') || '',
+        )
+        .filter(Boolean),
+    );
+    const now: string = new Date().toISOString();
+    const existingAccounts: GrowthAdAccount[] =
+      product.adAccounts ||
+      product.accountIds.map((id: string): GrowthAdAccount => ({
+        id,
+        activityStatus: 'unknown',
+        spend30d: 0,
+        impressions30d: 0,
+        discoveredAt: product.lastSyncAt || now,
+        updatedAt: product.lastSyncAt || now,
+        source: 'legacy_config',
+      }));
+    const existingById: Map<string, GrowthAdAccount> = new Map(
+      existingAccounts.map(
+        (account: GrowthAdAccount): [string, GrowthAdAccount] => [
+          account.id,
+          account,
+        ],
+      ),
+    );
+    const rowsByAccount: Map<string, DorisRow[]> = new Map();
+    for (const row of rows) {
+      const accountId: string | undefined = dorisString(row, 'advertiser_id');
+      if (!accountId) continue;
+      const accountRows: DorisRow[] = rowsByAccount.get(accountId) || [];
+      accountRows.push(row);
+      rowsByAccount.set(accountId, accountRows);
+    }
+
+    let newAccountCount = 0;
+    const discoveredAccounts: GrowthAdAccount[] = Array.from(
+      rowsByAccount.entries(),
+    ).map(([accountId, accountRows]: [string, DorisRow[]]) => {
+      const existing: GrowthAdAccount | undefined = existingById.get(accountId);
+      if (!existing) newAccountCount += 1;
+      const isRecentlyActive: boolean = recentlyActiveIds.has(accountId);
+      const firstSeenDate: string = existing?.firstSeenDate || startDate;
+      const lastSeenDate: string | undefined = isRecentlyActive
+        ? endDate
+        : existing?.lastSeenDate;
+      return {
+        id: accountId,
+        activityStatus:
+          !existing && isRecentlyActive
+            ? 'new'
+            : isRecentlyActive
+              ? 'active'
+              : 'inactive',
+        firstSeenDate,
+        lastSeenDate,
+        spend30d: accountRows.reduce(
+          (total: number, row: DorisRow): number =>
+            total + (dorisNumber(row, 'spend') || 0),
+          0,
+        ),
+        impressions30d: accountRows.reduce(
+          (total: number, row: DorisRow): number =>
+            total + (dorisNumber(row, 'impressions') || 0),
+          0,
+        ),
+        discoveredAt: existing?.discoveredAt || now,
+        updatedAt: now,
+        source: 'doris_facebook_campaign_daily',
+      } satisfies GrowthAdAccount;
+    });
+    const undiscoveredAccounts: GrowthAdAccount[] = existingAccounts
+      .filter(
+        (account: GrowthAdAccount): boolean =>
+          !rowsByAccount.has(account.id),
+      )
+      .map(
+        (account: GrowthAdAccount): GrowthAdAccount => ({
+          ...account,
+          activityStatus: 'inactive',
+          spend30d: 0,
+          impressions30d: 0,
+          updatedAt: now,
+        }),
+      );
+    const adAccounts: GrowthAdAccount[] = [
+      ...discoveredAccounts,
+      ...undiscoveredAccounts,
+    ].sort((left: GrowthAdAccount, right: GrowthAdAccount): number => {
+      const priority: Record<GrowthAdAccount['activityStatus'], number> = {
+        new: 0,
+        active: 1,
+        inactive: 2,
+        unknown: 3,
+      };
+      return (
+        priority[left.activityStatus] - priority[right.activityStatus] ||
+        left.id.localeCompare(right.id)
+      );
+    });
+    const inactiveAccountCount: number = adAccounts.filter(
+      (account: GrowthAdAccount): boolean =>
+        account.activityStatus === 'inactive',
+    ).length;
+    const accountIds: string[] = adAccounts.map(
+      (account: GrowthAdAccount): string => account.id,
+    );
+
+    return {
+      product: {
+        ...product,
+        dorisAppId,
+        accountId: accountIds.join(','),
+        accountIds,
+        adAccounts,
+        accountSyncAt: now,
+      },
+      rowsFetched:
+        Number(historyResult.row_count || rows.length) +
+        Number(recentResult.row_count || recentlyActiveIds.size),
+      newAccountCount,
+      inactiveAccountCount,
+    };
   }
 
   private saveDailySnapshots(

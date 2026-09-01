@@ -19,6 +19,7 @@ import {
 import { Link, useParams } from 'react-router-dom';
 
 import type {
+  GrowthAdAccount,
   GrowthAiProviderStatus,
   GrowthDashboardResponse,
   GrowthDecisionCase,
@@ -678,8 +679,71 @@ const GrowthDecisionPage: React.FC = () => {
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
                       <span>目标：{product.targetMetric.toUpperCase()}</span>
                       <span>延迟：{product.dataDelayMinutes} 分钟</span>
-                      <span>账户：{product.accountIds.length} 个</span>
+                      <span>
+                        活跃账户：
+                        {(product.adAccounts || []).filter(
+                          (account: GrowthAdAccount): boolean =>
+                            account.activityStatus === 'active' ||
+                            account.activityStatus === 'new',
+                        ).length}{' '}
+                        个
+                      </span>
                       <span>渠道：{product.channel.toUpperCase()}</span>
+                    </div>
+                    <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-medium text-slate-700">
+                          动态广告账户
+                        </span>
+                        <span className="text-slate-500">
+                          已发现 {product.accountIds.length} 个
+                        </span>
+                      </div>
+                      <div className="mt-2 max-h-36 space-y-1.5 overflow-y-auto pr-1">
+                        {(product.adAccounts || []).map(
+                          (account: GrowthAdAccount) => (
+                            <div
+                              key={account.id}
+                              className="flex items-center justify-between gap-3 rounded-md bg-white px-2 py-1.5 text-[11px]"
+                            >
+                              <span className="font-mono text-slate-700">
+                                {account.id}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-400">
+                                  30d ${account.spend30d.toFixed(2)}
+                                </span>
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    account.activityStatus === 'new'
+                                      ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                      : account.activityStatus === 'active'
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                        : 'border-slate-200 bg-slate-100 text-slate-500'
+                                  }
+                                >
+                                  {account.activityStatus === 'new'
+                                    ? '新户'
+                                    : account.activityStatus === 'active'
+                                      ? '活跃'
+                                      : account.activityStatus === 'inactive'
+                                        ? '无近期投放'
+                                        : '待同步'}
+                                </Badge>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                        {!product.adAccounts?.length ? (
+                          <p className="py-2 text-center text-[11px] text-slate-400">
+                            下次 Doris 抓取会自动发现账户。
+                          </p>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-[10px] leading-4 text-slate-400">
+                        “无近期投放”仅表示最近 3 天 Doris 无消耗，封户状态仍需 Facebook API 确认；历史账户不会被自动删除。
+                      </p>
                     </div>
                     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
                       <div className="flex items-center justify-between gap-3">

@@ -80,6 +80,14 @@ const ProductOverviewPage: React.FC = () => {
           const pending = judgments.filter((item) => item.status === 'judgment_pending' || item.status === 'judgment_deferred').length;
           const fresh = Boolean(product.lastSyncAt) && Date.now() - new Date(product.lastSyncAt || 0).getTime() <= product.dataDelayMinutes * 2 * 60 * 1000;
           const calibrated = Object.keys(product.thresholds || {}).length > 0;
+          const activeAccountCount = (product.adAccounts || []).filter(
+            (account) =>
+              account.activityStatus === 'active' ||
+              account.activityStatus === 'new',
+          ).length;
+          const accountSummary = product.accountSyncAt
+            ? `${activeAccountCount} 活跃 / ${product.accountIds.length} 已发现`
+            : `${product.accountIds.length} 个账户（待动态同步）`;
           return <Link key={product.id} to={`/products/${product.id}`} className="group block">
             <Card className="h-full border-slate-200 bg-white shadow-none transition-all group-hover:-translate-y-0.5 group-hover:border-blue-300 group-hover:shadow-lg group-hover:shadow-blue-100/50">
               <CardHeader>
@@ -88,7 +96,7 @@ const ProductOverviewPage: React.FC = () => {
                   <Badge variant="outline" className={fresh ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>{fresh ? 'Doris 已同步' : '等待同步'}</Badge>
                 </div>
                 <CardTitle className="pt-3 text-xl">{product.name}</CardTitle>
-                <CardDescription>{product.channel.toUpperCase()} · {product.accountIds.length} 个广告账户</CardDescription>
+                <CardDescription>{product.channel.toUpperCase()} · {accountSummary}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
