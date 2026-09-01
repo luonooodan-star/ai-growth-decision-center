@@ -25,6 +25,7 @@ import type {
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
   UpdateMetricStandardsRequest,
+  UpdateRecordFocusRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -239,6 +240,9 @@ export class GrowthDecisionService {
       recommendedAction: request.recommendedAction,
       expectedImpact: request.expectedImpact,
       riskNote: request.riskNote,
+      isFocused: judgment.isFocused,
+      focusedAt: judgment.focusedAt,
+      focusedBy: judgment.focusedBy,
       createdAt: new Date().toISOString(),
     };
     this.database.saveDecisionRecord(created);
@@ -388,6 +392,9 @@ export class GrowthDecisionService {
   ): Promise<GrowthDecisionCase> {
     const current: GrowthDecisionCase = this.getCase(id);
     const now: string = new Date().toISOString();
+    const experimentExpiresAt: string = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000,
+    ).toISOString();
     const updated: GrowthDecisionCase = {
       ...current,
       status: request.action,
@@ -396,8 +403,18 @@ export class GrowthDecisionService {
       decidedAt: now,
       observationEndsAt:
         request.action === 'accepted'
-          ? new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+          ? experimentExpiresAt
           : undefined,
+      experimentStartedAt:
+        request.action === 'accepted' ? now : current.experimentStartedAt,
+      experimentExpiresAt:
+        request.action === 'accepted'
+          ? experimentExpiresAt
+          : current.experimentExpiresAt,
+      normalSince:
+        request.action === 'accepted' ? undefined : current.normalSince,
+      recoveryReadyAt:
+        request.action === 'accepted' ? undefined : current.recoveryReadyAt,
     };
     this.database.saveDecisionRecord(updated);
     this.database.appendActivity({
@@ -426,6 +443,7 @@ export class GrowthDecisionService {
       resultClassification: request.classification,
       actualChangePct: request.actualChangePct,
       actualResult: request.actualResult,
+      completedAt: new Date().toISOString(),
     };
     this.database.saveDecisionRecord(updated);
     this.database.appendActivity({
@@ -440,6 +458,55 @@ export class GrowthDecisionService {
       },
     });
     return updated;
+  }
+
+  updateRecordFocus(
+    id: string,
+    request: UpdateRecordFocusRequest,
+    actor: string,
+  ): DecisionRecord {
+    const current: DecisionRecord | undefined =
+      this.database.getDecisionRecord(id);
+    if (!current) throw new NotFoundException('决策记录不存在');
+
+    const focusedAt: string | undefined = request.focused
+      ? new Date().toISOString()
+      : undefined;
+    const linkedIds: string[] = this.isJudgmentRecord(current)
+      ? [current.id, current.recommendationCaseId].filter(
+          (linkedId: string | undefined): linkedId is string =>
+            Boolean(linkedId),
+        )
+      : [current.id, current.sourceJudgmentId].filter(
+          (linkedId: string | undefined): linkedId is string =>
+            Boolean(linkedId),
+        );
+
+    let updatedCurrent: DecisionRecord = current;
+    for (const linkedId of linkedIds) {
+      const linked: DecisionRecord | undefined =
+        this.database.getDecisionRecord(linkedId);
+      if (!linked) continue;
+      const updated: DecisionRecord = {
+        ...linked,
+        isFocused: request.focused,
+        focusedAt,
+        focusedBy: request.focused ? actor : undefined,
+      };
+      this.database.saveDecisionRecord(updated);
+      if (linked.id === current.id) updatedCurrent = updated;
+    }
+    this.database.appendActivity({
+      caseId: current.id,
+      action: request.focused ? 'focus_enabled' : 'focus_disabled',
+      actor,
+      detail: request.focused ? '已设为重点关注并置顶' : '已取消重点关注',
+      metadata: {
+        source: 'human_focus_toggle',
+        focused: String(request.focused),
+      },
+    });
+    return updatedCurrent;
   }
 
   private getProduct(id: string): GrowthProduct {

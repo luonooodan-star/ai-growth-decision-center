@@ -32,6 +32,7 @@ import type {
   TriggerGrowthFetchRequest,
   UpdateDecisionRequest,
   UpdateMetricStandardsRequest,
+  UpdateRecordFocusRequest,
   UpdateGrowthAnalysisModeRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
@@ -73,6 +74,18 @@ export class GrowthDecisionController {
     @Param('id') id: string,
   ): Promise<GrowthDecisionHistoryResponse> {
     return this.growthDecisionService.getDecisionHistory(id);
+  }
+
+  @Patch('records/:id/focus')
+  updateRecordFocus(
+    @Param('id') id: string,
+    @Body() request: UpdateRecordFocusRequest,
+  ): GrowthDecisionCase | GrowthJudgment {
+    return this.growthDecisionService.updateRecordFocus(
+      id,
+      request,
+      '人工决策负责人',
+    );
   }
 
   @Get('products/:productId/fetch-history')

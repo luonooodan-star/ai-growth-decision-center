@@ -228,6 +228,15 @@ export interface GrowthDecisionCase {
   resultClassification?: string;
   actualChangePct?: number;
   actualResult?: string;
+  isFocused?: boolean;
+  focusedAt?: string;
+  focusedBy?: string;
+  experimentStartedAt?: string;
+  experimentExpiresAt?: string;
+  normalSince?: string;
+  recoveryReadyAt?: string;
+  latestObservedValue?: number;
+  completedAt?: string;
   createdAt: string;
 }
 
@@ -287,6 +296,9 @@ export interface GrowthJudgment {
   reviewReason?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  isFocused?: boolean;
+  focusedAt?: string;
+  focusedBy?: string;
   createdAt: string;
 }
 
@@ -438,6 +450,10 @@ export interface UpdateResultRequest {
   classification: 'expected' | 'partial' | 'neutral' | 'negative';
   actualChangePct: number;
   actualResult: string;
+}
+
+export interface UpdateRecordFocusRequest {
+  focused: boolean;
 }
 
 export interface CreateProductRequest {

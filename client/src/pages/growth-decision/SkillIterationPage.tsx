@@ -5,6 +5,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Sparkles,
+  Star,
 } from 'lucide-react';
 
 import type {
@@ -52,6 +53,12 @@ const SkillIterationPage: React.FC = () => {
       (dashboard?.judgments || []).filter(
         (item: GrowthJudgment): boolean =>
           Boolean(item.skillRuleCandidate) || Boolean(item.reviewedAt),
+      ).sort(
+        (left: GrowthJudgment, right: GrowthJudgment): number =>
+          Number(Boolean(right.isFocused)) -
+            Number(Boolean(left.isFocused)) ||
+          new Date(right.createdAt).getTime() -
+            new Date(left.createdAt).getTime(),
       ),
     [dashboard],
   );
@@ -136,6 +143,9 @@ const SkillIterationPage: React.FC = () => {
                       className="rounded-xl border border-slate-200 p-3"
                     >
                       <div className="flex items-center gap-2">
+                        {item.isFocused ? (
+                          <Star className="size-4 fill-amber-400 text-amber-500" />
+                        ) : null}
                         {item.status === 'judgment_confirmed' ? (
                           <CheckCircle2 className="size-4 text-emerald-600" />
                         ) : (

@@ -17,6 +17,7 @@ import type {
   ReviewJudgmentRequest,
   UpdateDecisionRequest,
   UpdateMetricStandardsRequest,
+  UpdateRecordFocusRequest,
   UpdateResultRequest,
 } from '@shared/api.interface';
 
@@ -156,6 +157,17 @@ async function getDecisionHistory(
   return response.data;
 }
 
+async function updateRecordFocus(
+  id: string,
+  request: UpdateRecordFocusRequest,
+): Promise<GrowthDecisionCase | GrowthJudgment> {
+  const response = await axios.patch<GrowthDecisionCase | GrowthJudgment>(
+    `/api/growth-decision/records/${id}/focus`,
+    request,
+  );
+  return response.data;
+}
+
 async function updateDecision(
   id: string,
   request: UpdateDecisionRequest,
@@ -195,5 +207,6 @@ export {
   updateAnalysisMode,
   updateDecision,
   updateMetricStandards,
+  updateRecordFocus,
   updateResult,
 };

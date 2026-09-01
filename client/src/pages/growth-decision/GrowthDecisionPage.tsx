@@ -13,6 +13,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Star,
   Target,
   X,
 } from 'lucide-react';
@@ -89,6 +90,23 @@ const SEVERITY_LABELS: Record<string, string> = {
   medium: '中',
   high: '高',
   critical: '紧急',
+};
+
+const experimentExpiresAt = (item: GrowthDecisionCase): number => {
+  if (item.experimentExpiresAt) {
+    return new Date(item.experimentExpiresAt).getTime();
+  }
+  const startedAt: string = item.experimentStartedAt || item.decidedAt || item.createdAt;
+  return new Date(startedAt).getTime() + 7 * 24 * 60 * 60 * 1000;
+};
+
+const experimentRetentionLabel = (item: GrowthDecisionCase): string => {
+  const remainingMs: number = Math.max(0, experimentExpiresAt(item) - Date.now());
+  const remainingDays: number = Math.max(
+    1,
+    Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
+  );
+  return `${remainingDays} 天后移出`;
 };
 
 const StatCard: React.FC<StatCardProps> = ({ label, value, note, tone }) => {
@@ -342,18 +360,87 @@ const GrowthDecisionPage: React.FC = () => {
     }
   };
 
+  const handleToggleFocus = async (
+    id: string,
+    focused: boolean,
+  ): Promise<void> => {
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.updateRecordFocus(id, { focused });
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '重点关注状态保存失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEndRecoveredExperiment = async (
+    item: GrowthDecisionCase,
+  ): Promise<void> => {
+    if (!item.recoveryReadyAt) return;
+    const baselineValue: number | undefined = item.baselineValue;
+    const latestValue: number | undefined = item.latestObservedValue;
+    const actualChangePct: number =
+      baselineValue && latestValue !== undefined
+        ? Number((((latestValue - baselineValue) / baselineValue) * 100).toFixed(2))
+        : 0;
+    setSaving(true);
+    setError('');
+    try {
+      await growthDecision.updateResult(item.id, {
+        classification: 'expected',
+        actualChangePct,
+        actualResult:
+          'Doris 已确认目标指标连续 24 小时处于产品指标库正常范围，人工结束实验。',
+      });
+      setSelectedCase(null);
+      await loadDashboard();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '实验结束状态保存失败',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const pendingCases: GrowthDecisionCase[] = useMemo(
     (): GrowthDecisionCase[] =>
-      dashboard?.cases.filter(
-        (item: GrowthDecisionCase): boolean => item.status === 'pending',
-      ) || [],
+      (dashboard?.cases || [])
+        .filter(
+          (item: GrowthDecisionCase): boolean => item.status === 'pending',
+        )
+        .sort(
+          (left: GrowthDecisionCase, right: GrowthDecisionCase): number =>
+            Number(Boolean(right.isFocused)) -
+              Number(Boolean(left.isFocused)) ||
+            new Date(right.createdAt).getTime() -
+              new Date(left.createdAt).getTime(),
+        ),
     [dashboard],
   );
   const activeCases: GrowthDecisionCase[] = useMemo(
     (): GrowthDecisionCase[] =>
-      dashboard?.cases.filter(
-        (item: GrowthDecisionCase): boolean => item.status !== 'pending',
-      ) || [],
+      (dashboard?.cases || [])
+        .filter(
+          (item: GrowthDecisionCase): boolean =>
+            ['accepted', 'observing', 'completed'].includes(item.status) &&
+            experimentExpiresAt(item) > Date.now(),
+        )
+        .sort(
+          (left: GrowthDecisionCase, right: GrowthDecisionCase): number =>
+            Number(Boolean(right.isFocused)) -
+              Number(Boolean(left.isFocused)) ||
+            experimentExpiresAt(left) - experimentExpiresAt(right),
+        ),
     [dashboard],
   );
   const summary: GrowthDashboardSummary | undefined = dashboard?.summary;
@@ -476,6 +563,7 @@ const GrowthDecisionPage: React.FC = () => {
             onAnalyze={handleAiAnalysis}
             onAnalyzeBatch={handleBatchAnalysis}
             onAnalysisModeChange={handleAnalysisModeChange}
+            onToggleFocus={handleToggleFocus}
             analysisMode={aiStatus?.selectedMode || 'product_skill'}
             mavisConfigured={Boolean(aiStatus?.configured)}
             mavisModel={aiStatus?.model || 'Marvis Growth Analyst'}
@@ -551,6 +639,23 @@ const GrowthDecisionPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            variant={item.isFocused ? 'secondary' : 'outline'}
+                            className={
+                              item.isFocused
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : ''
+                            }
+                            disabled={saving}
+                            onClick={() =>
+                              void handleToggleFocus(item.id, !item.isFocused)
+                            }
+                          >
+                            <Star
+                              className={`size-4 ${item.isFocused ? 'fill-current' : ''}`}
+                            />
+                            {item.isFocused ? '重点关注' : '设为重点'}
+                          </Button>
                           <DecisionHistoryDrawer
                             recordId={item.id}
                             title={`${item.productName} · ${item.recommendation}`}
@@ -615,14 +720,34 @@ const GrowthDecisionPage: React.FC = () => {
                   data-ai-section-type="card-list"
                 >
                   {activeCases.map((item: GrowthDecisionCase) => (
-                    <button
+                    <article
                       key={item.id}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-4 py-3 text-left"
-                      onClick={() => setSelectedCase(item)}
+                      className="flex flex-col justify-between gap-3 py-4 lg:flex-row lg:items-center"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {item.isFocused ? (
+                            <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                              <Star className="size-3 fill-current" /> 重点关注
+                            </Badge>
+                          ) : null}
+                          <Badge variant="outline">
+                            {STATUS_LABELS[item.status] || item.status}
+                          </Badge>
+                          <Badge variant="secondary">
+                            {experimentRetentionLabel(item)}
+                          </Badge>
+                          {item.recoveryReadyAt ? (
+                            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                              已连续正常 24 小时，可结束
+                            </Badge>
+                          ) : item.normalSince ? (
+                            <Badge className="border-blue-200 bg-blue-50 text-blue-700">
+                              正常区间观察中
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-2 truncate text-sm font-medium text-slate-900">
                           {item.productName} · {item.recommendation}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
@@ -631,10 +756,46 @@ const GrowthDecisionPage: React.FC = () => {
                             '未指定 Campaign'}
                         </p>
                       </div>
-                      <Badge variant="outline">
-                        {STATUS_LABELS[item.status] || item.status}
-                      </Badge>
-                    </button>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <Button
+                          variant={item.isFocused ? 'secondary' : 'outline'}
+                          size="sm"
+                          className={
+                            item.isFocused
+                              ? 'border-amber-200 bg-amber-50 text-amber-700'
+                              : ''
+                          }
+                          disabled={saving}
+                          onClick={() =>
+                            void handleToggleFocus(item.id, !item.isFocused)
+                          }
+                        >
+                          <Star
+                            className={`size-4 ${item.isFocused ? 'fill-current' : ''}`}
+                          />
+                          {item.isFocused ? '重点关注' : '设为重点'}
+                        </Button>
+                        {item.recoveryReadyAt && item.status !== 'completed' ? (
+                          <Button
+                            size="sm"
+                            disabled={saving}
+                            onClick={() =>
+                              void handleEndRecoveredExperiment(item)
+                            }
+                          >
+                            <Check className="size-4" />
+                            结束实验
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedCase(item)}
+                        >
+                          查看详情 <ChevronRight className="size-4" />
+                        </Button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               ) : (
@@ -887,6 +1048,40 @@ const GrowthDecisionPage: React.FC = () => {
           </DialogHeader>
           {selectedCase ? (
             <div className="space-y-5 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  variant={selectedCase.isFocused ? 'secondary' : 'outline'}
+                  className={
+                    selectedCase.isFocused
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : ''
+                  }
+                  disabled={saving}
+                  onClick={() =>
+                    void handleToggleFocus(
+                      selectedCase.id,
+                      !selectedCase.isFocused,
+                    )
+                  }
+                >
+                  <Star
+                    className={`size-4 ${selectedCase.isFocused ? 'fill-current' : ''}`}
+                  />
+                  {selectedCase.isFocused ? '重点关注' : '设为重点关注'}
+                </Button>
+                {selectedCase.recoveryReadyAt &&
+                selectedCase.status !== 'completed' ? (
+                  <Button
+                    disabled={saving}
+                    onClick={() =>
+                      void handleEndRecoveredExperiment(selectedCase)
+                    }
+                  >
+                    <Check className="size-4" />
+                    指标已连续正常，结束实验
+                  </Button>
+                ) : null}
+              </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">当前值</p>

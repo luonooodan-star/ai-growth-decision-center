@@ -5,6 +5,7 @@ import {
   Clock3,
   Database,
   RefreshCw,
+  Star,
   TrendingUp,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -33,6 +34,7 @@ const ExperimentLibraryPage: React.FC = () => {
   );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [savingFocusId, setSavingFocusId] = useState<string>('');
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -54,8 +56,34 @@ const ExperimentLibraryPage: React.FC = () => {
     void load();
   }, []);
 
+  const toggleFocus = async (item: GrowthDecisionCase): Promise<void> => {
+    setSavingFocusId(item.id);
+    setError('');
+    try {
+      await growthDecision.updateRecordFocus(item.id, {
+        focused: !item.isFocused,
+      });
+      await load();
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '重点关注状态保存失败',
+      );
+    } finally {
+      setSavingFocusId('');
+    }
+  };
+
   const experiments: GrowthDecisionCase[] = useMemo(
-    (): GrowthDecisionCase[] => dashboard?.cases || [],
+    (): GrowthDecisionCase[] =>
+      [...(dashboard?.cases || [])].sort(
+        (left: GrowthDecisionCase, right: GrowthDecisionCase): number =>
+          Number(Boolean(right.isFocused)) -
+            Number(Boolean(left.isFocused)) ||
+          new Date(right.createdAt).getTime() -
+            new Date(left.createdAt).getTime(),
+      ),
     [dashboard],
   );
   const completed: GrowthDecisionCase[] = experiments.filter(
@@ -113,6 +141,11 @@ const ExperimentLibraryPage: React.FC = () => {
                     <Badge variant="outline">
                       {EXPERIMENT_STATUS[item.status] || item.status}
                     </Badge>
+                    {item.isFocused ? (
+                      <Badge className="border-amber-200 bg-amber-50 text-amber-700">
+                        <Star className="size-3 fill-current" /> 重点关注
+                      </Badge>
+                    ) : null}
                     <span className="text-xs font-medium text-slate-600">
                       {item.productName} · {item.channel}
                     </span>
@@ -132,11 +165,28 @@ const ExperimentLibraryPage: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <Link to={`/products/${item.productId}`}>
-                  <Button variant="outline">
-                    查看产品闭环 <ArrowRight className="size-4" />
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button
+                    variant={item.isFocused ? 'secondary' : 'outline'}
+                    className={
+                      item.isFocused
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : ''
+                    }
+                    disabled={savingFocusId === item.id}
+                    onClick={() => void toggleFocus(item)}
+                  >
+                    <Star
+                      className={`size-4 ${item.isFocused ? 'fill-current' : ''}`}
+                    />
+                    {item.isFocused ? '重点关注' : '设为重点'}
                   </Button>
-                </Link>
+                  <Link to={`/products/${item.productId}`}>
+                    <Button variant="outline">
+                      查看产品闭环 <ArrowRight className="size-4" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </CardContent>
           </Card>

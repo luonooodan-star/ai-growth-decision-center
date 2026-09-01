@@ -15,6 +15,7 @@ import type {
   GrowthDataSnapshot,
   GrowthDiagnosticBreakdown,
   GrowthDiagnosticContext,
+  GrowthDecisionCase,
   GrowthJudgment,
   GrowthMetricDefinition,
   GrowthMetricKey,
@@ -406,6 +407,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             )
           : 0;
       const anomalyCount: number = await this.detectAnomalies(
+        updatedProduct,
+        deliveryRows,
+        cohortRows,
+      );
+      this.updateExperimentRecovery(
         updatedProduct,
         deliveryRows,
         cohortRows,
@@ -1067,6 +1073,144 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       'hourly_doris_threshold_compare',
     );
     return true;
+  }
+
+  private updateExperimentRecovery(
+    product: GrowthProduct,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
+  ): void {
+    const cases: GrowthDecisionCase[] = this.database
+      .listDecisionRecords(5000)
+      .filter(
+        (record): record is GrowthDecisionCase =>
+          !('preliminaryJudgment' in record) &&
+          record.productId === product.id &&
+          (record.status === 'accepted' || record.status === 'observing'),
+      );
+    const now: string = new Date().toISOString();
+    const nowMs: number = new Date(now).getTime();
+
+    for (const experiment of cases) {
+      const metric: GrowthMetricDefinition | undefined = product.metrics.find(
+        (item: GrowthMetricDefinition): boolean =>
+          item.key === experiment.targetMetric,
+      );
+      if (
+        !metric ||
+        (metric.lowerBound === undefined && metric.upperBound === undefined)
+      ) {
+        continue;
+      }
+      const currentValue: number | undefined = this.latestExperimentValue(
+        experiment,
+        metric.key,
+        deliveryRows,
+        cohortRows,
+      );
+      if (currentValue === undefined) continue;
+
+      const withinLower: boolean =
+        metric.lowerBound === undefined || currentValue >= metric.lowerBound;
+      const withinUpper: boolean =
+        metric.upperBound === undefined || currentValue <= metric.upperBound;
+      const isNormal: boolean = withinLower && withinUpper;
+      const normalSince: string | undefined = isNormal
+        ? experiment.normalSince || now
+        : undefined;
+      const recoveryReadyAt: string | undefined =
+        isNormal &&
+        normalSince &&
+        nowMs - new Date(normalSince).getTime() >= 24 * 60 * 60 * 1000
+          ? experiment.recoveryReadyAt || now
+          : undefined;
+      const becameReady: boolean = Boolean(
+        recoveryReadyAt && !experiment.recoveryReadyAt,
+      );
+
+      this.database.saveDecisionRecord({
+        ...experiment,
+        latestObservedValue: currentValue,
+        normalSince,
+        recoveryReadyAt,
+      });
+      if (becameReady) {
+        this.database.appendActivity({
+          caseId: experiment.id,
+          action: 'experiment_recovery_ready',
+          actor: 'hourly_doris_threshold_compare',
+          detail: '目标指标已连续 24 小时处于产品指标库正常范围，可人工结束实验',
+          metadata: {
+            source: 'doris_mcp',
+            targetMetric: metric.key,
+            latestObservedValue: String(currentValue),
+          },
+        });
+      }
+    }
+  }
+
+  private latestExperimentValue(
+    experiment: GrowthDecisionCase,
+    metricKey: GrowthMetricKey,
+    deliveryRows: DorisRow[],
+    cohortRows: DorisRow[],
+  ): number | undefined {
+    if (metricKey === 'd0_roas') {
+      const latestDate: string = this.latestDate(cohortRows, 'install_date');
+      const matches: DorisRow[] = cohortRows.filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'install_date') === latestDate &&
+          this.rowMatchesCase(row, experiment, false),
+      );
+      const weightedRows: DorisRow[] = matches.filter(
+        (row: DorisRow): boolean => dorisNumber(row, 'd0_roas') !== undefined,
+      );
+      const totalSpend: number = weightedRows.reduce(
+        (total: number, row: DorisRow): number =>
+          total + (dorisNumber(row, 'cohort_spend') || 0),
+        0,
+      );
+      if (totalSpend) {
+        return (
+          weightedRows.reduce(
+            (total: number, row: DorisRow): number =>
+              total +
+              (dorisNumber(row, 'd0_roas') || 0) *
+                (dorisNumber(row, 'cohort_spend') || 0),
+            0,
+          ) / totalSpend
+        );
+      }
+      return dorisNumber(weightedRows[0] || {}, 'd0_roas');
+    }
+
+    const latestDate: string = this.latestDate(deliveryRows, 'report_date');
+    const matches: DorisRow[] = deliveryRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'report_date') === latestDate &&
+        this.rowMatchesCase(row, experiment),
+    );
+    if (!matches.length) return undefined;
+    return this.deliveryMetricValues(
+      this.aggregateDeliveryRows(matches),
+    )[metricKey];
+  }
+
+  private rowMatchesCase(
+    row: DorisRow,
+    experiment: GrowthDecisionCase,
+    matchAdset = true,
+  ): boolean {
+    const campaignMatches: boolean = experiment.campaignId
+      ? dorisString(row, 'campaign_id') === experiment.campaignId
+      : experiment.campaignName
+        ? dorisString(row, 'campaign_name') === experiment.campaignName
+        : true;
+    if (!campaignMatches || !matchAdset || !experiment.adsetId) {
+      return campaignMatches;
+    }
+    return dorisString(row, 'adgroup_id') === experiment.adsetId;
   }
 
   private findRecentJudgment(

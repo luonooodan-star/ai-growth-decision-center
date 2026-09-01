@@ -3,6 +3,7 @@ import {
   BrainCircuit,
   ChevronRight,
   SearchCheck,
+  Star,
   WalletCards,
 } from 'lucide-react';
 
@@ -41,6 +42,7 @@ interface JudgmentQueueProps {
   onAnalyze: (id: string) => Promise<void>;
   onAnalyzeBatch: () => Promise<void>;
   onAnalysisModeChange: (mode: GrowthAnalysisMode) => Promise<void>;
+  onToggleFocus: (id: string, focused: boolean) => Promise<void>;
   analysisMode: GrowthAnalysisMode;
   mavisConfigured: boolean;
   mavisModel: string;
@@ -75,6 +77,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   onAnalyze,
   onAnalyzeBatch,
   onAnalysisModeChange,
+  onToggleFocus,
   analysisMode,
   mavisConfigured,
   mavisModel,
@@ -91,15 +94,21 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
 
   const orderedJudgments: GrowthJudgment[] = useMemo(
     (): GrowthJudgment[] =>
-      [...judgments].sort((left: GrowthJudgment, right: GrowthJudgment) => {
-        const leftOpen: boolean =
-          left.status === 'judgment_pending' ||
-          left.status === 'judgment_deferred';
-        const rightOpen: boolean =
-          right.status === 'judgment_pending' ||
-          right.status === 'judgment_deferred';
-        return Number(rightOpen) - Number(leftOpen);
-      }),
+      judgments
+        .filter(
+          (item: GrowthJudgment): boolean =>
+            item.status === 'judgment_pending' ||
+            item.status === 'judgment_deferred',
+        )
+        .sort((left: GrowthJudgment, right: GrowthJudgment): number => {
+          const focusOrder: number =
+            Number(Boolean(right.isFocused)) - Number(Boolean(left.isFocused));
+          if (focusOrder) return focusOrder;
+          return (
+            new Date(right.createdAt).getTime() -
+            new Date(left.createdAt).getTime()
+          );
+        }),
     [judgments],
   );
   const detailItem: GrowthJudgment | null =
@@ -187,7 +196,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
             {mavisQueuedJobs > 0 ? (
               <Badge variant="outline">排队 {mavisQueuedJobs}</Badge>
             ) : null}
-            <Badge variant="secondary">{judgments.length} 条</Badge>
+            <Badge variant="secondary">{openJudgmentCount} 条</Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -286,14 +295,33 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         ) : null}
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => setDetailId(item.id)}
-                    >
-                      查看与处理 <ChevronRight className="size-4" />
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        variant={item.isFocused ? 'secondary' : 'outline'}
+                        size="sm"
+                        className={
+                          item.isFocused
+                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                            : ''
+                        }
+                        disabled={saving}
+                        onClick={() =>
+                          void onToggleFocus(item.id, !item.isFocused)
+                        }
+                      >
+                        <Star
+                          className={`size-4 ${item.isFocused ? 'fill-current' : ''}`}
+                        />
+                        {item.isFocused ? '重点关注' : '设为重点'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDetailId(item.id)}
+                      >
+                        查看与处理 <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
                   </div>
                 </article>
               ))}
