@@ -37,7 +37,7 @@ function connectionConfig() {
     const token = optionalSecret(REMOTE_TOKEN_SERVICE);
     if (!password || !token) {
       throw new Error(
-        '远程 Codex 凭据不完整，请运行 configure-marvis-remote.sh setup',
+        '远程分析凭据不完整，请运行远程连接配置脚本',
       );
     }
     return {
@@ -53,7 +53,7 @@ function connectionConfig() {
   const token = optionalSecret(MARVIS_KEYCHAIN_SERVICE);
   if (!password || !token) {
     throw new Error(
-      '未找到本机或远程 Keychain 凭据，请运行 configure-marvis-remote.sh setup',
+      '未找到本机或远程 Keychain 凭据，请运行远程连接配置脚本',
     );
   }
   return {
@@ -72,21 +72,33 @@ async function callMcp(method, params = undefined) {
   const basic = Buffer.from(
     `${connection.username}:${connection.password}`,
   ).toString('base64');
-  const response = await fetch(connection.url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Basic ${basic}`,
-      'Content-Type': 'application/json',
-      'X-Marvis-Token': connection.token,
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: `${Date.now()}-${method}`,
-      method,
-      ...(params ? { params } : {}),
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(connection.url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Basic ${basic}`,
+        'Content-Type': 'application/json',
+        'X-Marvis-Token': connection.token,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `${Date.now()}-${method}`,
+        method,
+        ...(params ? { params } : {}),
+      }),
+    });
+  } catch (error) {
+    const cause = error instanceof Error ? error.cause : undefined;
+    const causeText =
+      cause && typeof cause === 'object'
+        ? `${cause.code || 'network_error'} ${cause.message || ''}`.trim()
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    throw new Error(`决策中心 MCP 网络连接失败：${causeText}`);
+  }
   const text = await response.text();
   if (!response.ok) {
     throw new Error(

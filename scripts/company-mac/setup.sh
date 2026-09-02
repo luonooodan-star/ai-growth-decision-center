@@ -105,7 +105,10 @@ start_script="$project_dir/scripts/company-mac/start-local.sh"
 chmod +x \
   "$start_script" \
   "$project_dir/scripts/company-mac/configure-marvis-remote.sh" \
+  "$project_dir/scripts/company-mac/configure-codex-remote.sh" \
   "$project_dir/scripts/company-mac/configure-mavis.sh" \
+  "$project_dir/scripts/company-mac/configure-codex-worker.sh" \
+  "$project_dir/scripts/company-mac/codex-bridge-server.mjs" \
   "$project_dir/scripts/company-mac/codex-worker.mjs" \
   "$project_dir/scripts/company-mac/marvis-worker.mjs" \
   "$project_dir/scripts/company-mac/prepare-marvis-integration.sh" \

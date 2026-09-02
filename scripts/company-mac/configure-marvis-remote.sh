@@ -28,16 +28,16 @@ if [[ "$command" == "status" ]]; then
   print "公司 Mac MCP：$remote_url"
   print "访问用户：${remote_user:-growth}"
   print "访问密码：已保存在当前 Mac Keychain"
-  print "Marvis Token：已保存在当前 Mac Keychain"
+  print "分析 MCP Token：已保存在当前 Mac Keychain"
   exit 0
 fi
 
 if [[ "$command" != "setup" ]]; then
-  print -u2 "用法：zsh configure-marvis-remote.sh [setup|status]"
+  print -u2 "用法：zsh configure-codex-remote.sh [setup|status]"
   exit 1
 fi
 
-print "配置本 Mac 的 Marvis Worker 连接。认证信息只保存到当前 Mac Keychain。"
+print "配置本 Mac 的 Codex Worker 连接。认证信息只保存到当前 Mac Keychain。"
 print -n "公司 Mac 页面地址（例如 http://192.168.3.173:8081）："
 read -r server_url
 server_url="${server_url%/}"
@@ -61,11 +61,11 @@ print
   exit 1
 }
 
-print -n "请输入公司 Mac 输出的 X-Marvis-Token（输入不会显示）："
+print -n "请输入公司 Mac 输出的分析 MCP Token（输入不会显示）："
 read -r -s remote_token
 print
 [[ -n "$remote_token" ]] || {
-  print -u2 "Marvis Token 不能为空。"
+  print -u2 "分析 MCP Token 不能为空。"
   exit 1
 }
 
@@ -77,4 +77,3 @@ unset remote_password remote_token
 
 print "远程认证已保存，开始无副作用连接检查。"
 node "$worker_script" check
-
