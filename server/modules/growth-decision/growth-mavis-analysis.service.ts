@@ -27,6 +27,7 @@ import type {
 } from '@shared/api.interface';
 
 import { buildProductSkillDiagnostic } from './growth-diagnostic-analysis';
+import { validateBatchAnalysisCoverage } from './growth-batch-analysis-validation';
 
 const MAVIS_KEYCHAIN_SERVICE = 'ai-growth-decision-center-mavis-mcp';
 const LOCAL_WORKER_ID = 'mavis-skill-simulator';
@@ -276,14 +277,7 @@ export class GrowthMavisAnalysisService {
   ): GrowthJudgment[] {
     const job: GrowthMavisJob = this.getJob(id);
     this.ensureWorkerOwnsJob(job, request.workerId);
-    const expectedIds = new Set(job.judgmentIds || [job.judgmentId]);
-    if (
-      job.jobType !== 'batch_anomaly_assessment' ||
-      request.analyses.length !== expectedIds.size ||
-      request.analyses.some((item) => !expectedIds.has(item.judgmentId))
-    ) {
-      throw new BadRequestException('整批分析结果必须完整对应任务中的异常');
-    }
+    validateBatchAnalysisCoverage(job, request.analyses);
     const generatedAt: string = new Date().toISOString();
     const updated: GrowthJudgment[] = request.analyses.map((item) => {
       this.validateAnalysis(item.analysis);

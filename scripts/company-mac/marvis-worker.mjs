@@ -108,6 +108,41 @@ function printJson(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+function validateBatchIds(context, analyses) {
+  if (!Array.isArray(analyses)) {
+    throw new Error('批量分析文件必须是 JSON 数组');
+  }
+  const expectedIds = new Set(
+    (context?.job?.judgmentIds || [context?.job?.judgmentId])
+      .filter(Boolean)
+      .map((id) => String(id).trim()),
+  );
+  const receivedIds = analyses.map((item) =>
+    String(item?.judgmentId || '').trim(),
+  );
+  const receivedSet = new Set(receivedIds);
+  const missingIds = [...expectedIds].filter((id) => !receivedSet.has(id));
+  const unknownIds = [...receivedSet].filter((id) => !expectedIds.has(id));
+  const duplicateIds = [...receivedSet].filter(
+    (id) => receivedIds.filter((candidate) => candidate === id).length > 1,
+  );
+  if (
+    expectedIds.size !== receivedIds.length ||
+    missingIds.length > 0 ||
+    unknownIds.length > 0 ||
+    duplicateIds.length > 0
+  ) {
+    throw new Error(
+      `批量分析文件与任务不一致：期望 ${expectedIds.size} 条，收到 ${receivedIds.length} 条；` +
+        `缺失=${JSON.stringify(missingIds)}；未知=${JSON.stringify(unknownIds)}；` +
+        `重复=${JSON.stringify(duplicateIds)}`,
+    );
+  }
+  analyses.forEach((item) => {
+    item.judgmentId = String(item.judgmentId).trim();
+  });
+}
+
 async function main() {
   const command = process.argv[2] || 'claim';
   if (command === 'check') {
@@ -167,6 +202,8 @@ async function main() {
       );
     }
     const analyses = JSON.parse(await readFile(analysesPath, 'utf8'));
+    const context = await callTool('get_anomaly_context', { jobId });
+    validateBatchIds(context, analyses);
     printJson(
       await callTool('submit_batch_analysis', {
         jobId,
