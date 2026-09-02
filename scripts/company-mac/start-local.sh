@@ -29,7 +29,7 @@ mavis_mcp_token="$(security find-generic-password \
   -a "$USER" \
   -s "$MAVIS_KEYCHAIN_SERVICE" \
   -w 2>/dev/null)" || {
-  print -u2 "Marvis MCP Token 不存在，请重新运行 setup.sh。"
+  print -u2 "Codex MCP Token 不存在，请重新运行 setup.sh。"
   exit 1
 }
 

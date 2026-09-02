@@ -341,7 +341,7 @@ export interface GrowthMonitoringHistoryResponse {
 export type GrowthAiJudgment = 'confirmed' | 'uncertain' | 'rejected';
 
 export interface GrowthAiAnalysis {
-  provider: 'mavis' | 'product_skill';
+  provider: 'codex' | 'mavis' | 'product_skill';
   model: string;
   judgment: GrowthAiJudgment;
   summary: string;
@@ -379,7 +379,7 @@ export interface GrowthActionProposal {
 }
 
 export interface GrowthAiProviderStatus {
-  provider: 'mavis';
+  provider: 'codex';
   model: string;
   configured: boolean;
   runtimeMode: 'external_worker' | 'skill_simulation';
@@ -428,6 +428,7 @@ export interface GrowthMavisJob {
   error?: string;
   createdAt: string;
   startedAt?: string;
+  leaseExpiresAt?: string;
   completedAt?: string;
 }
 

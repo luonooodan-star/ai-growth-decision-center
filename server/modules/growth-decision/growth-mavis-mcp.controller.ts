@@ -34,7 +34,7 @@ interface MavisMcpResponse {
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: 'claim_analysis_job',
-    description: '领取一个等待 Marvis 分析的整批广告异常任务',
+    description: '领取一个等待 Codex 分析的整批广告异常任务',
     inputSchema: {
       type: 'object',
       properties: { workerId: { type: 'string' } },
@@ -83,7 +83,7 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: 'fail_analysis_job',
-    description: '记录 Marvis 分析任务失败和错误原因',
+    description: '记录 Codex 分析任务失败和错误原因',
     inputSchema: {
       type: 'object',
       properties: {
@@ -206,7 +206,7 @@ export class GrowthMavisMcpController {
         },
       );
     }
-    throw new BadRequestException(`未知 Marvis Tool：${name}`);
+    throw new BadRequestException(`未知 Codex Tool：${name}`);
   }
 
   private stringArg(args: Record<string, unknown>, key: string): string {

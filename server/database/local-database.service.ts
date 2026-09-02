@@ -458,6 +458,32 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   claimNextMavisJob(workerId: string): GrowthMavisJob | undefined {
+    const now: Date = new Date();
+    const runningRows: Record<string, unknown>[] = this.database
+      .prepare(
+        `SELECT payload FROM growth_mavis_job
+         WHERE status = 'running' ORDER BY created_at ASC`,
+      )
+      .all();
+    for (const runningRow of runningRows) {
+      const running: GrowthMavisJob = this.parsePayload<GrowthMavisJob>(
+        runningRow.payload,
+      );
+      const leaseExpiresAt: number = running.leaseExpiresAt
+        ? new Date(running.leaseExpiresAt).getTime()
+        : new Date(running.startedAt || running.createdAt).getTime() +
+          25 * 60 * 1000;
+      if (leaseExpiresAt > now.getTime()) continue;
+      const recovered: GrowthMavisJob = {
+        ...running,
+        status: 'queued',
+        workerId: undefined,
+        startedAt: undefined,
+        leaseExpiresAt: undefined,
+        error: '上一次 Codex 执行超时，已自动重新排队',
+      };
+      this.saveMavisJob(recovered);
+    }
     const row: Record<string, unknown> | undefined = this.database
       .prepare(
         `SELECT payload FROM growth_mavis_job
@@ -474,6 +500,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       workerId,
       attempt: queued.attempt + 1,
       startedAt: new Date().toISOString(),
+      leaseExpiresAt: new Date(now.getTime() + 25 * 60 * 1000).toISOString(),
     };
     const result = this.database
       .prepare(

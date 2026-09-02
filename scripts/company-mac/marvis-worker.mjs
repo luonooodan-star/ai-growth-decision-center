@@ -11,7 +11,7 @@ const REMOTE_USER_SERVICE = 'ai-growth-decision-center-marvis-remote-user';
 const REMOTE_PASSWORD_SERVICE =
   'ai-growth-decision-center-marvis-remote-password';
 const REMOTE_TOKEN_SERVICE = 'ai-growth-decision-center-marvis-remote-token';
-const DEFAULT_WORKER_ID = 'marvis-analysis-mac';
+const DEFAULT_WORKER_ID = 'codex-growth-analyst';
 
 function secret(service) {
   return execFileSync(
@@ -37,7 +37,7 @@ function connectionConfig() {
     const token = optionalSecret(REMOTE_TOKEN_SERVICE);
     if (!password || !token) {
       throw new Error(
-        '远程 Marvis 凭据不完整，请运行 configure-marvis-remote.sh setup',
+        '远程 Codex 凭据不完整，请运行 configure-marvis-remote.sh setup',
       );
     }
     return {
@@ -150,7 +150,7 @@ async function main() {
       await callTool('submit_anomaly_analysis', {
         jobId,
         workerId,
-        model: 'Marvis Growth Analyst',
+        model: 'Codex Growth Analyst',
         analysis,
       }),
     );
@@ -171,7 +171,7 @@ async function main() {
       await callTool('submit_batch_analysis', {
         jobId,
         workerId,
-        model: 'Marvis Growth Analyst',
+        model: 'Codex Growth Analyst',
         analyses,
       }),
     );

@@ -568,7 +568,7 @@ const GrowthDecisionPage: React.FC = () => {
             onToggleFocus={handleToggleFocus}
             analysisMode={aiStatus?.selectedMode || 'product_skill'}
             mavisConfigured={Boolean(aiStatus?.configured)}
-            mavisModel={aiStatus?.model || 'Marvis Growth Analyst'}
+            mavisModel={aiStatus?.model || 'Codex Growth Analyst'}
             mavisRuntimeMode={aiStatus?.runtimeMode || 'skill_simulation'}
             mavisQueuedJobs={aiStatus?.queuedJobs || 0}
           />

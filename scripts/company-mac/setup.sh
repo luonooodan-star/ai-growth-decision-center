@@ -106,6 +106,7 @@ chmod +x \
   "$start_script" \
   "$project_dir/scripts/company-mac/configure-marvis-remote.sh" \
   "$project_dir/scripts/company-mac/configure-mavis.sh" \
+  "$project_dir/scripts/company-mac/codex-worker.mjs" \
   "$project_dir/scripts/company-mac/marvis-worker.mjs" \
   "$project_dir/scripts/company-mac/prepare-marvis-integration.sh" \
   "$project_dir/scripts/company-mac/update.sh"
@@ -172,10 +173,9 @@ for attempt in {1..30}; do
     print "本机页面：http://localhost:8081/（用户名 growth）"
     [[ -n "$lan_ip" ]] && print "局域网页面：http://$lan_ip:8081/（同一公司网络内访问）"
     print "Doris 验证：node scripts/company-mac/mcp-whoami.mjs"
-    print "Marvis 状态：http://localhost:8081/api/growth-decision/mavis/status"
-    print "Marvis MCP 配置：zsh scripts/company-mac/configure-mavis.sh"
-    print "Marvis 接入包：zsh scripts/company-mac/prepare-marvis-integration.sh"
-    print "当前默认使用产品 Skill 模拟 Marvis，验证任务闭环。"
+    print "Codex 状态：http://localhost:8081/api/growth-decision/mavis/status"
+    print "Codex MCP 兼容配置：zsh scripts/company-mac/configure-mavis.sh"
+    print "当前默认使用产品 Skill，可在页面切换到 Codex 自动分析。"
     exit 0
   fi
   sleep 2

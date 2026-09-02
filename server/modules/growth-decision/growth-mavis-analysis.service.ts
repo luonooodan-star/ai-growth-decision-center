@@ -49,8 +49,8 @@ export class GrowthMavisAnalysisService {
         )
       : jobs;
     return {
-      provider: 'mavis',
-      model: process.env.MAVIS_MODEL || 'Marvis Growth Analyst',
+      provider: 'codex',
+      model: process.env.CODEX_ANALYSIS_MODEL || 'Codex Growth Analyst',
       configured: selectedMode === 'product_skill' || mcpConfigured,
       runtimeMode,
       selectedMode,
@@ -104,7 +104,7 @@ export class GrowthMavisAnalysisService {
     const mode: GrowthAnalysisMode = product.analysisMode || 'product_skill';
     if (mode === 'marvis_bridge' && !this.mcpToken()) {
       throw new BadRequestException(
-        'Marvis 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Marvis 接入',
+        'Codex 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Codex 接入',
       );
     }
     this.cancelOpenJobs(productId, '已由新的整批分析任务替代');
@@ -154,7 +154,7 @@ export class GrowthMavisAnalysisService {
       mode,
       analyzedCount: judgments.length,
       job,
-      message: `已创建 1 条 Marvis 整批任务，包含 ${judgments.length} 条异常`,
+      message: `已创建 1 条 Codex 整批任务，包含 ${judgments.length} 条异常`,
     };
   }
 
@@ -175,7 +175,7 @@ export class GrowthMavisAnalysisService {
       !this.mcpToken()
     ) {
       throw new BadRequestException(
-        'Marvis 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Marvis 接入',
+        'Codex 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Codex 接入',
       );
     }
     const existing: GrowthMavisJob | undefined = this.database
@@ -206,10 +206,10 @@ export class GrowthMavisAnalysisService {
     this.database.appendActivity({
       caseId: judgment.id,
       action: 'mavis_job_queued',
-      actor: 'Marvis Bridge',
+      actor: 'Codex Bridge',
       detail: `已创建异常分析任务 ${job.id}`,
       metadata: {
-        source: 'mavis',
+        source: 'codex',
         requestId: job.id,
         skillVersion: job.skillVersion,
       },
@@ -290,8 +290,8 @@ export class GrowthMavisAnalysisService {
       return this.saveAnalysis(
         job,
         {
-          provider: 'mavis',
-          model: request.model.trim() || 'Marvis Growth Analyst',
+          provider: 'codex',
+          model: request.model.trim() || 'Codex Growth Analyst',
           ...item.analysis,
           confidence: Math.round(item.analysis.confidence),
           observationHours: Math.round(item.analysis.observationHours),
@@ -322,8 +322,8 @@ export class GrowthMavisAnalysisService {
     }
     this.validateAnalysis(request.analysis);
     const analysis: GrowthAiAnalysis = {
-      provider: 'mavis',
-      model: request.model.trim() || 'Marvis Growth Analyst',
+      provider: 'codex',
+      model: request.model.trim() || 'Codex Growth Analyst',
       ...request.analysis,
       confidence: Math.round(request.analysis.confidence),
       observationHours: Math.round(request.analysis.observationHours),
@@ -348,7 +348,7 @@ export class GrowthMavisAnalysisService {
       ...job,
       status: 'failed',
       workerId: request.workerId,
-      error: request.error.trim() || 'Marvis Worker 未返回错误详情',
+      error: request.error.trim() || 'Codex Worker 未返回错误详情',
       completedAt: new Date().toISOString(),
     };
     this.database.saveMavisJob(failed);
@@ -362,8 +362,8 @@ export class GrowthMavisAnalysisService {
         caseId: judgment.id,
         action: 'mavis_analysis_failed',
         actor: request.workerId,
-        detail: failed.error || 'Marvis 分析失败',
-        metadata: { source: 'mavis', requestId: job.id },
+        detail: failed.error || 'Codex 分析失败',
+        metadata: { source: 'codex', requestId: job.id },
       });
     }
     return failed;
@@ -373,7 +373,7 @@ export class GrowthMavisAnalysisService {
     const expected: string = this.mcpToken();
     const provided: string = token?.trim() || '';
     if (!expected || !provided || !this.safeEqual(expected, provided)) {
-      throw new UnauthorizedException('Marvis MCP Token 无效或未配置');
+      throw new UnauthorizedException('Codex MCP Token 无效或未配置');
     }
   }
 
@@ -395,7 +395,7 @@ export class GrowthMavisAnalysisService {
       model: `${product.name} Product Skill Diagnostic`,
       ...buildProductSkillDiagnostic(product, judgment),
       fallbackReason:
-        '当前未运行外部 Marvis Worker，已使用产品 Skill 诊断引擎；结果不会冒充 Marvis 模型分析。',
+        '当前未运行外部 Codex Worker，已使用产品 Skill 诊断引擎；结果不会冒充 Codex 模型分析。',
       generatedAt: new Date().toISOString(),
     };
     const updated: GrowthJudgment = this.saveAnalysis(running, analysis);
@@ -439,7 +439,7 @@ export class GrowthMavisAnalysisService {
       actor: analysis.model,
       detail: analysis.summary,
       metadata: {
-        source: 'mavis',
+        source: 'codex',
         requestId: job.id,
         judgment: analysis.judgment,
         confidence: String(analysis.confidence),
@@ -491,16 +491,16 @@ export class GrowthMavisAnalysisService {
 
   private getJob(id: string): GrowthMavisJob {
     const job: GrowthMavisJob | undefined = this.database.getMavisJob(id);
-    if (!job) throw new NotFoundException('Marvis 分析任务不存在');
+    if (!job) throw new NotFoundException('Codex 分析任务不存在');
     return job;
   }
 
   private ensureWorkerOwnsJob(job: GrowthMavisJob, workerId: string): void {
     if (job.status !== 'running') {
-      throw new BadRequestException('Marvis 分析任务当前不可回写');
+      throw new BadRequestException('Codex 分析任务当前不可回写');
     }
     if (!workerId.trim() || job.workerId !== workerId.trim()) {
-      throw new BadRequestException('该任务未由当前 Marvis Worker 领取');
+      throw new BadRequestException('该任务未由当前 Codex Worker 领取');
     }
   }
 
@@ -544,7 +544,7 @@ export class GrowthMavisAnalysisService {
               action.observationHours > 168,
           )))
     ) {
-      throw new BadRequestException('Marvis 分析结果不符合结构化输出合同');
+      throw new BadRequestException('Codex 分析结果不符合结构化输出合同');
     }
   }
 

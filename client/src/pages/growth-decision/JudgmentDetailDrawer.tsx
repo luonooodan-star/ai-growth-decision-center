@@ -58,9 +58,9 @@ const DETAIL_STATUS_LABELS: Record<string, string> = {
 };
 
 const DETAIL_AI_JUDGMENT_LABELS: Record<string, string> = {
-  confirmed: 'Marvis 判断成立',
-  uncertain: 'Marvis 判断待定',
-  rejected: 'Marvis 判断不成立',
+  confirmed: 'Codex 判断成立',
+  uncertain: 'Codex 判断待定',
+  rejected: 'Codex 判断不成立',
 };
 
 const DETAIL_METRICS: Array<{ key: GrowthMetricKey; label: string }> = [
@@ -389,8 +389,8 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                 {item.aiAnalysisStatus === 'running' ? (
                   <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-700">
                     {mavisRuntimeMode === 'external_worker'
-                      ? 'Marvis 任务已入队；自动轮询最长约 30 分钟，需要立即结果可在 Marvis 中手动运行该任务。'
-                      : 'Marvis 正在完成第一波分析…'}
+                      ? 'Codex 任务已入队；自动任务每 30 分钟领取一次，超时任务会自动重新排队。'
+                      : 'Codex 正在完成第一波分析…'}
                   </div>
                 ) : null}
                 {item.aiAnalysis ? (
@@ -539,7 +539,7 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                       ? '使用完整投放快照运行产品 Skill 深度诊断'
                       : mavisConfigured
                         ? `创建 ${mavisModel} 分析任务并记录完整过程`
-                        : 'Marvis 任务桥尚未启用'
+                        : 'Codex 自动分析尚未启用'
                   }
                 >
                   <BrainCircuit className="size-4" />
@@ -549,9 +549,10 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                       ? item.aiAnalysis
                         ? '重新深度诊断'
                         : '深度诊断'
-                      : item.aiAnalysis?.provider === 'mavis'
+                      : item.aiAnalysis?.provider === 'mavis' ||
+                          item.aiAnalysis?.provider === 'codex'
                         ? '重新分析'
-                        : 'Marvis 分析'}
+                        : 'Codex 分析'}
                 </Button>
                 {item.status === 'judgment_confirmed' ? (
                   item.recommendationCaseId ? (

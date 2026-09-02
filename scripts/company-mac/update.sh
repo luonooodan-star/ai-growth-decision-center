@@ -19,7 +19,7 @@ print "[1/6] 拉取 GitHub $DEPLOY_BRANCH"
 git fetch "$DEPLOY_REMOTE" "$DEPLOY_BRANCH"
 git merge --ff-only FETCH_HEAD
 
-print "[2/6] 初始化 Marvis 本地凭据"
+print "[2/6] 初始化 Codex 任务桥凭据"
 zsh scripts/company-mac/configure-mavis.sh ensure
 
 print "[3/6] 安装锁定依赖"

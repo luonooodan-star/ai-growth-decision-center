@@ -66,9 +66,9 @@ const ACTION_LABELS: Record<ReviewJudgmentRequest['action'], string> = {
 };
 
 const COMPACT_AI_JUDGMENT_LABELS: Record<string, string> = {
-  confirmed: 'Marvis 判断成立',
-  uncertain: 'Marvis 判断待定',
-  rejected: 'Marvis 判断不成立',
+  confirmed: 'Codex 判断成立',
+  uncertain: 'Codex 判断待定',
+  rejected: 'Codex 判断不成立',
 };
 
 const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
@@ -169,7 +169,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                 disabled={saving}
                 onClick={() => void onAnalysisModeChange('marvis_bridge')}
               >
-                Marvis 任务桥
+                Codex 自动分析
               </Button>
               <Button
                 size="sm"
@@ -273,8 +273,8 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                         {item.aiAnalysisStatus === 'running' ? (
                           <Badge variant="outline">
                             {mavisRuntimeMode === 'external_worker'
-                              ? 'Marvis 等待/分析中'
-                              : 'Marvis 分析中'}
+                              ? 'Codex 等待/分析中'
+                              : 'Codex 分析中'}
                           </Badge>
                         ) : item.aiAnalysis ? (
                           <Badge

@@ -271,7 +271,7 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
                     重新开始
                   </p>
                   <p className="mt-1 text-xs leading-5 text-red-700">
-                    清空抓取、快照、异常、Marvis、建议及实验结果；保留产品和指标库标准。
+                    清空抓取、快照、异常、Codex、建议及实验结果；保留产品和指标库标准。
                   </p>
                 </div>
                 <AlertDialog>
