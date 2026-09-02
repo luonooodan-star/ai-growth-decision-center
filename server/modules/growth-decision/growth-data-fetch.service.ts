@@ -281,7 +281,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
       const [delivery, cohort, adDelivery] = await Promise.all([
         deliveryDate
-          ? trigger === 'manual' && Boolean(historyDays)
+          ? deliveryDataDates.length
             ? this.queryDeliveryDetailsByDate(
                 deliveryDataDates,
                 filters,
@@ -861,10 +861,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   }
 
   private judgmentDataDate(judgment: GrowthJudgment): string | undefined {
-    if (judgment.diagnosticContext?.dataDate) {
-      return judgment.diagnosticContext.dataDate;
-    }
-    return judgment.evidence.match(/\b\d{4}-\d{2}-\d{2}\b/u)?.[0];
+    return (
+      judgment.evidence.match(/\b\d{4}-\d{2}-\d{2}\b/u)?.[0] ||
+      judgment.diagnosticContext?.dataDate
+    );
   }
 
   private rowMatchesJudgment(
@@ -948,17 +948,21 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       (row: DorisRow): boolean =>
         dorisString(row, 'install_date') === latestCohortDate,
     );
+    const cohortDateDeliveryRows: DorisRow[] = deliveryRows.filter(
+      (row: DorisRow): boolean =>
+        dorisString(row, 'report_date') === latestCohortDate,
+    );
     for (const row of latestCohortRows) {
       const d0Roas: number | undefined = dorisNumber(row, 'd0_roas');
       const matchedDeliveryRows: DorisRow[] = this.matchDeliveryRows(
         row,
-        latestDeliveryRows,
+        cohortDateDeliveryRows,
       );
       const deliverySnapshot: DorisRow | undefined = matchedDeliveryRows.length
         ? this.withAdAccount(
             this.aggregateDeliveryRows(matchedDeliveryRows),
             adDeliveryRows,
-            latestDeliveryDate || latestCohortDate,
+            latestCohortDate,
           )
         : undefined;
       const metricValues: GrowthMetricValues = {
@@ -971,7 +975,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         this.buildDiagnosticContext(
           deliveryRows,
           deliverySnapshot,
-          latestDeliveryDate || latestCohortDate,
+          latestCohortDate,
           row,
           matchedDeliveryRows,
           adDeliveryRows,
@@ -1848,62 +1852,75 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   ): Promise<DorisQueryResult> {
     const rows: DorisRow[] = [];
     let rowCount = 0;
-    // 按天拆分，规避 Doris MCP 对跨日明细查询的行数截断。
+    const countries: string[] = Array.isArray(filters.country_code)
+      ? filters.country_code.map((value: unknown): string => String(value))
+      : [];
+    const filterVariants: Record<string, unknown>[] = countries.length
+      ? countries.map(
+          (country: string): Record<string, unknown> => ({
+            ...filters,
+            country_code: [country],
+          }),
+        )
+      : [filters];
+    // 按天、按国家拆分，规避账户持续增长后 Doris MCP 明细行数截断。
     for (const dataDate of dates) {
-      const result: DorisQueryResult = await this.queryMetricWithFallback(
-        {
-          dataset: 'bi_ads.ads_paid_acquisition_daily',
-          dimensions: [
-            'report_date',
-            'country_code',
-            'campaign_id',
-            'campaign_name',
-            'adgroup_id',
-            'adgroup_name',
-          ],
-          start_date: dataDate,
-          end_date: dataDate,
-          filters_json: JSON.stringify(filters),
-          metrics: [
-            'spend',
-            'impressions',
-            'media_clicks',
-            'media_installs',
-            'adjust_installs',
-            'adjust_revenue',
-            'cpi',
-            'ctr',
-            'ipm',
-            'roas',
-          ],
-          limit: 1000,
-        },
-        {
-          dataset: 'bi_ads.ads_paid_acquisition_daily',
-          dimensions: [
-            'report_date',
-            'campaign_id',
-            'campaign_name',
-            'adgroup_id',
-            'adgroup_name',
-          ],
-          start_date: dataDate,
-          end_date: dataDate,
-          filters_json: JSON.stringify(filters),
-          metrics: [
-            'spend',
-            'impressions',
-            'adjust_installs',
-            'adjust_revenue',
-            'cpi',
-          ],
-          limit: 1000,
-        },
-        `${dataDate} 投放明细`,
-        degradationNotes,
-      );
-      rows.push(...(result.rows || []));
-      rowCount += Number(result.row_count || result.rows?.length || 0);
+      for (const filterVariant of filterVariants) {
+        const result: DorisQueryResult = await this.queryMetricWithFallback(
+          {
+            dataset: 'bi_ads.ads_paid_acquisition_daily',
+            dimensions: [
+              'report_date',
+              'country_code',
+              'campaign_id',
+              'campaign_name',
+              'adgroup_id',
+              'adgroup_name',
+            ],
+            start_date: dataDate,
+            end_date: dataDate,
+            filters_json: JSON.stringify(filterVariant),
+            metrics: [
+              'spend',
+              'impressions',
+              'media_clicks',
+              'media_installs',
+              'adjust_installs',
+              'adjust_revenue',
+              'cpi',
+              'ctr',
+              'ipm',
+              'roas',
+            ],
+            limit: 5000,
+          },
+          {
+            dataset: 'bi_ads.ads_paid_acquisition_daily',
+            dimensions: [
+              'report_date',
+              'campaign_id',
+              'campaign_name',
+              'adgroup_id',
+              'adgroup_name',
+            ],
+            start_date: dataDate,
+            end_date: dataDate,
+            filters_json: JSON.stringify(filterVariant),
+            metrics: [
+              'spend',
+              'impressions',
+              'adjust_installs',
+              'adjust_revenue',
+              'cpi',
+            ],
+            limit: 5000,
+          },
+          `${dataDate} ${String(filterVariant.country_code || '')} 投放明细`,
+          degradationNotes,
+        );
+        rows.push(...(result.rows || []));
+        rowCount += Number(result.row_count || result.rows?.length || 0);
+      }
     }
     return { rows, row_count: rowCount };
   }
