@@ -18,7 +18,9 @@ read both [the decision standards](references/decision-standards.md) and the
    Never substitute a rolling average for an approved business target.
 3. Diagnose a detected anomaly through the Facebook delivery tree and the
    Doris product-outcome tree. Separate facts, likely causes, hypotheses, and
-   missing evidence.
+   missing evidence. Always inspect ads below the affected ad set using
+   `bi_dwd.dwd_facebook_ad_daily`; explicitly flag any ad with materially
+   abnormal spend, ECPM, CTR, IPM, installs, or conversion quality.
 4. Write one preliminary judgment with evidence, confidence, and an optional
    candidate rule. Wait for a human outcome: confirmed, deferred, or rejected.
 5. Generate adjustment recommendations only for confirmed judgments. Keep

@@ -6,6 +6,7 @@ import type {
   GrowthBatchAnalysisResponse,
   GrowthDashboardResponse,
   GrowthDataHistoryResponse,
+  GrowthDeletionResult,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
   GrowthFetchHistoryResponse,
@@ -20,6 +21,8 @@ import type {
   UpdateMetricStandardsRequest,
   UpdateRecordFocusRequest,
   UpdateResultRequest,
+  DeleteGrowthRecordRequest,
+  DeleteSkillRuleCandidateRequest,
 } from '@shared/api.interface';
 
 async function getAiStatus(
@@ -200,10 +203,34 @@ async function updateResult(
   return response.data;
 }
 
+async function deleteRecord(
+  id: string,
+  request: DeleteGrowthRecordRequest,
+): Promise<GrowthDeletionResult> {
+  const response = await axios.delete<GrowthDeletionResult>(
+    `/api/growth-decision/records/${id}`,
+    { data: request },
+  );
+  return response.data;
+}
+
+async function deleteSkillRuleCandidate(
+  id: string,
+  request: DeleteSkillRuleCandidateRequest,
+): Promise<GrowthJudgment> {
+  const response = await axios.delete<GrowthJudgment>(
+    `/api/growth-decision/judgments/${id}/skill-candidate`,
+    { data: request },
+  );
+  return response.data;
+}
+
 export {
   analyzeProductBatch,
   analyzeJudgment,
   backfillHistory,
+  deleteRecord,
+  deleteSkillRuleCandidate,
   getAiStatus,
   getDashboard,
   getDataHistory,

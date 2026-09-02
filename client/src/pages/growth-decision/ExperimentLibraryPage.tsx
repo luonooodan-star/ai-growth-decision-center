@@ -30,6 +30,13 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 
+import { DeleteRecordButton } from './DeleteRecordButton';
+import {
+  actionGroupDefinition,
+  actionLabel,
+  type ActionGroupDefinition,
+} from './experiment-action-group';
+
 type ReviewDimension = 'action' | 'adset';
 
 interface ExperimentGroup {
@@ -46,17 +53,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed: '已结束',
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  increase_budget: '提高预算',
-  decrease_budget: '降低预算',
-  hold_budget: '保持预算并观察',
-  exclude_target: '排除定向',
-  rotate_creative: '更换素材',
-  create_experiment: '新建对照实验',
-  observe: '继续观察',
-  investigate_data: '补查数据',
-};
-
 const HISTORY_METRICS: Array<{
   key: GrowthDeliveryMetricKey;
   label: string;
@@ -68,13 +64,6 @@ const HISTORY_METRICS: Array<{
   { key: 'ipm', label: 'IPM' },
   { key: 'd0_roas', label: 'D0 ROAS' },
 ];
-
-const actionLabel = (item: GrowthDecisionCase): string => {
-  const actionType: string = item.recommendedAction.actionType || 'unknown';
-  const base: string = ACTION_LABELS[actionType] || item.recommendation;
-  const changePct: number | undefined = item.recommendedAction.changePct;
-  return changePct === undefined ? base : `${base} ${Math.abs(changePct)}%`;
-};
 
 const shouldShow = (item: GrowthDecisionCase): boolean => {
   if (item.status !== 'completed') return true;
@@ -154,13 +143,14 @@ const ExperimentLibraryPage: React.FC = () => {
   const groups: ExperimentGroup[] = useMemo((): ExperimentGroup[] => {
     const grouped: Map<string, ExperimentGroup> = new Map();
     for (const item of experiments) {
+      const actionGroup: ActionGroupDefinition = actionGroupDefinition(item);
       const key: string =
         dimension === 'action'
-          ? `action:${actionLabel(item)}`
+          ? actionGroup.key
           : `adset:${item.adsetId || item.adsetName || item.campaignId || item.id}`;
       const label: string =
         dimension === 'action'
-          ? actionLabel(item)
+          ? actionGroup.label
           : item.adsetName ||
             item.adsetId ||
             item.campaignName ||
@@ -302,6 +292,15 @@ const ExperimentLibraryPage: React.FC = () => {
                     <h2 className="mt-3 text-base font-semibold text-slate-950">
                       {group.label}
                     </h2>
+                    {dimension === 'adset' ? (
+                      <p className="mt-1 text-xs leading-5 text-slate-400">
+                        广告账户：
+                        {group.items[0]?.adAccountId || '未记录'} · 广告系列：
+                        {group.items[0]?.campaignName ||
+                          group.items[0]?.campaignId ||
+                          '未记录'}
+                      </p>
+                    ) : null}
                     <p className="mt-2 text-xs text-slate-500">
                       {group.items.length} 次异常 · {adsetCount} 个广告组 ·{' '}
                       {activeCount} 个观察中
@@ -353,6 +352,12 @@ const ExperimentLibraryPage: React.FC = () => {
                 item={selectedItem}
                 snapshots={snapshots}
                 loading={loadingHistory}
+                onDeleted={async () => {
+                  setSelectedItem(null);
+                  setSelectedGroup(null);
+                  setSnapshots([]);
+                  await load();
+                }}
                 onBack={() => {
                   setSelectedItem(null);
                   setSnapshots([]);
@@ -378,6 +383,10 @@ const ExperimentLibraryPage: React.FC = () => {
                     {item.anomalyType}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
+                    广告账户：{item.adAccountId || '未记录'} · 广告系列：
+                    {item.campaignName || item.campaignId || '未记录'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
                     {item.recommendation}
                   </p>
                 </button>
@@ -395,6 +404,7 @@ interface ExperimentHistoryProps {
   snapshots: GrowthMonitoringSnapshot[];
   loading: boolean;
   onBack: () => void;
+  onDeleted: () => void | Promise<void>;
 }
 
 const ExperimentHistory: React.FC<ExperimentHistoryProps> = ({
@@ -402,11 +412,19 @@ const ExperimentHistory: React.FC<ExperimentHistoryProps> = ({
   snapshots,
   loading,
   onBack,
+  onDeleted,
 }) => (
   <>
-    <Button variant="ghost" size="sm" onClick={onBack}>
-      返回实验组
-    </Button>
+    <div className="flex items-center justify-between gap-2">
+      <Button variant="ghost" size="sm" onClick={onBack}>
+        返回实验组
+      </Button>
+      <DeleteRecordButton
+        id={item.id}
+        label={item.recommendation}
+        onDeleted={onDeleted}
+      />
+    </div>
     <div className="rounded-xl bg-slate-50 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{STATUS_LABELS[item.status] || item.status}</Badge>
@@ -418,7 +436,9 @@ const ExperimentHistory: React.FC<ExperimentHistoryProps> = ({
         {item.anomalyType}
       </p>
       <p className="mt-1 text-xs text-slate-500">
-        {item.campaignName || 'Campaign'} · {item.adsetName || '未定位广告组'}
+        广告账户 {item.adAccountId || '未记录'} ·{' '}
+        {item.campaignName || item.campaignId || 'Campaign'} ·{' '}
+        {item.adsetName || '未定位广告组'}
       </p>
       <p className="mt-3 text-sm text-slate-700">
         采取措施：{actionLabel(item)}

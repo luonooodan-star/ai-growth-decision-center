@@ -43,6 +43,7 @@ interface JudgmentQueueProps {
   onAnalyzeBatch: () => Promise<void>;
   onAnalysisModeChange: (mode: GrowthAnalysisMode) => Promise<void>;
   onToggleFocus: (id: string, focused: boolean) => Promise<void>;
+  onDeleted: () => void | Promise<void>;
   analysisMode: GrowthAnalysisMode;
   mavisConfigured: boolean;
   mavisModel: string;
@@ -80,6 +81,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   onAnalyzeBatch,
   onAnalysisModeChange,
   onToggleFocus,
+  onDeleted,
   analysisMode,
   mavisConfigured,
   mavisModel,
@@ -119,6 +121,15 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
   const openJudgmentCount: number = judgments.filter(
     (item: GrowthJudgment): boolean =>
       item.status === 'judgment_pending' || item.status === 'judgment_deferred',
+  ).length;
+  const unanalyzedCount: number = judgments.filter(
+    (item: GrowthJudgment): boolean =>
+      (item.status === 'judgment_pending' ||
+        item.status === 'judgment_deferred') &&
+      !item.aiAnalysis &&
+      item.aiAnalysisStatus !== 'running' &&
+      item.aiAnalysisStatus !== 'completed' &&
+      item.aiAnalysisStatus !== 'fallback',
   ).length;
 
   const openReview = (
@@ -185,20 +196,21 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
               size="sm"
               disabled={
                 saving ||
-                openJudgmentCount === 0 ||
+                unanalyzedCount === 0 ||
                 (analysisMode === 'marvis_bridge' && !mavisConfigured)
               }
               onClick={() => void onAnalyzeBatch()}
             >
               <BrainCircuit className="size-4" />
               {analysisMode === 'marvis_bridge'
-                ? `创建整批分析（${openJudgmentCount}）`
-                : `运行 Skill 分析（${openJudgmentCount}）`}
+                ? `创建整批分析（${unanalyzedCount}）`
+                : `运行 Skill 分析（${unanalyzedCount}）`}
             </Button>
             {mavisQueuedJobs > 0 ? (
               <Badge variant="outline">排队 {mavisQueuedJobs}</Badge>
             ) : null}
             <Badge variant="secondary">{openJudgmentCount} 条</Badge>
+            <Badge variant="outline">待分析 {unanalyzedCount}</Badge>
           </div>
         </CardHeader>
         <CardContent>
@@ -354,6 +366,10 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
           if (!open) setDetailId('');
         }}
         onAnalyze={onAnalyze}
+        onDelete={async () => {
+          setDetailId('');
+          await onDeleted();
+        }}
         onGenerateRecommendation={onGenerateRecommendation}
         onReview={openReview}
       />

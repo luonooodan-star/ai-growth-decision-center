@@ -103,4 +103,40 @@ describe('GrowthMavisAnalysisService', (): void => {
     expect(jobs[0].status).toBe('completed');
     expect(jobs[0].skillVersion).toBe(product.skillVersion);
   });
+
+  it('does not enqueue judgments that already have an analysis', async (): Promise<void> => {
+    const product: GrowthProduct = database.listProducts()[0];
+    const pending: GrowthJudgment = {
+      id: randomUUID(),
+      productId: product.id,
+      productName: product.name,
+      anomalyType: 'ECPM 高于上界',
+      severity: 'high',
+      status: 'judgment_pending',
+      channel: 'facebook',
+      campaignId: 'campaign-dedupe',
+      campaignName: 'Dedupe Campaign',
+      adsetId: 'adset-dedupe',
+      adsetName: 'Dedupe Adset',
+      targetMetric: 'ecpm',
+      currentValue: 10,
+      baselineValue: 5,
+      deviationPct: 100,
+      metricValues: { ecpm: 10 },
+      spend: 100,
+      evidence: 'ECPM 高于上界',
+      rootCause: '待进一步分析',
+      confidence: 95,
+      preliminaryJudgment: '异常条件成立，等待人工确认。',
+      createdAt: new Date().toISOString(),
+    };
+    database.saveDecisionRecord(pending);
+
+    const first = await service.analyzeProductBatch(product.id);
+    const second = await service.analyzeProductBatch(product.id);
+
+    expect(first.analyzedCount).toBe(1);
+    expect(second.analyzedCount).toBe(0);
+    expect(second.message).toContain('不会重复入队');
+  });
 });

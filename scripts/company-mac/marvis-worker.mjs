@@ -185,7 +185,7 @@ async function main() {
       await callTool('submit_anomaly_analysis', {
         jobId,
         workerId,
-        model: 'Codex Growth Analyst',
+        model: 'gpt-5.6-terra',
         analysis,
       }),
     );
@@ -208,7 +208,7 @@ async function main() {
       await callTool('submit_batch_analysis', {
         jobId,
         workerId,
-        model: 'Codex Growth Analyst',
+        model: 'gpt-5.6-terra',
         analyses,
       }),
     );

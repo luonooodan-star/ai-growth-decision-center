@@ -63,6 +63,7 @@ import { JudgmentQueue } from './JudgmentQueue';
 import { ObservationQueue } from './ObservationQueue';
 import { FetchHistoryControl } from './FetchHistoryControl';
 import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
+import { DeleteRecordButton } from './DeleteRecordButton';
 
 interface StatCardProps {
   label: string;
@@ -566,6 +567,7 @@ const GrowthDecisionPage: React.FC = () => {
             onAnalyzeBatch={handleBatchAnalysis}
             onAnalysisModeChange={handleAnalysisModeChange}
             onToggleFocus={handleToggleFocus}
+            onDeleted={loadDashboard}
             analysisMode={aiStatus?.selectedMode || 'product_skill'}
             mavisConfigured={Boolean(aiStatus?.configured)}
             mavisModel={aiStatus?.model || 'Codex Growth Analyst'}
@@ -669,6 +671,11 @@ const GrowthDecisionPage: React.FC = () => {
                             recordId={item.id}
                             title={`${item.productName} · ${item.recommendation}`}
                           />
+                          <DeleteRecordButton
+                            id={item.id}
+                            label={item.recommendation}
+                            onDeleted={loadDashboard}
+                          />
                           <Button
                             variant="outline"
                             onClick={() => setSelectedCase(item)}
@@ -766,24 +773,6 @@ const GrowthDecisionPage: React.FC = () => {
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
-                        <Button
-                          variant={item.isFocused ? 'secondary' : 'outline'}
-                          size="sm"
-                          className={
-                            item.isFocused
-                              ? 'border-amber-200 bg-amber-50 text-amber-700'
-                              : ''
-                          }
-                          disabled={saving}
-                          onClick={() =>
-                            void handleToggleFocus(item.id, !item.isFocused)
-                          }
-                        >
-                          <Star
-                            className={`size-4 ${item.isFocused ? 'fill-current' : ''}`}
-                          />
-                          {item.isFocused ? '重点关注' : '设为重点'}
-                        </Button>
                         {item.recoveryReadyAt && item.status !== 'completed' ? (
                           <Button
                             size="sm"
@@ -803,6 +792,11 @@ const GrowthDecisionPage: React.FC = () => {
                         >
                           查看详情 <ChevronRight className="size-4" />
                         </Button>
+                        <DeleteRecordButton
+                          id={item.id}
+                          label={item.recommendation}
+                          onDeleted={loadDashboard}
+                        />
                       </div>
                     </article>
                   ))}
@@ -1058,26 +1052,14 @@ const GrowthDecisionPage: React.FC = () => {
           {selectedCase ? (
             <div className="space-y-5 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  variant={selectedCase.isFocused ? 'secondary' : 'outline'}
-                  className={
-                    selectedCase.isFocused
-                      ? 'border-amber-200 bg-amber-50 text-amber-700'
-                      : ''
-                  }
-                  disabled={saving}
-                  onClick={() =>
-                    void handleToggleFocus(
-                      selectedCase.id,
-                      !selectedCase.isFocused,
-                    )
-                  }
-                >
-                  <Star
-                    className={`size-4 ${selectedCase.isFocused ? 'fill-current' : ''}`}
-                  />
-                  {selectedCase.isFocused ? '重点关注' : '设为重点关注'}
-                </Button>
+                <DeleteRecordButton
+                  id={selectedCase.id}
+                  label={selectedCase.recommendation}
+                  onDeleted={async () => {
+                    setSelectedCase(null);
+                    await loadDashboard();
+                  }}
+                />
                 {selectedCase.recoveryReadyAt &&
                 selectedCase.status !== 'completed' ? (
                   <Button

@@ -13,14 +13,18 @@ import {
 import type {
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
+  DeleteGrowthRecordRequest,
+  DeleteSkillRuleCandidateRequest,
   GrowthDashboardResponse,
   GrowthDashboardSummary,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
+  GrowthDeletionResult,
   GrowthJudgment,
   GrowthHistoryResetResult,
   GrowthMonitoringHistoryResponse,
   GrowthMonitoringSnapshot,
+  GrowthMavisJob,
   GrowthProduct,
   IngestDecisionCaseRequest,
   IngestJudgmentRequest,
@@ -129,6 +133,7 @@ export class GrowthDecisionService {
       severity: request.severity,
       status: 'judgment_pending',
       channel: request.channel,
+      adAccountId: request.adAccountId,
       campaignId: request.campaignId,
       campaignName: request.campaignName,
       adsetId: request.adsetId,
@@ -203,6 +208,15 @@ export class GrowthDecisionService {
         request.action === 'resolved' ? now : current.observationResolvedAt,
       skillRuleCandidate:
         request.skillRuleCandidate || current.skillRuleCandidate,
+      skillCandidateDeletedAt: request.skillRuleCandidate
+        ? undefined
+        : current.skillCandidateDeletedAt,
+      skillCandidateDeletedBy: request.skillRuleCandidate
+        ? undefined
+        : current.skillCandidateDeletedBy,
+      skillCandidateDeletionReason: request.skillRuleCandidate
+        ? undefined
+        : current.skillCandidateDeletionReason,
     };
     this.database.saveDecisionRecord(updated);
     if (request.action === 'observing') {
@@ -242,6 +256,7 @@ export class GrowthDecisionService {
       severity: judgment.severity,
       status: 'pending',
       channel: judgment.channel,
+      adAccountId: judgment.adAccountId,
       campaignId: judgment.campaignId,
       campaignName: judgment.campaignName,
       adsetId: judgment.adsetId,
@@ -317,6 +332,95 @@ export class GrowthDecisionService {
       throw new NotFoundException('决策记录不存在');
     }
     return { items: this.database.listActivities(id) };
+  }
+
+  deleteRecord(
+    id: string,
+    request: DeleteGrowthRecordRequest,
+    actor: string,
+  ): GrowthDeletionResult {
+    const current: DecisionRecord | undefined =
+      this.database.getDecisionRecord(id);
+    if (!current) throw new NotFoundException('决策记录不存在');
+    if (current.deletedAt) throw new BadRequestException('该记录已经删除');
+    if (request.confirmation !== 'DELETE_RECORD') {
+      throw new BadRequestException('二次确认信息不正确');
+    }
+    const reason: string = request.reason.trim();
+    if (reason.length < 2) {
+      throw new BadRequestException('请填写删除原因');
+    }
+    const deletedAt: string = new Date().toISOString();
+    this.database.saveDecisionRecord({
+      ...current,
+      deletedAt,
+      deletedBy: actor,
+      deletionReason: reason,
+    });
+    const relatedJobs: GrowthMavisJob[] = this.database
+      .listMavisJobs(undefined, 1000)
+      .filter(
+        (job: GrowthMavisJob): boolean =>
+          job.judgmentId === id || Boolean(job.judgmentIds?.includes(id)),
+      );
+    for (const job of relatedJobs) {
+      if (job.status !== 'queued' && job.status !== 'running') continue;
+      this.database.saveMavisJob({
+        ...job,
+        status: 'cancelled',
+        completedAt: deletedAt,
+        error: '关联异常已由 Growth 用户删除并归档',
+      });
+    }
+    this.database.appendActivity({
+      caseId: id,
+      action: 'record_deleted',
+      actor,
+      detail: reason,
+      metadata: {
+        source: 'growth_manual_delete',
+        recordType: this.isJudgmentRecord(current) ? 'judgment' : 'case',
+        archived: 'true',
+      },
+    });
+    return { id, deletedAt, archived: true };
+  }
+
+  deleteSkillRuleCandidate(
+    id: string,
+    request: DeleteSkillRuleCandidateRequest,
+    actor: string,
+  ): GrowthJudgment {
+    const current: GrowthJudgment = this.getJudgment(id);
+    if (request.confirmation !== 'DELETE_SKILL_CANDIDATE') {
+      throw new BadRequestException('二次确认信息不正确');
+    }
+    if (!current.skillRuleCandidate) {
+      throw new BadRequestException('该异常没有规则候选');
+    }
+    const reason: string = request.reason.trim();
+    if (reason.length < 2) {
+      throw new BadRequestException('请填写删除原因');
+    }
+    const updated: GrowthJudgment = {
+      ...current,
+      skillRuleCandidate: undefined,
+      skillCandidateDeletedAt: new Date().toISOString(),
+      skillCandidateDeletedBy: actor,
+      skillCandidateDeletionReason: reason,
+    };
+    this.database.saveDecisionRecord(updated);
+    this.database.appendActivity({
+      caseId: id,
+      action: 'skill_candidate_deleted',
+      actor,
+      detail: reason,
+      metadata: {
+        source: 'growth_manual_delete',
+        archivedCandidate: current.skillRuleCandidate,
+      },
+    });
+    return updated;
   }
 
   async createProduct(

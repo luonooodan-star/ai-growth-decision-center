@@ -13,6 +13,7 @@ import {
 
 import type {
   GrowthActionProposal,
+  GrowthAdFinding,
   GrowthDeliveryMetricKey,
   GrowthDiagnosticBreakdown,
   GrowthJudgment,
@@ -31,6 +32,7 @@ import {
 } from '@/components/ui/sheet';
 
 import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
+import { DeleteRecordButton } from './DeleteRecordButton';
 
 interface JudgmentDetailDrawerProps {
   item: GrowthJudgment | null;
@@ -41,6 +43,7 @@ interface JudgmentDetailDrawerProps {
   mavisRuntimeMode: 'external_worker' | 'skill_simulation';
   onOpenChange: (open: boolean) => void;
   onAnalyze: (id: string) => Promise<void>;
+  onDelete: () => void | Promise<void>;
   onGenerateRecommendation: (id: string) => Promise<void>;
   onReview: (
     item: GrowthJudgment,
@@ -144,6 +147,7 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
   mavisRuntimeMode,
   onOpenChange,
   onAnalyze,
+  onDelete,
   onGenerateRecommendation,
   onReview,
 }) => {
@@ -449,6 +453,53 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                         </ul>
                       </div>
                     ) : null}
+                    {item.aiAnalysis.adFindings?.length ? (
+                      <div className="mt-4">
+                        <p className="text-xs font-medium text-slate-500">
+                          广告级重点问题
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {item.aiAnalysis.adFindings.map(
+                            (finding: GrowthAdFinding) => (
+                              <div
+                                key={finding.adId}
+                                className="rounded-lg border border-red-200 bg-white p-3"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className="border-red-200 bg-red-50 text-red-700"
+                                  >
+                                    {finding.severity === 'critical'
+                                      ? '严重'
+                                      : finding.severity === 'high'
+                                        ? '高风险'
+                                        : '需关注'}
+                                  </Badge>
+                                  <span className="text-xs font-semibold text-slate-800">
+                                    {finding.adName || finding.adId}
+                                  </span>
+                                  <span className="text-[11px] text-slate-400">
+                                    {finding.adId}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs leading-5 text-slate-700">
+                                  {finding.issue}
+                                </p>
+                                <ul className="mt-2 space-y-1 text-[11px] leading-5 text-slate-500">
+                                  {finding.evidence.map((evidence: string) => (
+                                    <li key={evidence}>· {evidence}</li>
+                                  ))}
+                                </ul>
+                                <p className="mt-2 text-xs font-medium text-blue-700">
+                                  建议：{finding.suggestedAction}
+                                </p>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                     {item.aiAnalysis.recommendedActions?.length ? (
                       <div className="mt-4">
                         <p className="text-xs font-medium text-slate-500">
@@ -524,6 +575,11 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                 <DecisionHistoryDrawer
                   recordId={item.id}
                   title={`${item.productName} · ${item.anomalyType}`}
+                />
+                <DeleteRecordButton
+                  id={item.id}
+                  label={item.anomalyType}
+                  onDeleted={onDelete}
                 />
                 <Button
                   variant="outline"

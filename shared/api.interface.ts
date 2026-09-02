@@ -89,7 +89,14 @@ export type GrowthDeliveryMetricValues = Partial<
 >;
 
 export interface GrowthDiagnosticBreakdown {
-  dimension: 'country' | 'adset' | 'placement' | 'age' | 'gender' | 'audience';
+  dimension:
+    | 'country'
+    | 'adset'
+    | 'ad'
+    | 'placement'
+    | 'age'
+    | 'gender'
+    | 'audience';
   value: string;
   label?: string;
   metrics: GrowthDeliveryMetricValues;
@@ -196,6 +203,7 @@ export interface GrowthDecisionCase {
   severity: string;
   status: string;
   channel: string;
+  adAccountId?: string;
   campaignId?: string;
   campaignName?: string;
   adsetId?: string;
@@ -241,6 +249,9 @@ export interface GrowthDecisionCase {
   observationEndedAt?: string;
   hideAfterAt?: string;
   supersededByCaseId?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletionReason?: string;
   createdAt: string;
 }
 
@@ -271,6 +282,7 @@ export interface GrowthJudgment {
   severity: string;
   status: string;
   channel: string;
+  adAccountId?: string;
   campaignId?: string;
   campaignName?: string;
   adsetId?: string;
@@ -297,6 +309,9 @@ export interface GrowthJudgment {
   confidence: number;
   preliminaryJudgment: string;
   skillRuleCandidate?: string;
+  skillCandidateDeletedAt?: string;
+  skillCandidateDeletedBy?: string;
+  skillCandidateDeletionReason?: string;
   reviewReason?: string;
   reviewedBy?: string;
   reviewedAt?: string;
@@ -308,6 +323,9 @@ export interface GrowthJudgment {
   observationRecoveryReadyAt?: string;
   observationResolvedAt?: string;
   latestObservedValue?: number;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletionReason?: string;
   createdAt: string;
 }
 
@@ -353,8 +371,18 @@ export interface GrowthAiAnalysis {
   confidence: number;
   observationHours: number;
   recommendedActions?: GrowthActionProposal[];
+  adFindings?: GrowthAdFinding[];
   fallbackReason?: string;
   generatedAt: string;
+}
+
+export interface GrowthAdFinding {
+  adId: string;
+  adName?: string;
+  severity: 'medium' | 'high' | 'critical';
+  issue: string;
+  evidence: string[];
+  suggestedAction: string;
 }
 
 export interface GrowthActionProposal {
@@ -493,6 +521,22 @@ export interface UpdateRecordFocusRequest {
   focused: boolean;
 }
 
+export interface DeleteGrowthRecordRequest {
+  confirmation: 'DELETE_RECORD';
+  reason: string;
+}
+
+export interface DeleteSkillRuleCandidateRequest {
+  confirmation: 'DELETE_SKILL_CANDIDATE';
+  reason: string;
+}
+
+export interface GrowthDeletionResult {
+  id: string;
+  deletedAt: string;
+  archived: true;
+}
+
 export interface CreateProductRequest {
   name: string;
   targetMetric: string;
@@ -508,6 +552,7 @@ export interface IngestDecisionCaseRequest {
   anomalyType: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   channel: string;
+  adAccountId?: string;
   campaignId?: string;
   campaignName?: string;
   adsetId?: string;
@@ -539,6 +584,7 @@ export interface IngestJudgmentRequest {
   anomalyType: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   channel: string;
+  adAccountId?: string;
   campaignId?: string;
   campaignName?: string;
   adsetId?: string;

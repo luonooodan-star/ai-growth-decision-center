@@ -51,7 +51,7 @@ export class GrowthMavisAnalysisService {
       : jobs;
     return {
       provider: 'codex',
-      model: process.env.CODEX_ANALYSIS_MODEL || 'Codex Growth Analyst',
+      model: process.env.CODEX_ANALYSIS_MODEL || 'gpt-5.6-terra',
       configured: selectedMode === 'product_skill' || mcpConfigured,
       runtimeMode,
       selectedMode,
@@ -85,6 +85,18 @@ export class GrowthMavisAnalysisService {
     productId: string,
   ): Promise<GrowthBatchAnalysisResponse> {
     const product: GrowthProduct = this.getProduct(productId);
+    const openJudgmentIds: Set<string> = new Set(
+      this.database
+        .listMavisJobs(undefined, 1000)
+        .filter(
+          (job: GrowthMavisJob): boolean =>
+            job.productId === productId &&
+            (job.status === 'queued' || job.status === 'running'),
+        )
+        .flatMap((job: GrowthMavisJob): string[] =>
+          job.judgmentIds?.length ? job.judgmentIds : [job.judgmentId],
+        ),
+    );
     const judgments: GrowthJudgment[] = this.database
       .listDecisionRecords(5000)
       .filter(
@@ -92,13 +104,17 @@ export class GrowthMavisAnalysisService {
           'preliminaryJudgment' in record &&
           record.productId === productId &&
           (record.status === 'judgment_pending' ||
-            record.status === 'judgment_deferred'),
+            record.status === 'judgment_deferred') &&
+          !record.aiAnalysis &&
+          record.aiAnalysisStatus !== 'completed' &&
+          record.aiAnalysisStatus !== 'fallback' &&
+          !openJudgmentIds.has(record.id),
       );
     if (!judgments.length) {
       return {
         mode: product.analysisMode || 'product_skill',
         analyzedCount: 0,
-        message: '当前没有待分析的异常',
+        message: '当前没有尚未分析的异常；已完成和正在处理的记录不会重复入队',
       };
     }
 
@@ -108,7 +124,6 @@ export class GrowthMavisAnalysisService {
         'Codex 任务桥尚未配置 Token，请切换到产品 Skill 或先完成 Codex 接入',
       );
     }
-    this.cancelOpenJobs(productId, '已由新的整批分析任务替代');
     const job: GrowthMavisJob = {
       id: randomUUID(),
       judgmentId: judgments[0].id,
@@ -254,6 +269,7 @@ export class GrowthMavisAnalysisService {
           '不能只复述指标库越界；必须解释指标链路和可能原因',
           '对比消耗、ECPM、CTR、IPM、CPI、安装、收入和 ROAS 趋势',
           '使用可用的 Campaign、广告组、国家、版位、年龄和人群拆分',
+          '必须检查广告组下的广告级拆分；突出异常广告写入 adFindings',
           '缺失的字段或维度必须明确列为缺口，不能臆测',
           '给出可执行的投放动作、步骤、观察窗口、护栏和回滚条件',
         ],
@@ -285,7 +301,7 @@ export class GrowthMavisAnalysisService {
         job,
         {
           provider: 'codex',
-          model: request.model.trim() || 'Codex Growth Analyst',
+          model: request.model.trim() || 'gpt-5.6-terra',
           ...item.analysis,
           confidence: Math.round(item.analysis.confidence),
           observationHours: Math.round(item.analysis.observationHours),
@@ -317,7 +333,7 @@ export class GrowthMavisAnalysisService {
     this.validateAnalysis(request.analysis);
     const analysis: GrowthAiAnalysis = {
       provider: 'codex',
-      model: request.model.trim() || 'Codex Growth Analyst',
+      model: request.model.trim() || 'gpt-5.6-terra',
       ...request.analysis,
       confidence: Math.round(request.analysis.confidence),
       observationHours: Math.round(request.analysis.observationHours),
@@ -536,6 +552,20 @@ export class GrowthMavisAnalysisService {
               !Array.isArray(action.guardrails) ||
               action.observationHours < 1 ||
               action.observationHours > 168,
+          ))) ||
+      (analysis.adFindings !== undefined &&
+        (!Array.isArray(analysis.adFindings) ||
+          analysis.adFindings.some(
+            (finding): boolean =>
+              !finding.adId.trim() ||
+              !finding.issue.trim() ||
+              !finding.suggestedAction.trim() ||
+              !['medium', 'high', 'critical'].includes(finding.severity) ||
+              !Array.isArray(finding.evidence) ||
+              !finding.evidence.length ||
+              finding.evidence.some(
+                (evidence: string): boolean => !evidence.trim(),
+              ),
           )))
     ) {
       throw new BadRequestException('Codex 分析结果不符合结构化输出合同');

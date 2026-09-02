@@ -279,7 +279,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const [delivery, cohort] = await Promise.all([
+      const [delivery, cohort, adDelivery] = await Promise.all([
         deliveryDate
           ? trigger === 'manual' && Boolean(historyDays)
             ? this.queryDeliveryDetailsByDate(
@@ -372,13 +372,27 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               degradationNotes,
             )
           : Promise.resolve({ rows: [], row_count: 0 }),
+        deliveryDate && discoveredAppId
+          ? this.queryAdDeliveryDetails(
+              discoveredAppId,
+              startDate,
+              deliveryDate,
+              product.thresholds.markets
+                ? String(product.thresholds.markets).split(',')
+                : undefined,
+              degradationNotes,
+            )
+          : Promise.resolve({ rows: [], row_count: 0 }),
       ]);
 
       const metricRowsFetched =
-        Number(delivery.row_count || 0) + Number(cohort.row_count || 0);
+        Number(delivery.row_count || 0) +
+        Number(cohort.row_count || 0) +
+        Number(adDelivery.row_count || 0);
       const rowsFetched = metricRowsFetched + accountRowsFetched;
       const deliveryRows: DorisRow[] = delivery.rows || [];
       const cohortRows: DorisRow[] = cohort.rows || [];
+      const adDeliveryRows: DorisRow[] = adDelivery.rows || [];
       const spendRows: number = deliveryRows.filter(
         (row: DorisRow): boolean => dorisNumber(row, 'spend') !== undefined,
       ).length;
@@ -405,12 +419,14 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               updatedProduct,
               deliveryRows,
               cohortRows,
+              adDeliveryRows,
             )
           : 0;
       const anomalyCount: number = await this.detectAnomalies(
         updatedProduct,
         deliveryRows,
         cohortRows,
+        adDeliveryRows,
       );
       this.updateMonitoringSnapshots(
         updatedProduct,
@@ -765,6 +781,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     product: GrowthProduct,
     deliveryRows: DorisRow[],
     cohortRows: DorisRow[],
+    adDeliveryRows: DorisRow[],
   ): Promise<number> {
     const judgments: GrowthJudgment[] = this.database
       .listDecisionRecords(5000)
@@ -806,17 +823,19 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           dataDate,
           matchedCohort,
           matchedDeliveryRows,
+          adDeliveryRows,
         );
       const currentValue: number | undefined =
         metricValues[judgment.targetMetric];
-      const previousContext: string = JSON.stringify(
-        judgment.diagnosticContext || null,
+      const sourceRow: DorisRow = this.withAdAccount(
+        deliverySnapshot || matchedCohort || {},
+        adDeliveryRows,
+        dataDate,
       );
-      const nextContext: string = JSON.stringify(diagnosticContext);
-      const needsAnalysisRefresh: boolean = previousContext !== nextContext;
-      const sourceRow: DorisRow = deliverySnapshot || matchedCohort || {};
       this.database.saveDecisionRecord({
         ...judgment,
+        adAccountId:
+          dorisString(sourceRow, 'advertiser_id') || judgment.adAccountId,
         campaignName:
           dorisString(sourceRow, 'campaign_name') || judgment.campaignName,
         adsetName: dorisString(sourceRow, 'adgroup_name') || judgment.adsetName,
@@ -830,9 +849,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         evidence: judgment.evidence.includes('历史快照已回填')
           ? judgment.evidence
           : `${judgment.evidence}；${dataDate} 历史快照已回填。`,
-        ...(needsAnalysisRefresh
-          ? { aiAnalysisStatus: undefined, aiAnalysis: undefined }
-          : {}),
       });
       updatedCount += 1;
     }
@@ -866,6 +882,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     product: GrowthProduct,
     deliveryRows: DorisRow[],
     cohortRows: DorisRow[],
+    adDeliveryRows: DorisRow[],
   ): Promise<number> {
     let createdCount = 0;
     const latestDeliveryDate: string = this.latestDate(
@@ -876,7 +893,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       (row: DorisRow): boolean =>
         dorisString(row, 'report_date') === latestDeliveryDate,
     );
-    for (const row of latestDeliveryRows) {
+    for (const deliveryRow of latestDeliveryRows) {
+      const row: DorisRow = this.withAdAccount(
+        deliveryRow,
+        adDeliveryRows,
+        latestDeliveryDate,
+      );
       const matchedCohort: DorisRow | undefined = this.findMatchedCohort(
         row,
         cohortRows,
@@ -893,6 +915,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           row,
           latestDeliveryDate,
           matchedCohort,
+          undefined,
+          adDeliveryRows,
         );
       for (const key of ['cpi', 'ecpm', 'arpu'] as GrowthMetricKey[]) {
         if (
@@ -926,7 +950,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         latestDeliveryRows,
       );
       const deliverySnapshot: DorisRow | undefined = matchedDeliveryRows.length
-        ? this.aggregateDeliveryRows(matchedDeliveryRows)
+        ? this.withAdAccount(
+            this.aggregateDeliveryRows(matchedDeliveryRows),
+            adDeliveryRows,
+            latestDeliveryDate || latestCohortDate,
+          )
         : undefined;
       const metricValues: GrowthMetricValues = {
         ...(deliverySnapshot
@@ -941,6 +969,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           latestDeliveryDate || latestCohortDate,
           row,
           matchedDeliveryRows,
+          adDeliveryRows,
         );
       if (
         await this.createAnomalyIfNeeded(
@@ -990,13 +1019,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const existingJudgment: GrowthJudgment | undefined =
       this.findRecentJudgment(product.id, key, campaignId, adsetId);
     if (existingJudgment) {
-      const needsAnalysisRefresh: boolean =
-        !existingJudgment.diagnosticContext ||
-        existingJudgment.diagnosticContext.dataDate !==
-          diagnosticContext.dataDate ||
-        existingJudgment.diagnosticContext.availableFields.join(',') !==
-          diagnosticContext.availableFields.join(',') ||
-        existingJudgment.aiAnalysis?.model.includes('Simulation') === true;
       this.database.saveDecisionRecord({
         ...existingJudgment,
         campaignName:
@@ -1016,9 +1038,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         evidence: existingJudgment.evidence.includes(dataDate)
           ? existingJudgment.evidence
           : `${existingJudgment.evidence}；${dataDate} 已补齐完整投放快照。`,
-        ...(needsAnalysisRefresh
-          ? { aiAnalysisStatus: undefined, aiAnalysis: undefined }
-          : {}),
       });
       return false;
     }
@@ -1051,6 +1070,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         anomalyType: `${metric.label} ${thresholdRelation}人工正常范围`,
         severity: thresholdGapPct >= 30 ? 'high' : 'medium',
         channel: product.channel,
+        adAccountId: dorisString(row, 'advertiser_id'),
         campaignId,
         campaignName: dorisString(row, 'campaign_name'),
         adsetId,
@@ -1440,6 +1460,13 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const adjustRevenue: number = sum('adjust_revenue');
     return {
       report_date: dorisString(first, 'report_date'),
+      advertiser_id: rows.every(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'advertiser_id') ===
+          dorisString(first, 'advertiser_id'),
+      )
+        ? dorisString(first, 'advertiser_id')
+        : undefined,
       country_code: rows.every(
         (row: DorisRow): boolean =>
           dorisString(row, 'country_code') ===
@@ -1481,6 +1508,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     dataDate: string,
     cohortRow?: DorisRow,
     currentGroup?: DorisRow[],
+    adDeliveryRows: DorisRow[] = [],
   ): GrowthDiagnosticContext {
     const current: GrowthDeliveryMetricValues = {
       ...this.deliveryDiagnosticValues(currentRow),
@@ -1545,6 +1573,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         'country_code',
         'country_code',
       ),
+      ...this.buildAdBreakdowns(adDeliveryRows, currentRow, dataDate),
     ];
     const availableFields: string[] = DELIVERY_METRIC_KEYS.filter(
       (key: GrowthDeliveryMetricKey): boolean => current[key] !== undefined,
@@ -1553,6 +1582,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const availableDimensions: string[] = [
       dorisString(currentRow || {}, 'campaign_id') ? 'campaign' : '',
       dorisString(currentRow || {}, 'adgroup_id') ? 'adset' : '',
+      breakdowns.some(
+        (item: GrowthDiagnosticBreakdown): boolean => item.dimension === 'ad',
+      )
+        ? 'ad'
+        : '',
       dorisString(currentRow || {}, 'country_code') ||
       breakdowns.some(
         (item: GrowthDiagnosticBreakdown): boolean =>
@@ -1564,6 +1598,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const desiredDimensions: string[] = [
       'campaign',
       'adset',
+      'ad',
       'country',
       'placement',
       'age',
@@ -1605,6 +1640,24 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       (!adsetId || dorisString(right, 'adgroup_id') === adsetId) &&
       (!country || dorisString(right, 'country_code') === country)
     );
+  }
+
+  private withAdAccount(
+    row: DorisRow,
+    adDeliveryRows: DorisRow[],
+    dataDate: string,
+  ): DorisRow {
+    if (dorisString(row, 'advertiser_id')) return row;
+    const adsetId: string | undefined = dorisString(row, 'adgroup_id');
+    const matched: DorisRow | undefined = adDeliveryRows.find(
+      (candidate: DorisRow): boolean =>
+        dorisString(candidate, 'report_date') === dataDate &&
+        this.sameCampaign(row, candidate) &&
+        (!adsetId || dorisString(candidate, 'adgroup_id') === adsetId),
+    );
+    return matched
+      ? { ...row, advertiser_id: dorisString(matched, 'advertiser_id') }
+      : row;
   }
 
   private averageDiagnosticMetrics(
@@ -1662,6 +1715,40 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           (right.metrics.spend || 0) - (left.metrics.spend || 0),
       )
       .slice(0, 12);
+  }
+
+  private buildAdBreakdowns(
+    rows: DorisRow[],
+    currentRow: DorisRow | undefined,
+    dataDate: string,
+  ): GrowthDiagnosticBreakdown[] {
+    if (!currentRow) return [];
+    const adsetId: string | undefined = dorisString(
+      currentRow,
+      'adgroup_id',
+    );
+    const normalizedRows: DorisRow[] = rows
+      .filter(
+        (row: DorisRow): boolean =>
+          dorisString(row, 'report_date') === dataDate &&
+          this.sameCampaign(currentRow, row) &&
+          (!adsetId || dorisString(row, 'adgroup_id') === adsetId),
+      )
+      .map(
+        (row: DorisRow): DorisRow => ({
+          ...row,
+          media_clicks:
+            dorisNumber(row, 'media_clicks') ?? dorisNumber(row, 'clicks'),
+          media_installs:
+            dorisNumber(row, 'media_installs') ?? dorisNumber(row, 'installs'),
+        }),
+      );
+    return this.buildBreakdowns(
+      normalizedRows,
+      'ad',
+      'ad_id',
+      'ad_name',
+    );
   }
 
   private latestDate(rows: DorisRow[], field: string): string {
@@ -1745,6 +1832,70 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       rowCount += Number(result.row_count || result.rows?.length || 0);
     }
     return { rows, row_count: rowCount };
+  }
+
+  private async queryAdDeliveryDetails(
+    appId: number,
+    startDate: string,
+    endDate: string,
+    countries: string[] | undefined,
+    degradationNotes: string[],
+  ): Promise<DorisQueryResult> {
+    const filters: Record<string, unknown> = {
+      app_id: appId,
+      country_code: countries,
+    };
+    try {
+      return await this.queryMetricWithFallback(
+        {
+          dataset: 'bi_dwd.dwd_facebook_ad_daily',
+          dimensions: [
+            'report_date',
+            'advertiser_id',
+            'campaign_id',
+            'campaign_name',
+            'adgroup_id',
+            'adgroup_name',
+            'ad_id',
+            'ad_name',
+            'creative_id',
+            'creative_name',
+          ],
+          start_date: startDate,
+          end_date: endDate,
+          filters_json: JSON.stringify(filters),
+          metrics: ['spend', 'impressions', 'clicks', 'installs'],
+          limit: 5000,
+        },
+        {
+          dataset: 'bi_dwd.dwd_facebook_ad_daily',
+          dimensions: [
+            'report_date',
+            'advertiser_id',
+            'campaign_id',
+            'campaign_name',
+            'adgroup_id',
+            'adgroup_name',
+            'ad_id',
+            'ad_name',
+          ],
+          start_date: startDate,
+          end_date: endDate,
+          filters_json: JSON.stringify(filters),
+          metrics: ['spend', 'impressions'],
+          limit: 5000,
+        },
+        '广告级投放明细',
+        degradationNotes,
+      );
+    } catch (error: unknown) {
+      degradationNotes.push(
+        `广告级监控暂不可用：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return { rows: [], row_count: 0 };
+    }
   }
 
   private async queryMetric(

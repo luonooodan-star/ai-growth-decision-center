@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -13,6 +14,8 @@ import type {
   AnalyzeJudgmentRequest,
   CreateProductRequest,
   CreateRecommendationFromJudgmentRequest,
+  DeleteGrowthRecordRequest,
+  DeleteSkillRuleCandidateRequest,
   GrowthAiProviderStatus,
   GrowthBatchAnalysisResponse,
   GrowthDataHistoryResponse,
@@ -21,6 +24,7 @@ import type {
   GrowthFetchRun,
   GrowthDecisionCase,
   GrowthDecisionHistoryResponse,
+  GrowthDeletionResult,
   GrowthJudgment,
   GrowthHistoryResetResult,
   GrowthMavisJobListResponse,
@@ -93,6 +97,26 @@ export class GrowthDecisionController {
       id,
       request,
       '人工决策负责人',
+    );
+  }
+
+  @Delete('records/:id')
+  deleteRecord(
+    @Param('id') id: string,
+    @Body() request: DeleteGrowthRecordRequest,
+  ): GrowthDeletionResult {
+    return this.growthDecisionService.deleteRecord(id, request, 'growth');
+  }
+
+  @Delete('judgments/:id/skill-candidate')
+  deleteSkillRuleCandidate(
+    @Param('id') id: string,
+    @Body() request: DeleteSkillRuleCandidateRequest,
+  ): GrowthJudgment {
+    return this.growthDecisionService.deleteSkillRuleCandidate(
+      id,
+      request,
+      'growth',
     );
   }
 

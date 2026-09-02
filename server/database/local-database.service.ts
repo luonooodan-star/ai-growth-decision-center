@@ -153,7 +153,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(product.id, product.name, updatedAt, JSON.stringify(product));
   }
 
-  listDecisionRecords(limit = 200): DecisionRecord[] {
+  listDecisionRecords(limit = 200, includeDeleted = false): DecisionRecord[] {
     const rows: Record<string, unknown>[] = this.database
       .prepare(
         `
@@ -164,10 +164,15 @@ export class LocalDatabaseService implements OnModuleDestroy {
       `,
       )
       .all(limit);
-    return rows.map(
+    const records: DecisionRecord[] = rows.map(
       (row: Record<string, unknown>): DecisionRecord =>
         this.parsePayload<DecisionRecord>(row.payload),
     );
+    return includeDeleted
+      ? records
+      : records.filter(
+          (record: DecisionRecord): boolean => !record.deletedAt,
+        );
   }
 
   getDecisionRecord(id: string): DecisionRecord | undefined {

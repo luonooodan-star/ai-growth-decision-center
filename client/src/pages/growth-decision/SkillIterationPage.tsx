@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+import { DeleteRecordButton } from './DeleteRecordButton';
+
 const SkillIterationPage: React.FC = () => {
   const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
     null,
@@ -52,7 +54,8 @@ const SkillIterationPage: React.FC = () => {
     (): GrowthJudgment[] =>
       (dashboard?.judgments || []).filter(
         (item: GrowthJudgment): boolean =>
-          Boolean(item.skillRuleCandidate) || Boolean(item.reviewedAt),
+          !item.skillCandidateDeletedAt &&
+          (Boolean(item.skillRuleCandidate) || Boolean(item.reviewedAt)),
       ).sort(
         (left: GrowthJudgment, right: GrowthJudgment): number =>
           Number(Boolean(right.isFocused)) -
@@ -142,19 +145,29 @@ const SkillIterationPage: React.FC = () => {
                       key={item.id}
                       className="rounded-xl border border-slate-200 p-3"
                     >
-                      <div className="flex items-center gap-2">
-                        {item.isFocused ? (
-                          <Star className="size-4 fill-amber-400 text-amber-500" />
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {item.isFocused ? (
+                            <Star className="size-4 fill-amber-400 text-amber-500" />
+                          ) : null}
+                          {item.status === 'judgment_confirmed' ? (
+                            <CheckCircle2 className="size-4 text-emerald-600" />
+                          ) : (
+                            <ShieldAlert className="size-4 text-amber-600" />
+                          )}
+                          <p className="text-xs font-semibold text-slate-900">
+                            {item.targetMetric.toUpperCase()} ·{' '}
+                            {item.status.replace('judgment_', '')}
+                          </p>
+                        </div>
+                        {item.skillRuleCandidate ? (
+                          <DeleteRecordButton
+                            id={item.id}
+                            label={`${item.targetMetric.toUpperCase()} 规则候选`}
+                            mode="skill_candidate"
+                            onDeleted={load}
+                          />
                         ) : null}
-                        {item.status === 'judgment_confirmed' ? (
-                          <CheckCircle2 className="size-4 text-emerald-600" />
-                        ) : (
-                          <ShieldAlert className="size-4 text-amber-600" />
-                        )}
-                        <p className="text-xs font-semibold text-slate-900">
-                          {item.targetMetric.toUpperCase()} ·{' '}
-                          {item.status.replace('judgment_', '')}
-                        </p>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
                         {item.skillRuleCandidate || item.reviewReason || item.preliminaryJudgment}
