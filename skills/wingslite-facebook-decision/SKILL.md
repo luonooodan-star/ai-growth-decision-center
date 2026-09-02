@@ -21,6 +21,9 @@ read both [the decision standards](references/decision-standards.md) and the
    missing evidence. Always inspect ads below the affected ad set using
    `bi_dwd.dwd_facebook_ad_daily`; explicitly flag any ad with materially
    abnormal spend, ECPM, CTR, IPM, installs, or conversion quality.
+   Placement, age, gender, and audience breakdowns must be requested from
+   Doris automatically when the dataset exposes them. Never ask the operator
+   to manually export data already covered by the Doris read-only connection.
 4. Write one preliminary judgment with evidence, confidence, and an optional
    candidate rule. Wait for a human outcome: confirmed, deferred, or rejected.
 5. Generate adjustment recommendations only for confirmed judgments. Keep

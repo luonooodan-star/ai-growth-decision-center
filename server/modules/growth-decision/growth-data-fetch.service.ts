@@ -377,9 +377,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               discoveredAppId,
               startDate,
               deliveryDate,
-              product.thresholds.markets
-                ? String(product.thresholds.markets).split(',')
-                : undefined,
               degradationNotes,
             )
           : Promise.resolve({ rows: [], row_count: 0 }),
@@ -1574,6 +1571,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         'country_code',
       ),
       ...this.buildAdBreakdowns(adDeliveryRows, currentRow, dataDate),
+      ...this.buildTaggedBreakdowns(adDeliveryRows, currentRow, dataDate),
     ];
     const availableFields: string[] = DELIVERY_METRIC_KEYS.filter(
       (key: GrowthDeliveryMetricKey): boolean => current[key] !== undefined,
@@ -1751,6 +1749,54 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private buildTaggedBreakdowns(
+    rows: DorisRow[],
+    currentRow: DorisRow | undefined,
+    dataDate: string,
+  ): GrowthDiagnosticBreakdown[] {
+    if (!currentRow) return [];
+    const adsetId: string | undefined = dorisString(
+      currentRow,
+      'adgroup_id',
+    );
+    const dimensions: GrowthDiagnosticBreakdown['dimension'][] = [
+      'placement',
+      'age',
+      'gender',
+      'audience',
+    ];
+    return dimensions.flatMap(
+      (
+        dimension: GrowthDiagnosticBreakdown['dimension'],
+      ): GrowthDiagnosticBreakdown[] => {
+        const matchedRows: DorisRow[] = rows
+          .filter(
+            (row: DorisRow): boolean =>
+              dorisString(row, '__diagnostic_dimension') === dimension &&
+              dorisString(row, 'report_date') === dataDate &&
+              this.sameCampaign(currentRow, row) &&
+              (!adsetId || dorisString(row, 'adgroup_id') === adsetId),
+          )
+          .map(
+            (row: DorisRow): DorisRow => ({
+              ...row,
+              media_clicks:
+                dorisNumber(row, 'media_clicks') ?? dorisNumber(row, 'clicks'),
+              media_installs:
+                dorisNumber(row, 'media_installs') ??
+                dorisNumber(row, 'installs'),
+            }),
+          );
+        return this.buildBreakdowns(
+          matchedRows,
+          dimension,
+          '__diagnostic_value',
+          '__diagnostic_label',
+        );
+      },
+    );
+  }
+
   private latestDate(rows: DorisRow[], field: string): string {
     return rows.reduce((latest: string, row: DorisRow): string => {
       const value: string = dorisString(row, field) || '';
@@ -1838,15 +1884,56 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     appId: number,
     startDate: string,
     endDate: string,
-    countries: string[] | undefined,
     degradationNotes: string[],
   ): Promise<DorisQueryResult> {
-    const filters: Record<string, unknown> = {
-      app_id: appId,
-      country_code: countries,
-    };
+    const filters: Record<string, unknown> = { app_id: appId };
+    const breakdownPromises: Promise<DorisRow[]>[] = [
+      this.queryOptionalFacebookBreakdown(
+        'placement',
+        'bi_dwd.dwd_facebook_ad_daily',
+        [
+          ['publisher_platform', 'platform_position'],
+          ['placement'],
+        ],
+        filters,
+        startDate,
+        endDate,
+        degradationNotes,
+      ),
+      this.queryOptionalFacebookBreakdown(
+        'age',
+        'bi_dwd.dwd_facebook_ad_daily',
+        [['age']],
+        filters,
+        startDate,
+        endDate,
+        degradationNotes,
+      ),
+      this.queryOptionalFacebookBreakdown(
+        'gender',
+        'bi_dwd.dwd_facebook_ad_daily',
+        [['gender']],
+        filters,
+        startDate,
+        endDate,
+        degradationNotes,
+      ),
+      this.queryOptionalFacebookBreakdown(
+        'audience',
+        'bi_dwd.dwd_facebook_adgroup_daily',
+        [
+          ['audience_id', 'audience_name'],
+          ['custom_audience_id', 'custom_audience_name'],
+          ['targeting_id', 'targeting_name'],
+        ],
+        filters,
+        startDate,
+        endDate,
+        degradationNotes,
+      ),
+    ];
     try {
-      return await this.queryMetricWithFallback(
+      const adResult: DorisQueryResult = await this.queryMetricWithFallback(
         {
           dataset: 'bi_dwd.dwd_facebook_ad_daily',
           dimensions: [
@@ -1888,14 +1975,99 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         '广告级投放明细',
         degradationNotes,
       );
+      const breakdownRows: DorisRow[] = (
+        await Promise.all(breakdownPromises)
+      ).flat();
+      return {
+        rows: [...(adResult.rows || []), ...breakdownRows],
+        row_count:
+          Number(adResult.row_count || adResult.rows?.length || 0) +
+          breakdownRows.length,
+      };
     } catch (error: unknown) {
+      const breakdownRows: DorisRow[] = (
+        await Promise.all(breakdownPromises)
+      ).flat();
       degradationNotes.push(
         `广告级监控暂不可用：${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return { rows: [], row_count: 0 };
+      return {
+        rows: breakdownRows,
+        row_count: breakdownRows.length,
+      };
     }
+  }
+
+  private async queryOptionalFacebookBreakdown(
+    dimension: 'placement' | 'age' | 'gender' | 'audience',
+    dataset: string,
+    fieldCandidates: string[][],
+    filters: Record<string, unknown>,
+    startDate: string,
+    endDate: string,
+    degradationNotes: string[],
+  ): Promise<DorisRow[]> {
+    const entityDimensions: string[] = [
+      'report_date',
+      'advertiser_id',
+      'campaign_id',
+      'campaign_name',
+      'adgroup_id',
+      'adgroup_name',
+    ];
+    const errors: string[] = [];
+    for (const fields of fieldCandidates) {
+      try {
+        const result: DorisQueryResult = await this.queryMetricWithFallback(
+          {
+            dataset,
+            dimensions: [...entityDimensions, ...fields],
+            start_date: startDate,
+            end_date: endDate,
+            filters_json: JSON.stringify(filters),
+            metrics: ['spend', 'impressions', 'clicks', 'installs'],
+            limit: 5000,
+          },
+          {
+            dataset,
+            dimensions: [...entityDimensions, ...fields],
+            start_date: startDate,
+            end_date: endDate,
+            filters_json: JSON.stringify(filters),
+            metrics: ['spend', 'impressions'],
+            limit: 5000,
+          },
+          `${dimension} 拆分`,
+          [],
+        );
+        const rows: DorisRow[] = result.rows || [];
+        if (!rows.length) continue;
+        return rows
+          .map((row: DorisRow): DorisRow | undefined => {
+            const values: string[] = fields
+              .map((field: string): string => dorisString(row, field) || '')
+              .filter(Boolean);
+            if (!values.length) return undefined;
+            return {
+              ...row,
+              __diagnostic_dimension: dimension,
+              __diagnostic_value: values.join(' / '),
+              __diagnostic_label: values.join(' · '),
+            };
+          })
+          .filter((row: DorisRow | undefined): row is DorisRow => Boolean(row));
+      } catch (error: unknown) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    degradationNotes.push(
+      `Doris 未返回 ${dimension} 拆分${
+        errors.length ? `（${errors[errors.length - 1]}）` : ''
+      }`,
+    );
+    return [];
   }
 
   private async queryMetric(
