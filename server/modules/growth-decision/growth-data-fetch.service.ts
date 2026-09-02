@@ -822,6 +822,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           matchedDeliveryRows,
           adDeliveryRows,
         );
+      const gainedDiagnosticDimensions: boolean =
+        this.hasNewDiagnosticDimensions(
+          judgment.diagnosticContext,
+          diagnosticContext,
+        );
       const currentValue: number | undefined =
         metricValues[judgment.targetMetric];
       const sourceRow: DorisRow = this.withAdAccount(
@@ -839,6 +844,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         currentValue: currentValue ?? judgment.currentValue,
         metricValues: { ...judgment.metricValues, ...metricValues },
         diagnosticContext,
+        ...(gainedDiagnosticDimensions
+          ? { aiAnalysis: undefined, aiAnalysisStatus: undefined }
+          : {}),
         spend:
           dorisNumber(sourceRow, 'spend') ??
           dorisNumber(sourceRow, 'cohort_spend') ??
@@ -1016,6 +1024,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     const existingJudgment: GrowthJudgment | undefined =
       this.findRecentJudgment(product.id, key, campaignId, adsetId);
     if (existingJudgment) {
+      const gainedDiagnosticDimensions: boolean =
+        this.hasNewDiagnosticDimensions(
+          existingJudgment.diagnosticContext,
+          diagnosticContext,
+        );
       this.database.saveDecisionRecord({
         ...existingJudgment,
         campaignName:
@@ -1028,6 +1041,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ...metricValues,
         },
         diagnosticContext,
+        ...(gainedDiagnosticDimensions
+          ? { aiAnalysis: undefined, aiAnalysisStatus: undefined }
+          : {}),
         spend:
           dorisNumber(row, 'spend') ??
           dorisNumber(row, 'cohort_spend') ??
@@ -1620,6 +1636,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           !availableDimensions.includes(dimension),
       ),
     };
+  }
+
+  private hasNewDiagnosticDimensions(
+    previous: GrowthDiagnosticContext | undefined,
+    next: GrowthDiagnosticContext,
+  ): boolean {
+    const previousDimensions: Set<string> = new Set(
+      previous?.availableDimensions || [],
+    );
+    return next.availableDimensions.some(
+      (dimension: string): boolean => !previousDimensions.has(dimension),
+    );
   }
 
   private sameCampaign(left: DorisRow, right: DorisRow): boolean {
