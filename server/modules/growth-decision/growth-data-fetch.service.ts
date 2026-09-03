@@ -840,6 +840,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           dorisString(sourceRow, 'advertiser_id') || judgment.adAccountId,
         campaignName:
           dorisString(sourceRow, 'campaign_name') || judgment.campaignName,
+        adsetId: dorisString(sourceRow, 'adgroup_id') || judgment.adsetId,
         adsetName: dorisString(sourceRow, 'adgroup_name') || judgment.adsetName,
         currentValue: currentValue ?? judgment.currentValue,
         metricValues: { ...judgment.metricValues, ...metricValues },
@@ -980,13 +981,16 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           matchedDeliveryRows,
           adDeliveryRows,
         );
+      const anomalyRow: DorisRow = deliverySnapshot
+        ? { ...row, ...deliverySnapshot }
+        : row;
       if (
         await this.createAnomalyIfNeeded(
           product,
           'd0_roas',
           d0Roas,
           metricValues,
-          row,
+          anomalyRow,
           latestCohortDate,
           diagnosticContext,
         )
@@ -1035,8 +1039,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         );
       this.database.saveDecisionRecord({
         ...existingJudgment,
+        adAccountId:
+          dorisString(row, 'advertiser_id') || existingJudgment.adAccountId,
         campaignName:
           dorisString(row, 'campaign_name') || existingJudgment.campaignName,
+        adsetId: dorisString(row, 'adgroup_id') || existingJudgment.adsetId,
         adsetName:
           dorisString(row, 'adgroup_name') || existingJudgment.adsetName,
         currentValue,
@@ -1361,7 +1368,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           judgment.productId === productId &&
           judgment.targetMetric === metricKey &&
           judgment.campaignId === campaignId &&
-          judgment.adsetId === adsetId &&
+          (judgment.adsetId === adsetId ||
+            (Boolean(adsetId) && !judgment.adsetId)) &&
           new Date(judgment.createdAt).getTime() >= cutoff
         );
       });
@@ -1533,10 +1541,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         ? { d0_roas: dorisNumber(cohortRow, 'd0_roas') }
         : {}),
     };
+    const previousDate: string = this.previousCalendarDate(dataDate);
     const entityRows: DorisRow[] = currentRow
       ? deliveryRows.filter(
           (row: DorisRow): boolean =>
-            (dorisString(row, 'report_date') || '') < dataDate &&
+            dorisString(row, 'report_date') === previousDate &&
             this.sameDeliveryEntity(currentRow, row),
         )
       : [];
@@ -1625,6 +1634,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     ];
     return {
       dataDate,
+      comparisonDate: previousSnapshots.length ? previousDate : undefined,
       comparisonDays: previousSnapshots.length,
       current,
       previousAverage,
@@ -1640,6 +1650,13 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           !availableDimensions.includes(dimension),
       ),
     };
+  }
+
+  private previousCalendarDate(dataDate: string): string {
+    const parsed: Date = new Date(`${dataDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) return '';
+    parsed.setUTCDate(parsed.getUTCDate() - 1);
+    return parsed.toISOString().slice(0, 10);
   }
 
   private hasNewDiagnosticDimensions(

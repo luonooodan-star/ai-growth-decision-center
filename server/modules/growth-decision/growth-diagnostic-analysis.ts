@@ -103,7 +103,7 @@ const diagnose = (
     return {
       primaryCause: '历史对照数据不足，当前只能确认指标越界，不能确认根因',
       recommendedNextStep:
-        '保持预算不变，补齐至少一个历史完整窗口及广告组、版位、年龄和人群拆分后重新分析。',
+        '保持预算不变，补齐前一天完整数据及广告组、版位、年龄和人群拆分后重新分析。',
       actions: [
         action(judgment, {
           actionType: 'investigate_data',
@@ -111,7 +111,7 @@ const diagnose = (
           steps: [
             '等待下一次 Doris 完整抓取',
             '补查广告组、国家、版位、年龄和人群拆分',
-            '使用相同星期与小时窗口重新比较',
+            '补齐前一天同口径数据后重新比较',
           ],
           guardrails: commonGuardrails,
           rollbackCondition: '无需执行投放变更；数据补齐前维持现状。',
@@ -258,7 +258,7 @@ const evidence = (judgment: GrowthJudgment): string[] => {
       `${metricLabel(key)} ${formatValue(key, value)}` +
         (delta === undefined
           ? ''
-          : `，较前 ${context.comparisonDays} 个完整窗口${delta >= 0 ? '上升' : '下降'} ${Math.abs(delta).toFixed(2)}%`),
+          : `，较前一天${delta >= 0 ? '上升' : '下降'} ${Math.abs(delta).toFixed(2)}%`),
     );
   }
   if (context.missingDimensions.length) {

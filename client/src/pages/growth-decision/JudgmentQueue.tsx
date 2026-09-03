@@ -9,6 +9,7 @@ import {
 
 import type {
   GrowthAnalysisMode,
+  GrowthDiagnosticBreakdown,
   GrowthJudgment,
   ReviewJudgmentRequest,
 } from '@shared/api.interface';
@@ -70,6 +71,18 @@ const COMPACT_AI_JUDGMENT_LABELS: Record<string, string> = {
   confirmed: 'Codex 判断成立',
   uncertain: 'Codex 判断待定',
   rejected: 'Codex 判断不成立',
+};
+
+const resolvedAdsetLabel = (item: GrowthJudgment): string => {
+  if (item.adsetName || item.adsetId) return item.adsetName || item.adsetId!;
+  const adsets: GrowthDiagnosticBreakdown[] =
+    item.diagnosticContext?.breakdowns.filter(
+      (breakdown: GrowthDiagnosticBreakdown): boolean =>
+        breakdown.dimension === 'adset',
+    ) || [];
+  if (adsets.length === 1) return adsets[0].label || adsets[0].value;
+  if (adsets.length > 1) return `Campaign 汇总（${adsets.length} 个广告组）`;
+  return '未定位';
 };
 
 const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
@@ -238,7 +251,10 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           {item.campaignName || item.campaignId || '产品级'}
                         </span>
                         <span className="max-w-full truncate text-xs text-slate-500 lg:max-w-64">
-                          广告组：{item.adsetName || item.adsetId || '未定位'}
+                          广告组：{resolvedAdsetLabel(item)}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          上报：{new Date(item.createdAt).toLocaleString('zh-CN')}
                         </span>
                       </div>
                       <h2 className="mt-2 truncate text-sm font-semibold text-slate-950">
@@ -268,7 +284,7 @@ const JudgmentQueue: React.FC<JudgmentQueueProps> = ({
                           item.targetMetric
                         ] !== undefined ? (
                           <Badge variant="outline">
-                            较历史均值{' '}
+                            较前一天{' '}
                             {item.diagnosticContext.changesPct[
                               item.targetMetric
                             ]! > 0

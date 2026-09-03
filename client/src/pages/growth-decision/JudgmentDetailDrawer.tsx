@@ -138,6 +138,18 @@ const detailMetricValue = (
   return value.toFixed(3);
 };
 
+const resolvedAdsetLabel = (item: GrowthJudgment): string => {
+  if (item.adsetName || item.adsetId) return item.adsetName || item.adsetId!;
+  const adsets: GrowthDiagnosticBreakdown[] =
+    item.diagnosticContext?.breakdowns.filter(
+      (breakdown: GrowthDiagnosticBreakdown): boolean =>
+        breakdown.dimension === 'adset',
+    ) || [];
+  if (adsets.length === 1) return adsets[0].label || adsets[0].value;
+  if (adsets.length > 1) return `Campaign 汇总（${adsets.length} 个广告组）`;
+  return '未定位';
+};
+
 const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
   item,
   open,
@@ -180,7 +192,9 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
               <SheetDescription className="break-words leading-5">
                 Campaign：{item.campaignName || item.campaignId || '产品级'}
                 <br />
-                广告组：{item.adsetName || item.adsetId || '未定位'}
+                广告组：{resolvedAdsetLabel(item)}
+                <br />
+                异常上报时间：{new Date(item.createdAt).toLocaleString('zh-CN')}
               </SheetDescription>
             </SheetHeader>
 
@@ -263,8 +277,9 @@ const JudgmentDetailDrawer: React.FC<JudgmentDetailDrawerProps> = ({
                   </h3>
                   {item.diagnosticContext ? (
                     <Badge variant="outline">
-                      {item.diagnosticContext.dataDate} · 前{' '}
-                      {item.diagnosticContext.comparisonDays} 个窗口
+                      {item.diagnosticContext.comparisonDate
+                        ? `${item.diagnosticContext.dataDate} 对比 ${item.diagnosticContext.comparisonDate}`
+                        : `${item.diagnosticContext.dataDate} · 前一天无可比数据`}
                     </Badge>
                   ) : null}
                 </div>

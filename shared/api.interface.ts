@@ -104,6 +104,7 @@ export interface GrowthDiagnosticBreakdown {
 
 export interface GrowthDiagnosticContext {
   dataDate: string;
+  comparisonDate?: string;
   comparisonDays: number;
   current: GrowthDeliveryMetricValues;
   previousAverage: GrowthDeliveryMetricValues;
