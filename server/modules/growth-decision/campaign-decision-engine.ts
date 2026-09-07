@@ -295,14 +295,32 @@ export function buildCampaignCard(
       reason = '当前表现达标，维持投放并积累连续数据';
     } else reason = secondaryFailures[0] || reason;
   }
+  const candidateRule = matchCampaignRule(
+    product.campaignRules || [],
+    contiguous,
+    campaignMetric,
+  );
+  const urgentRule =
+    !noRecentDelivery && !staleHistory && age === 1
+      ? matchCampaignRule(
+          (product.campaignRules || []).filter((r) => r.urgent),
+          contiguous,
+          campaignMetric,
+        )
+      : undefined;
   const matchedRule: CampaignDecisionRule | undefined = !blockers.length
-    ? matchCampaignRule(product.campaignRules || [], contiguous, campaignMetric)
+    ? candidateRule
     : undefined;
   let appliedRule: CampaignDecisionRule | undefined;
   if (matchedRule) {
     if (
       matchedRule.verdict === 'increase' &&
-      (!good || secondaryFailures.length)
+      (!metric ||
+        contiguous.length < matchedRule.consecutiveDays ||
+        !contiguous
+          .slice(0, matchedRule.consecutiveDays)
+          .every((s) => inRange(campaignMetric(s, metric.key), metric)) ||
+        secondaryFailures.length)
     ) {
       verdict = 'observe';
       reason = `规则「${matchedRule.name}」命中，但主目标未连续达标或其他指标未达标，暂不加量`;
@@ -398,16 +416,24 @@ export function buildCampaignCard(
     trend,
     verdict,
     reason,
-    matchedRule: matchedRule
-      ? { id: matchedRule.id, name: matchedRule.name }
+    matchedRule: candidateRule
+      ? { id: candidateRule.id, name: candidateRule.name }
       : undefined,
-    urgent: matchedRule
-      ? matchedRule.urgent
-      : verdict === 'decrease' || verdict === 'adjust_ads',
+    urgent: Boolean(urgentRule),
     evidence: [
       `数据日 ${snapshot.dataDate}；覆盖国家 ${snapshot.countries.join('、') || '未返回'}`,
       previous ? `环比对照 ${previous.dataDate}` : '前一天无同系列可比数据',
       `连续可比且满足样本门槛 ${contiguous.length} 天`,
+      ...(candidateRule && blockers.length
+        ? [
+            `规则「${candidateRule.name}」条件命中，但未改变措施：${blockers.join('；')}`,
+          ]
+        : []),
+      ...(urgentRule
+        ? [
+            `异常优先处理规则「${urgentRule.name}」命中：${urgentRule.actionText}`,
+          ]
+        : []),
       ...secondaryFailures,
     ],
     blockers,

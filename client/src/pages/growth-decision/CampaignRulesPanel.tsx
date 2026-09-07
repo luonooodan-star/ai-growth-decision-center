@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { CampaignRuleConditions } from './CampaignRuleConditions';
+import { ANOMALY_TEMPLATES, anomalyTemplate } from './campaign-rule-templates';
 import { Badge } from '@/components/ui/badge';
 import {
   Sheet,
@@ -132,7 +133,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
       id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: `新增${CATEGORIES[category]}规则`,
       verdict: category,
-      enabled: false,
+      enabled: true,
       urgent: category === 'decrease' || category === 'adjust_ads',
       priority: 50,
       consecutiveDays: 2,
@@ -166,7 +167,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
         );
       await onSaved(saved.board);
       setNotice(
-        `规则已保存并重新判断 ${saved.board.items.length} 个系列，当前正常 ${saved.board.items.filter((c) => c.verdict === 'normal').length} 个。判断基于已结束数据日；不会自动提交 Codex 分析。`,
+        `已保存并重新判断 ${saved.board.items.length} 个系列；启用规则 ${saved.rules.filter((r) => r.enabled).length} 条，停用 ${saved.rules.filter((r) => !r.enabled).length} 条。命中 ${saved.board.items.filter((c) => c.matchedRule).length} 个系列，异常优先 ${saved.board.items.filter((c) => c.urgent).length} 个。被数据或安全条件拦截的原因可在“查看”中检查；不会自动提交 Codex 分析。`,
       );
     } catch (e: unknown) {
       setError(errorText(e));
@@ -198,6 +199,32 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
               ID
               排序。未命中时沿用内置判断。自定义规则不能跳过数据完整性、样本和加量达标保护。
             </p>
+            <div className="flex flex-wrap gap-2">
+              {ANOMALY_TEMPLATES.map((template, index) => (
+                <Button
+                  key={template.metric}
+                  size="sm"
+                  variant="outline"
+                  disabled={!config || saving || config.rules.length >= 50}
+                  onClick={() => {
+                    if (!config) return;
+                    const rule = anomalyTemplate(
+                      index,
+                      `rule-${Date.now()}-${index}`,
+                    );
+                    setConfig({ ...config, rules: [...config.rules, rule] });
+                    setCategory('observe');
+                    setSelectedId(rule.id);
+                    setDirty(true);
+                    setNotice(
+                      '已添加异常模板草稿：环比 30% 仅为待确认示例。请修改阈值、补全 CPI 临界值，并启用后保存。买量 CPM 不是产品变现 ECPM，下降不一定是坏事。',
+                    );
+                  }}
+                >
+                  异常模板：{template.label}
+                </Button>
+              ))}
+            </div>
             <div className="flex flex-wrap gap-2">
               {(Object.keys(CATEGORIES) as CampaignVerdict[]).map((v) => (
                 <Button
@@ -378,7 +405,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
                 </label>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Badge variant="outline">
-                    新规则默认停用，请确认条件后启用
+                    保存前请核对规则启用状态和条件
                   </Badge>
                   <Button
                     size="sm"

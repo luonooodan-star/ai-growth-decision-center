@@ -257,7 +257,7 @@ export const CampaignBoardList: React.FC<Props> = ({
             )}
             <div className="mt-4 flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setDetail(card.key)}>
-                查看判断与行动
+                查看
                 <ChevronRight className="size-4" />
               </Button>
               {!['observe', 'normal'].includes(card.verdict) && (
@@ -270,22 +270,27 @@ export const CampaignBoardList: React.FC<Props> = ({
                   接受并生成执行单
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => openDecision(card, 'observe')}
-              >
-                观察
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => openDecision(card, 'reject')}
-              >
-                不接受
-              </Button>
+              {card.verdict !== 'normal' && !card.noRecentDelivery && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => openDecision(card, 'observe')}
+                >
+                  观察
+                </Button>
+              )}
+              {!['normal', 'observe'].includes(card.verdict) &&
+                !card.noRecentDelivery && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => openDecision(card, 'reject')}
+                  >
+                    不接受
+                  </Button>
+                )}
               <Badge variant="outline">
                 {card.analysis
                   ? `${card.analysis.provider === 'codex' ? 'Codex' : '规则'}分析已返回`

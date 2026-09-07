@@ -40,6 +40,73 @@ const rule = (
 });
 
 describe('campaign rules and one-click batch', () => {
+  it('uses the custom increase duration and surfaces independently matched urgent rules', () => {
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const date = previousDay(today);
+    const row: CampaignDailySnapshot = {
+      key: 'test',
+      productId: 'test',
+      campaignId: 'test',
+      campaignName: 'test',
+      accountId: 'test',
+      countries: ['IN'],
+      dataDate: date,
+      fetchedAt: new Date().toISOString(),
+      qualityIssues: [],
+      breakdowns: [],
+      metrics: {
+        spend: 100,
+        adjust_installs: 500,
+        d0_roas: 0.9,
+        cpi: 0.2,
+        ctr: 0.005,
+      },
+    };
+    const custom = {
+      targetMetric: 'd0_roas',
+      dataDelayMinutes: 60,
+      metrics: [{ key: 'd0_roas', lowerBound: 0.7 }],
+      campaignRules: [
+        rule({ verdict: 'increase', consecutiveDays: 1, urgent: false }),
+      ],
+    } as GrowthProduct;
+    expect(buildCampaignCard(custom, [row], []).verdict).toBe('increase');
+    custom.campaignRules!.push(
+      rule({
+        id: 'urgent-ctr',
+        name: 'CTR sudden drop',
+        priority: 10,
+        urgent: true,
+        consecutiveDays: 1,
+        conditions: [
+          {
+            metric: 'ctr',
+            basis: 'previous_day_change',
+            operator: 'lte',
+            value: -30,
+          },
+        ],
+      }),
+    );
+    const prior = {
+      ...row,
+      dataDate: previousDay(date),
+      metrics: { ...row.metrics, ctr: 0.01 },
+    };
+    const card = buildCampaignCard(custom, [row, prior], []);
+    expect(card.urgent).toBe(true);
+    expect(card.evidence.join()).toContain('CTR sudden drop');
+    const missingTarget = {
+      ...row,
+      metrics: { ...row.metrics, d0_roas: undefined },
+    };
+    const blocked = buildCampaignCard(custom, [missingTarget, prior], []);
+    expect(blocked.urgent).toBe(true);
+    expect(blocked.primaryAction.changePct).toBeUndefined();
+    expect(blocked.blockers.join()).toContain('主目标指标未返回');
+  });
   const file = join(tmpdir(), `campaign-rules-${randomUUID()}.sqlite`);
   const now = new Date();
   const day = previousDay(
