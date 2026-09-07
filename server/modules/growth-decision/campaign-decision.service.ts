@@ -101,6 +101,11 @@ export class CampaignDecisionService {
         }
         return card;
       })
+      .filter(
+        (card) =>
+          !card.noDeliveryHideAfter ||
+          Date.parse(card.noDeliveryHideAfter) > Date.now(),
+      )
       .sort(
         (a, b) =>
           Number(Boolean(b.urgent)) - Number(Boolean(a.urgent)) ||

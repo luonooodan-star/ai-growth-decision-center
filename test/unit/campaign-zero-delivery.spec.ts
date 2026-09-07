@@ -31,6 +31,85 @@ const snapshot = (): CampaignDailySnapshot => ({
   },
 });
 describe('zero delivery is not a missing target anomaly', () => {
+  it('classifies two consecutive zero-spend days even with earlier spend and attribution', () => {
+    const days = ['2026-09-06', '2026-09-05', '2026-09-04'].map(
+      (dataDate, i) => ({
+        ...snapshot(),
+        dataDate,
+        metrics: {
+          ...snapshot().metrics,
+          spend: i === 2 ? 50 : 0,
+          adjust_installs: 10,
+        },
+      }),
+    );
+    const card = buildCampaignCard(product, days, [], now);
+    expect(card.noRecentDelivery).toBe(true);
+    expect(card.noDeliveryHideAfter).toBe('2026-09-13T16:00:00.000Z');
+    expect(card.reason).toContain('连续 2');
+    const resumed = {
+      ...snapshot(),
+      dataDate: '2026-09-07',
+      metrics: { ...snapshot().metrics, spend: 1 },
+    };
+    expect(
+      buildCampaignCard(product, [...days, resumed], [], now).noRecentDelivery,
+    ).toBe(false);
+  });
+  it('keeps a stable seven-day deadline without deleting source snapshots', () => {
+    const days = Array.from({ length: 9 }, (_, i) => ({
+      ...snapshot(),
+      dataDate: `2026-${i < 6 ? '09' : '08'}-${String(i < 6 ? 6 - i : 37 - i).padStart(2, '0')}`,
+    }));
+    const card = buildCampaignCard(product, days, [], now);
+    expect(card.noDeliveryHideAfter).toBe('2026-09-06T16:00:00.000Z');
+    expect(Date.parse(card.noDeliveryHideAfter!)).toBeLessThan(now.getTime());
+    expect(
+      buildCampaignCard(
+        product,
+        days.map((s) => ({
+          ...s,
+          fetchedAt: new Date(now.getTime() + 3600000).toISOString(),
+        })),
+        [],
+        new Date(now.getTime() + 3600000),
+      ).noDeliveryHideAfter,
+    ).toBe(card.noDeliveryHideAfter);
+    expect(days).toHaveLength(9);
+  });
+  it('does not bridge missing days or use missing spend as zero', () => {
+    const day = {
+      ...snapshot(),
+      metrics: {
+        ...snapshot().metrics,
+        adjust_installs: 10,
+        media_installs: 1,
+      },
+    };
+    expect(
+      buildCampaignCard(
+        product,
+        [day, { ...day, dataDate: '2026-09-04' }],
+        [],
+        now,
+      ).noRecentDelivery,
+    ).toBe(false);
+    expect(
+      buildCampaignCard(
+        product,
+        [
+          day,
+          {
+            ...day,
+            dataDate: '2026-09-05',
+            metrics: { ...day.metrics, spend: undefined },
+          },
+        ],
+        [],
+        now,
+      ).noRecentDelivery,
+    ).toBe(false);
+  });
   it('does not mistake Adjust attribution installs for new media delivery', () => {
     const source = {
       ...snapshot(),

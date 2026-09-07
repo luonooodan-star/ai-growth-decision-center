@@ -61,6 +61,13 @@ export const CampaignBoardDetail: React.FC<Props> = ({
             </div>
           )}
           <h3 className="font-semibold">已返回的每日数据与趋势</h3>
+          {selected.noDeliveryHideAfter && (
+            <p className="text-sm text-slate-500">
+              从连续第二个零消耗日结束时起保留 7 天，
+              {new Date(selected.noDeliveryHideAfter).toLocaleString('zh-CN')}{' '}
+              后隐藏；历史数据不删除。
+            </p>
+          )}
           {selected.noRecentDelivery && (
             <p className="text-sm text-slate-500">
               消耗、展示、点击与媒体安装均为零，未发现新增媒体投放。Adjust

@@ -130,19 +130,48 @@ export function buildCampaignCard(
       Boolean(o.campaignExecution) &&
       [snapshot.key, ...relatedKeys].includes(o.campaignExecution!.campaignKey),
   );
+  const zeroSpendDays: CampaignDailySnapshot[] = [];
+  let zeroDate = previousDay(today);
+  for (const day of completedDays) {
+    if (
+      day.dataDate !== zeroDate ||
+      day.qualityIssues.length ||
+      day.metrics.spend !== 0
+    )
+      break;
+    zeroSpendDays.push(day);
+    zeroDate = previousDay(zeroDate);
+  }
+  const twoZeroDays = zeroSpendDays.length >= 2;
+  const resumedToday = sorted.some(
+    (s) => s.dataDate === today && (s.metrics.spend ?? 0) > 0,
+  );
   const noRecentDelivery =
     age <= 2 &&
     age >= 0 &&
     now.getTime() - Date.parse(snapshot.fetchedAt) <=
       Math.max(3, product.dataDelayMinutes / 30) * 3600000 &&
-    [...trend, ...sorted.filter((s) => s.dataDate === today)].every(
-      hasZeroDelivery,
-    ) &&
+    !resumedToday &&
+    (twoZeroDays ||
+      [...trend, ...sorted.filter((s) => s.dataDate === today)].every(
+        hasZeroDelivery,
+      )) &&
     !recentOrders.some(
       (o) =>
         o.campaignExecution?.state === 'pending' ||
         (o.campaignExecution?.state === 'executed' && o.status !== 'completed'),
     );
+  // Second zero-spend day ends at next Shanghai midnight; retain seven more days.
+  // Never use fetchedAt, because hourly refreshes must not reset the deadline.
+  const noDeliveryHideAfter =
+    noRecentDelivery && twoZeroDays
+      ? new Date(
+          Date.parse(
+            `${zeroSpendDays[zeroSpendDays.length - 2].dataDate}T00:00:00+08:00`,
+          ) +
+            8 * 86400000,
+        ).toISOString()
+      : undefined;
   if (zeroDelivery)
     blockers.push('本数据日无新增投放，CPI、CPM、D0 不适用；不代表效果不达标');
   if (age > 1)
@@ -227,6 +256,8 @@ export function buildCampaignCard(
   let reason: string = blockers[0] || '等待连续完整数据日，下一次抓取后复查';
   if (noRecentDelivery)
     reason = '已返回窗口无新增投放，仅保留历史回流记录；不作效果异常判断';
+  if (noRecentDelivery && twoZeroDays)
+    reason = `连续 ${zeroSpendDays.length} 个已结束数据日无消耗，归入无新增投放`;
   if (!blockers.length) {
     if (bad) {
       verdict = 'decrease';
@@ -332,6 +363,7 @@ export function buildCampaignCard(
   };
   return {
     noRecentDelivery,
+    noDeliveryHideAfter,
     key: snapshot.key,
     revision: campaignHash([
       trend.map((s) => ({ ...s, fetchedAt: undefined })),
