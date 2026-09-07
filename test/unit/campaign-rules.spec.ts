@@ -219,6 +219,53 @@ describe('campaign rules and one-click batch', () => {
     ).toBeUndefined();
   });
 
+  it('evaluates normal rules on ended days even when today has no matured D0', () => {
+    const today = now.toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const intraday = {
+      ...snapshot(today),
+      metrics: { spend: 80, adjust_installs: 2000, cpi: 0.04 },
+    };
+    const configured = {
+      ...product,
+      campaignRules: [rule({ verdict: 'normal' })],
+    };
+    const history = [intraday, snapshot(day), snapshot(previousDay(day))];
+    const card = buildCampaignCard(configured, history, [], now);
+    expect(card.verdict).toBe('normal');
+    expect(card.snapshot.dataDate).toBe(day);
+    expect(card.previous?.dataDate).toBe(previousDay(day));
+    expect(card.currentDaySnapshot).toEqual(intraday);
+    expect(card.trend.some((s) => s.dataDate === today)).toBe(false);
+    expect(card.revision).toBe(
+      buildCampaignCard(configured, history.slice(1), [], now).revision,
+    );
+    expect(buildCampaignCard(configured, [intraday], [], now).verdict).toBe(
+      'observe',
+    );
+  });
+
+  it('does not bypass a failed ended day by selecting an older healthy snapshot', () => {
+    const configured = {
+      ...product,
+      campaignRules: [rule({ verdict: 'normal' })],
+    };
+    const card = buildCampaignCard(
+      configured,
+      [
+        { ...snapshot(day), qualityIssues: ['昨日数据未补齐'] },
+        snapshot(previousDay(day)),
+        snapshot(previousDay(previousDay(day))),
+      ],
+      [],
+      now,
+    );
+    expect(card.snapshot.dataDate).toBe(day);
+    expect(card.verdict).toBe('observe');
+    expect(card.blockers).toContain('昨日数据未补齐');
+  });
+
   it('persists product-specific rules, rejects stale edits, and changes decision revisions', () => {
     db.saveCampaignSnapshot(snapshot(day));
     db.saveCampaignSnapshot(snapshot(previousDay(day)));
@@ -228,7 +275,12 @@ describe('campaign rules and one-click batch', () => {
       ...config,
       rules: [rule()],
     });
-    expect(management.rules(product.id)).toEqual(saved);
+    expect(saved.board.items[0].verdict).toBe('observe');
+    expect(saved.board.items[0].revision).not.toBe(before.revision);
+    expect(management.rules(product.id)).toEqual({
+      rules: saved.rules,
+      revision: saved.revision,
+    });
     expect(campaigns.board(product.id).items[0].verdict).toBe('observe');
     expect(campaigns.board(product.id).items[0].revision).not.toBe(
       before.revision,

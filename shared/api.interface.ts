@@ -37,6 +37,10 @@ export interface CampaignRulesConfig {
   revision: string;
 }
 
+export interface CampaignRulesSaveResult extends CampaignRulesConfig {
+  board: CampaignDecisionBoard;
+}
+
 export interface CampaignBatchAnalysisRequest {
   campaigns: Array<{ key: string; revision: string }>;
 }
@@ -65,6 +69,8 @@ export interface CampaignDecisionCard {
   key: string;
   revision: string;
   snapshot: CampaignDailySnapshot;
+  /** Today's provisional data, separate from the completed-day decision basis. */
+  currentDaySnapshot?: CampaignDailySnapshot;
   previous?: CampaignDailySnapshot;
   trend: CampaignDailySnapshot[];
   verdict: CampaignVerdict;

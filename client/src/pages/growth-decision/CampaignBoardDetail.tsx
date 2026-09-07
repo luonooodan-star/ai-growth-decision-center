@@ -58,6 +58,16 @@ export const CampaignBoardDetail: React.FC<Props> = ({
             </div>
           )}
           <h3 className="font-semibold">最近完整数据与趋势</h3>
+          {selected.currentDaySnapshot && (
+            <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+              今天 {selected.currentDaySnapshot.dataDate}{' '}
+              尚未结束，仅供观察：消耗{' '}
+              {metric('spend', selected.currentDaySnapshot.metrics.spend)} · CPI{' '}
+              {metric('cpi', selected.currentDaySnapshot.metrics.cpi)}
+              。当前判断基于 {selected.snapshot.dataDate}
+              ，不将今日缺失的成熟指标视为不达标。
+            </div>
+          )}
           <div className="space-y-2">
             {selected.trend.map((day) => (
               <div

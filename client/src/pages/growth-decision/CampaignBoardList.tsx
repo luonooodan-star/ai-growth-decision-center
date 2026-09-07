@@ -156,6 +156,15 @@ export const CampaignBoardList: React.FC<Props> = ({
         </Button>
       </div>
       <p className="text-xs text-slate-500">
+        {board && (
+          <>
+            最近重新判断：{new Date(board.generatedAt).toLocaleString('zh-CN')}
+            。{' '}
+          </>
+        )}
+        判断基于最近已结束数据日，今天数据仅供观察。
+      </p>
+      <p className="text-xs text-slate-500">
         一键分析作用于当前筛选列表，同一数据版本的已完成和排队任务会跳过。措施判断条件在“系列判断规则”新增。
       </p>
       <Input
@@ -197,7 +206,7 @@ export const CampaignBoardList: React.FC<Props> = ({
                 {filter === 'actionable' && index < 3
                   ? `优先 ${index + 1} · `
                   : ''}
-                数据日 {card.snapshot.dataDate}
+                判断数据日 {card.snapshot.dataDate}
               </span>
             </div>
             <h3 className="mt-3 break-words font-semibold text-slate-900">

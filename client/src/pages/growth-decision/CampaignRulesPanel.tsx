@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Plus } from 'lucide-react';
 import type {
   CampaignDecisionRule,
+  CampaignDecisionBoard,
   CampaignRulesConfig,
   CampaignVerdict,
 } from '@shared/api.interface';
@@ -56,7 +57,11 @@ const DEFAULT_LOGIC: Record<CampaignVerdict, string> = {
 type Condition = CampaignDecisionRule['conditions'][number];
 const errorText = (e: unknown): string =>
   axios.isAxiosError(e)
-    ? String(e.response?.data?.message || e.message)
+    ? String(
+        e.response?.data?.error?.message ||
+          e.response?.data?.message ||
+          e.message,
+      )
     : e instanceof Error
       ? e.message
       : '操作失败';
@@ -65,7 +70,7 @@ interface CampaignRulesPanelProps {
   productId: string;
   open: boolean;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (board: CampaignDecisionBoard) => Promise<void>;
 }
 export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
   productId,
@@ -153,11 +158,15 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
     setNotice('');
     try {
       const saved = await saveCampaignRules(productId, config);
-      setConfig(saved);
+      setConfig({ rules: saved.rules, revision: saved.revision });
       setDirty(false);
-      await onSaved();
+      if (!saved.board)
+        throw new Error(
+          '规则已保存，但服务未返回重算结果，请更新公司服务后刷新。',
+        );
+      await onSaved(saved.board);
       setNotice(
-        '规则已保存，决策台已重新判断；未执行的 Codex 分析不会被自动重复提交。',
+        `规则已保存并重新判断 ${saved.board.items.length} 个系列，当前正常 ${saved.board.items.filter((c) => c.verdict === 'normal').length} 个。判断基于已结束数据日；不会自动提交 Codex 分析。`,
       );
     } catch (e: unknown) {
       setError(errorText(e));

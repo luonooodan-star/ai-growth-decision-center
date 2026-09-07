@@ -9,6 +9,7 @@ import type {
   CampaignBatchAnalysisRequest,
   CampaignBatchAnalysisResult,
   CampaignRulesConfig,
+  CampaignRulesSaveResult,
   GrowthProduct,
   GrowthJudgment,
 } from '@shared/api.interface';
@@ -38,7 +39,7 @@ export class CampaignBoardManagementService {
   saveRules(
     productId: string,
     request: CampaignRulesConfig,
-  ): CampaignRulesConfig {
+  ): CampaignRulesSaveResult {
     const current = this.rules(productId);
     if (!request || request.revision !== current.revision)
       throw new ConflictException('规则已更新，请关闭后重新打开规则面板');
@@ -57,7 +58,7 @@ export class CampaignBoardManagementService {
         after: JSON.stringify(rules),
       },
     });
-    return this.rules(productId);
+    return { ...this.rules(productId), board: this.campaigns.board(productId) };
   }
 
   async analyzeBatch(

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import type {
   CampaignDecisionBoard as Board,
@@ -41,7 +41,11 @@ const POLICY_LABELS: Record<keyof CampaignDecisionPolicy, string> = {
 };
 function errorText(error: unknown): string {
   return axios.isAxiosError(error)
-    ? String(error.response?.data?.message || error.message)
+    ? String(
+        error.response?.data?.error?.message ||
+          error.response?.data?.message ||
+          error.message,
+      )
     : error instanceof Error
       ? error.message
       : '操作失败';
@@ -74,11 +78,16 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     null,
   );
 
+  const loadSequence = useRef(0);
   const load = useCallback(async (): Promise<void> => {
+    const sequence = ++loadSequence.current;
     try {
-      setBoard(await api.getCampaignBoard(productId));
+      const nextBoard = await api.getCampaignBoard(productId);
+      if (sequence !== loadSequence.current) return;
+      setBoard(nextBoard);
       setError('');
     } catch (e: unknown) {
+      if (sequence !== loadSequence.current) return;
       setError(errorText(e));
     }
   }, [productId]);
@@ -407,8 +416,10 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
         productId={productId}
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
-        onSaved={async () => {
-          await load();
+        onSaved={async (nextBoard) => {
+          ++loadSequence.current;
+          setBoard(nextBoard);
+          setError('');
           await onChanged();
         }}
       />

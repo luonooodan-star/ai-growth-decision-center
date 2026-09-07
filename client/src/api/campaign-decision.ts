@@ -3,6 +3,7 @@ import type {
   CampaignDecisionBoard,
   CampaignDecisionPolicy,
   CampaignRulesConfig,
+  CampaignRulesSaveResult,
   CampaignBatchAnalysisRequest,
   CampaignBatchAnalysisResult,
   DecideCampaignRequest,
@@ -22,9 +23,9 @@ export async function getCampaignRules(
 export async function saveCampaignRules(
   productId: string,
   rules: CampaignRulesConfig,
-): Promise<CampaignRulesConfig> {
+): Promise<CampaignRulesSaveResult> {
   return (
-    await axios.put<CampaignRulesConfig>(
+    await axios.put<CampaignRulesSaveResult>(
       `/api/growth-decision/products/${productId}/campaign-rules`,
       rules,
     )

@@ -60,9 +60,18 @@ export function buildCampaignCard(
   orders: GrowthDecisionCase[],
   now = new Date(),
 ): CampaignDecisionCard {
-  const trend: CampaignDailySnapshot[] = [...snapshots]
-    .sort((a, b) => b.dataDate.localeCompare(a.dataDate))
-    .slice(0, 7);
+  const today: string = now.toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Shanghai',
+  });
+  const sorted: CampaignDailySnapshot[] = [...snapshots].sort((a, b) =>
+    b.dataDate.localeCompare(a.dataDate),
+  );
+  const completedDays = sorted.filter((s) => s.dataDate < today);
+  // Exclude unfinished today, but never skip yesterday's quality failures to
+  // cherry-pick a healthy older day. Existing freshness/sample guards still apply.
+  const trend: CampaignDailySnapshot[] = (
+    completedDays.length ? completedDays : sorted
+  ).slice(0, 7);
   const snapshot: CampaignDailySnapshot = trend[0];
   const policy: CampaignDecisionPolicy =
     product.decisionPolicy || DEFAULT_CAMPAIGN_POLICY;
@@ -73,9 +82,6 @@ export function buildCampaignCard(
     (m) => m.key === product.targetMetric,
   );
   const blockers: string[] = [...snapshot.qualityIssues];
-  const today: string = now.toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Shanghai',
-  });
   const age: number =
     (new Date(`${today}T00:00:00Z`).getTime() -
       new Date(`${snapshot.dataDate}T00:00:00Z`).getTime()) /
@@ -295,6 +301,7 @@ export function buildCampaignCard(
       product.targetMetric,
     ]),
     snapshot,
+    currentDaySnapshot: sorted.find((s) => s.dataDate === today),
     previous,
     trend,
     verdict,
