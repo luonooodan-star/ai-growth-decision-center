@@ -10,6 +10,7 @@ import type {
   GrowthDecisionActivity,
   GrowthDataSnapshot,
   GrowthFetchRun,
+  GrowthFetchCheckpoint,
   GrowthHistoryResetResult,
   GrowthJudgment,
   GrowthMavisJob,
@@ -313,6 +314,21 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(snapshot.key, snapshot.productId, snapshot.dataDate, JSON.stringify(snapshot));
   }
 
+  getFetchCheckpoint(key: string): GrowthFetchCheckpoint | undefined {
+    const row = this.database.prepare('SELECT payload FROM growth_fetch_checkpoint WHERE checkpoint_key = ?').get(key);
+    return row ? this.parsePayload<GrowthFetchCheckpoint>(row.payload) : undefined;
+  }
+
+  saveFetchCheckpoint(value: GrowthFetchCheckpoint): void {
+    this.database.prepare('INSERT INTO growth_fetch_checkpoint (checkpoint_key, updated_at, payload) VALUES (?, ?, ?) ON CONFLICT(checkpoint_key) DO UPDATE SET updated_at = excluded.updated_at, payload = excluded.payload')
+      .run(value.key, value.updatedAt, JSON.stringify(value));
+  }
+
+  pruneFetchCheckpoints(): void {
+    this.database.prepare('DELETE FROM growth_fetch_checkpoint WHERE updated_at < ?')
+      .run(new Date(Date.now() - 48 * 3600_000).toISOString());
+  }
+
   saveDataSnapshot(snapshot: GrowthDataSnapshot): void {
     this.database
       .prepare(
@@ -391,6 +407,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
         DELETE FROM growth_mavis_job;
         DELETE FROM growth_decision_record;
         DELETE FROM growth_fetch_run;
+        DELETE FROM growth_fetch_checkpoint;
         DELETE FROM growth_metric_snapshot;
         DELETE FROM growth_campaign_snapshot;
         DELETE FROM growth_monitoring_snapshot;
@@ -534,6 +551,11 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_fetch_checkpoint (
+        checkpoint_key TEXT PRIMARY KEY,
+        updated_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS growth_campaign_snapshot (
         campaign_key TEXT NOT NULL, product_id TEXT NOT NULL, data_date TEXT NOT NULL,
         payload TEXT NOT NULL, PRIMARY KEY (campaign_key, data_date)

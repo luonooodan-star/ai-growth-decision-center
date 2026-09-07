@@ -142,6 +142,7 @@ export class GrowthDecisionController {
       'manual',
       request.productId,
       request.historyDays,
+      request.resumeMissing === true,
     );
   }
 

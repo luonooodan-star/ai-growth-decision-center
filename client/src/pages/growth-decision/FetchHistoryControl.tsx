@@ -53,11 +53,17 @@ interface FetchHistoryControlProps {
   onError: (message: string) => void;
 }
 
-const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryControlProps) => {
+const FetchHistoryControl = ({
+  productId,
+  onCompleted,
+  onError,
+}: FetchHistoryControlProps) => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [history, setHistory] = useState<GrowthFetchHistoryResponse | null>(null);
+  const [history, setHistory] = useState<GrowthFetchHistoryResponse | null>(
+    null,
+  );
   const [dataHistory, setDataHistory] =
     useState<GrowthDataHistoryResponse | null>(null);
   const [resultMessage, setResultMessage] = useState<string>('');
@@ -85,9 +91,10 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
     setResultMessage('');
     onError('');
     try {
-      await growthDecision.backfillHistory(productId, historyDays);
+      setOpen(true);
+      const runs = await growthDecision.backfillHistory(productId, historyDays);
       await Promise.all([loadHistory(), onCompleted()]);
-      setResultMessage(`最近 ${historyDays} 天历史数据已补抓并重新落库。`);
+      setResultMessage(runs.map((run) => run.message).join('；'));
     } catch (error: unknown) {
       onError(error instanceof Error ? error.message : '历史数据补抓失败');
     } finally {
@@ -116,14 +123,19 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
   };
 
   useEffect(() => {
-    if (open) void loadHistory();
-  }, [open, productId]);
+    if (!open && !loading) return;
+    void loadHistory();
+    const timer = window.setInterval(() => void loadHistory(), 3000);
+    return () => window.clearInterval(timer);
+  }, [open, loading, productId]);
 
-  const runManualFetch = async (): Promise<void> => {
+  const runManualFetch = async (resumeMissing = false): Promise<void> => {
     setLoading(true);
     onError('');
     try {
-      await growthDecision.triggerFetch(productId);
+      setOpen(true);
+      const runs = await growthDecision.triggerFetch(productId, resumeMissing);
+      setResultMessage(runs.map((run) => run.message).join('；'));
       await Promise.all([loadHistory(), onCompleted()]);
       setOpen(true);
     } catch (error: unknown) {
@@ -135,8 +147,16 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
 
   return (
     <>
-      <Button variant="outline" onClick={() => void runManualFetch()} disabled={loading}>
-        {loading ? <RefreshCw className="size-4 animate-spin" /> : <Play className="size-4" />}
+      <Button
+        variant="outline"
+        onClick={() => void runManualFetch()}
+        disabled={loading}
+      >
+        {loading ? (
+          <RefreshCw className="size-4 animate-spin" />
+        ) : (
+          <Play className="size-4" />
+        )}
         {loading ? '正在抓取' : '立即抓取'}
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
@@ -146,14 +166,18 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
             抓取历史
           </Button>
         </SheetTrigger>
-        <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-xl">
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto p-0 sm:max-w-xl"
+        >
           <SheetHeader className="border-b border-slate-200 px-6 py-5">
             <SheetTitle className="flex items-center gap-2">
               <Database className="size-4 text-blue-600" />
               Doris 抓取历史
             </SheetTitle>
             <SheetDescription>
-              每 {history?.scheduleMinutes || 60} 分钟自动抓取，也可在产品页手动触发。
+              每 {history?.scheduleMinutes || 60}{' '}
+              分钟自动抓取，也可在产品页手动触发。
             </SheetDescription>
           </SheetHeader>
           <div className="space-y-5 px-6 pb-8 pt-5">
@@ -163,9 +187,16 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
                 补历史数据
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-600">
-                从 Doris 重新读取指定时间窗，并覆盖保存每日产品快照。
+                自动分片取数并核对汇总，通过校验后更新快照；失败保留旧数据。
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  disabled={loading || resetting}
+                  onClick={() => void runManualFetch(true)}
+                >
+                  补齐缺失数据
+                </Button>
                 {([7, 14, 30] as const).map((days: 7 | 14 | 30) => (
                   <Button
                     key={days}
@@ -178,6 +209,10 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
                   </Button>
                 ))}
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                补齐会续用有效分片并重新核对汇总。需要全量重查时，选择“补最近 N
+                天”。
+              </p>
             </section>
 
             {resultMessage ? (
@@ -216,7 +251,9 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
                         <span>消耗 ${formatMetric(item.metrics.spend)}</span>
                         <span>CPI ${formatMetric(item.metrics.cpi)}</span>
                         <span>ECPM ${formatMetric(item.metrics.ecpm)}</span>
-                        <span>D0 ROAS {formatPercent(item.metrics.d0_roas)}</span>
+                        <span>
+                          D0 ROAS {formatPercent(item.metrics.d0_roas)}
+                        </span>
                         <span>Campaign {item.campaignCount}</span>
                         <span>广告组 {item.adsetCount}</span>
                       </div>
@@ -234,42 +271,91 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
               <h3 className="mb-3 text-sm font-semibold text-slate-900">
                 抓取任务记录
               </h3>
-            {history?.items.length ? history.items.map((item) => (
-              <article key={item.id} className="rounded-xl border border-slate-200 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{item.productName}</p>
-                    <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-                      <Clock3 className="size-3.5" />
-                      {new Date(item.startedAt).toLocaleString('zh-CN', { hour12: false })}
+              {history?.items.length ? (
+                history.items.map((item) => (
+                  <article
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {item.productName}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                          <Clock3 className="size-3.5" />
+                          {new Date(item.startedAt).toLocaleString('zh-CN', {
+                            hour12: false,
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Badge variant="outline">
+                          {item.trigger === 'manual' ? '手动' : '定时'}
+                        </Badge>
+                        <Badge
+                          variant={
+                            item.status === 'failed'
+                              ? 'destructive'
+                              : 'secondary'
+                          }
+                        >
+                          {STATUS_LABEL[item.status]}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                      <span>读取行数：{item.rowsFetched}</span>
+                      <span>异常数：{item.anomalyCount}</span>
+                    </div>
+                    {item.startDate && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        范围：{item.startDate} ～ {item.endDate}
+                      </p>
+                    )}
+                    {item.progress && (
+                      <div className="mt-2 space-y-1 text-xs text-slate-600">
+                        <p>
+                          {item.phase === 'validating'
+                            ? '校验中'
+                            : item.phase === 'repairing'
+                              ? '补齐中'
+                              : STATUS_LABEL[item.status]}{' '}
+                          · 完成步骤 {item.progress.completed} · 复用分片{' '}
+                          {item.progress.reused} · 缺口 {item.progress.failed}
+                        </p>
+                        <p className="break-words">{item.progress.current}</p>
+                      </div>
+                    )}
+                    <p className="mt-3 text-xs leading-5 text-slate-600">
+                      {item.message}
                     </p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <Badge variant="outline">{item.trigger === 'manual' ? '手动' : '定时'}</Badge>
-                    <Badge variant={item.status === 'failed' ? 'destructive' : 'secondary'}>
-                      {STATUS_LABEL[item.status]}
-                    </Badge>
-                  </div>
+                    {!!item.gaps?.length && (
+                      <div className="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg bg-amber-50 p-2">
+                        {item.gaps.map((gap, index) => (
+                          <p
+                            key={index}
+                            className="break-words text-xs text-amber-900"
+                          >
+                            {gap.dataDate} · {gap.dataset.split('.').pop()}：
+                            {gap.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-12 text-center text-sm text-slate-500">
+                  暂无抓取记录，点击“立即抓取”创建第一条记录。
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                  <span>读取行数：{item.rowsFetched}</span>
-                  <span>异常数：{item.anomalyCount}</span>
-                </div>
-                <p className="mt-3 text-xs leading-5 text-slate-600">{item.message}</p>
-              </article>
-            )) : (
-              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-12 text-center text-sm text-slate-500">
-                暂无抓取记录，点击“立即抓取”创建第一条记录。
-              </div>
-            )}
+              )}
             </section>
 
             <section className="rounded-xl border border-red-200 bg-red-50/60 p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-red-800">
-                    重新开始
-                  </p>
+                  <p className="text-sm font-semibold text-red-800">重新开始</p>
                   <p className="mt-1 text-xs leading-5 text-red-700">
                     清空抓取、快照、异常、Codex、建议及实验结果；保留产品和指标库标准。
                   </p>
@@ -287,9 +373,12 @@ const FetchHistoryControl = ({ productId, onCompleted, onError }: FetchHistoryCo
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>确认清空全部运行历史？</AlertDialogTitle>
+                      <AlertDialogTitle>
+                        确认清空全部运行历史？
+                      </AlertDialogTitle>
                       <AlertDialogDescription>
-                        此操作不可撤销。产品、Doris 配置和指标库标准会保留，所有抓取、判断、分析、建议及实验记录会被删除。
+                        此操作不可撤销。产品、Doris
+                        配置和指标库标准会保留，所有抓取、判断、分析、建议及实验记录会被删除。
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

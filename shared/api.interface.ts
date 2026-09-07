@@ -248,6 +248,16 @@ export interface GrowthFetchRun {
   anomalyCount: number;
   source: string;
   message: string;
+  startDate?: string;
+  endDate?: string;
+  phase?: 'fetching' | 'repairing' | 'validating' | 'complete';
+  progress?: {
+    completed: number;
+    reused: number;
+    failed: number;
+    current: string;
+  };
+  gaps?: Array<{ dataset: string; dataDate: string; message: string }>;
 }
 
 export interface GrowthFetchHistoryResponse {
@@ -259,6 +269,14 @@ export interface GrowthFetchHistoryResponse {
 export interface TriggerGrowthFetchRequest {
   productId?: string;
   historyDays?: 7 | 14 | 30;
+  resumeMissing?: boolean;
+}
+
+export interface GrowthFetchCheckpoint {
+  key: string;
+  productId: string;
+  updatedAt: string;
+  rows: Array<Record<string, unknown>>;
 }
 
 export interface GrowthDataSnapshot {

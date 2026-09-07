@@ -3,6 +3,7 @@ type DorisRow = Record<string, unknown>;
 interface DorisQueryResult {
   row_count?: number;
   rows?: DorisRow[];
+  truncated?: boolean;
 }
 
 const DORIS_COLUMN_ALIASES: Record<string, string[]> = {
@@ -235,11 +236,34 @@ const normalizeDorisQueryResult = (value: unknown): DorisQueryResult => {
   const reportedCount: number | undefined = rowCountFrom(parsed);
   return {
     rows,
+    ...(truncationFrom(parsed) ? { truncated: true } : {}),
     row_count:
       reportedCount === undefined
         ? rows.length
         : Math.max(reportedCount, rows.length),
   };
+};
+
+const truncationFrom = (value: unknown, depth = 0): boolean => {
+  if (depth > 5) return false;
+  if (typeof value === 'string') {
+    try {
+      return truncationFrom(JSON.parse(value), depth + 1);
+    } catch {
+      return false;
+    }
+  }
+  const object = asObject(value);
+  if (!object) return false;
+  if (
+    ['truncated', 'has_more', 'hasMore', 'is_truncated'].some(
+      (key) => object[key] === true || object[key] === 'true',
+    )
+  )
+    return true;
+  return ['result', 'data', 'query_result', 'payload', 'meta', 'metadata'].some(
+    (key) => truncationFrom(object[key], depth + 1),
+  );
 };
 
 const dorisValue = (row: DorisRow, canonicalName: string): unknown => {

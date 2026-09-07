@@ -72,10 +72,10 @@ async function getFetchHistory(
   return response.data;
 }
 
-async function triggerFetch(productId?: string): Promise<GrowthFetchRun[]> {
+async function triggerFetch(productId?: string, resumeMissing = false): Promise<GrowthFetchRun[]> {
   const response = await axios.post<GrowthFetchRun[]>(
     '/api/growth-decision/fetches/trigger',
-    { productId },
+    { productId, resumeMissing },
   );
   return response.data;
 }

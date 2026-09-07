@@ -31,6 +31,8 @@ import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
 import { buildCampaignSnapshots } from './campaign-snapshots';
+import { DorisCompleteReader } from './doris-complete-reader';
+import { DorisQueryGate } from './doris-query-gate';
 import { campaignMetric } from './campaign-decision-engine';
 import {
   dorisNumber,
@@ -64,6 +66,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GrowthDataFetchService.name);
   private timer?: NodeJS.Timeout;
   private activeRun?: Promise<GrowthFetchRun[]>;
+  private readonly queryGate = new DorisQueryGate();
+  private completeReader?: DorisCompleteReader;
   private nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
 
   constructor(
@@ -72,6 +76,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    for (const run of this.database.listFetchRuns()) {
+      if (run.status === 'running') this.database.saveFetchRun({ ...run, status: 'partial',
+        finishedAt: new Date().toISOString(), message: '服务重启中断了抓取；已保存分片，可点击补齐缺失数据续抓' });
+    }
+    this.database.pruneFetchCheckpoints();
     this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
     this.timer = setInterval(() => {
       this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
@@ -104,17 +113,19 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     trigger: GrowthFetchRun['trigger'],
     productId?: string,
     historyDays?: number,
+    resumeMissing = false,
   ): Promise<GrowthFetchRun[]> {
     if (this.activeRun) {
-      if (trigger === 'manual')
-        throw new ConflictException('已有抓取任务正在运行');
+      if (productId && this.database.listFetchRuns(productId)[0]?.status !== 'running')
+        throw new ConflictException('其他产品正在抓取，请稍后重试');
       return this.activeRun;
     }
-    this.activeRun = this.runProducts(trigger, productId, historyDays);
+    this.activeRun = this.runProducts(trigger, productId, historyDays, resumeMissing);
     try {
       return await this.activeRun;
     } finally {
       this.activeRun = undefined;
+      this.database.pruneFetchCheckpoints();
     }
   }
 
@@ -122,6 +133,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     trigger: GrowthFetchRun['trigger'],
     productId?: string,
     historyDays?: number,
+    resumeMissing = false,
   ): Promise<GrowthFetchRun[]> {
     const products = productId
       ? ([this.database.getProduct(productId)].filter(
@@ -134,7 +146,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
     const results: GrowthFetchRun[] = [];
     for (const product of products) {
-      results.push(await this.fetchProduct(product, trigger, historyDays));
+      results.push(await this.fetchProduct(product, trigger, historyDays, resumeMissing));
     }
     return results;
   }
@@ -143,6 +155,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     product: GrowthProduct,
     trigger: GrowthFetchRun['trigger'],
     historyDays?: number,
+    resumeMissing = false,
   ): Promise<GrowthFetchRun> {
     const startedAt = new Date().toISOString();
     const run: GrowthFetchRun = {
@@ -158,6 +171,27 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       message: '正在通过只读 Doris MCP 抓取',
     };
     this.database.saveFetchRun(run);
+    run.phase = 'fetching';
+    run.progress = { completed: 0, reused: 0, failed: 0, current: '准备查询' };
+    run.gaps = [];
+    this.completeReader = new DorisCompleteReader({
+      productId: product.id, resume: resumeMissing || trigger === 'scheduled',
+      query: args => this.queryMetric(args),
+      getCheckpoint: key => this.database.getFetchCheckpoint(key),
+      saveCheckpoint: value => this.database.saveFetchCheckpoint(value),
+      progress: (phase, current, reused) => {
+        run.phase = phase;
+        run.progress!.current = current;
+        if (reused) run.progress!.reused++;
+        if (current.includes('完成分片') || current.includes('校验通过')) run.progress!.completed++;
+        this.database.saveFetchRun(run);
+      },
+      gap: gap => {
+        run.gaps!.push(gap);
+        run.progress!.failed = run.gaps!.length;
+        this.database.saveFetchRun(run);
+      },
+    });
 
     try {
       const degradationNotes: string[] = [];
@@ -191,12 +225,20 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               )
               .sort()[0]
           : undefined;
-      const startDate: string =
+      let startDate: string =
         !historyDays &&
         earliestStoredDate &&
         earliestStoredDate < defaultStartDate
           ? earliestStoredDate
           : defaultStartDate;
+      if (resumeMissing || trigger === 'scheduled') {
+        const previous = this.database.listFetchRuns(product.id).find(item => item.id !== run.id);
+        const missingStart = previous?.startDate;
+        if (previous?.status !== 'success' && missingStart && missingStart >= historyCutoffDate)
+          startDate = missingStart < startDate ? missingStart : startDate;
+      }
+      run.startDate = startDate;
+      run.endDate = endDate;
       const filters = {
         app_name:
           product.name.toLowerCase() === 'wingslite'
@@ -390,13 +432,14 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         Number(cohort.row_count || 0) +
         Number(adDelivery.row_count || 0);
       const rowsFetched = metricRowsFetched + accountRowsFetched;
-      const deliveryRows: DorisRow[] = delivery.rows || [];
-      const cohortRows: DorisRow[] = cohort.rows || [];
+      const unsafeDates = new Set((run.gaps || []).map(gap => gap.dataDate));
+      const deliveryRows: DorisRow[] = (delivery.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'report_date') || ''));
+      const cohortRows: DorisRow[] = (cohort.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'install_date') || ''));
       const adDeliveryRows: DorisRow[] = adDelivery.rows || [];
       const spendRows: number = deliveryRows.filter(
         (row: DorisRow): boolean => dorisNumber(row, 'spend') !== undefined,
       ).length;
-      const latestMetricValues = this.calculateLatestMetrics(
+      const latestMetricValues = unsafeDates.size ? product.latestMetricValues : this.calculateLatestMetrics(
         deliveryRows,
         cohortRows,
       );
@@ -407,6 +450,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         latestMetricValues,
       };
       this.database.saveProduct(updatedProduct);
+      for (const previous of this.database.listCampaignSnapshots(product.id)) {
+        if (unsafeDates.has(previous.dataDate)) this.database.saveCampaignSnapshot({
+          ...previous, qualityIssues: [...previous.qualityIssues.filter(issue => !issue.startsWith('补齐未完成')),
+            '补齐未完成：保留上次快照，暂不可用于新的投放判断'],
+        });
+      }
       for (const snapshot of buildCampaignSnapshots(
         product.id, deliveryRows, cohortRows, adDeliveryRows,
         new Date().toISOString(), degradationNotes,
@@ -415,8 +464,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       }
       const snapshotCount: number = this.saveDailySnapshots(
         updatedProduct,
-        deliveryDates.rows || [],
-        cohortDates.rows || [],
+        (deliveryDates.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'report_date') || '')),
+        (cohortDates.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'install_date') || '')),
         deliveryRows,
       );
       const historicalBackfillCount: number =
@@ -441,14 +490,16 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       );
 
       const spendMissing: boolean = deliveryRows.length > 0 && spendRows === 0;
-      const isPartial: boolean = metricRowsFetched === 0 || spendMissing;
+      const isPartial: boolean = metricRowsFetched === 0 || spendMissing || Boolean(run.gaps?.length);
       Object.assign(run, {
         status: isPartial ? 'partial' : 'success',
         finishedAt: new Date().toISOString(),
         rowsFetched,
         anomalyCount,
         message: isPartial
-          ? spendMissing
+          ? run.gaps?.length
+            ? `部分完成：${run.gaps.length} 个数据范围未通过完整性校验，已保护旧快照；可点击补齐缺失数据`
+            : spendMissing
             ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
             : '连接成功，但当前时间窗口没有返回可用数据'
           : `抓取完成，已读取 ${rowsFetched} 行，动态同步 ${updatedProduct.adAccounts?.length || 0} 个广告账户` +
@@ -468,6 +519,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       } satisfies Partial<GrowthFetchRun>);
     }
     this.database.saveFetchRun(run);
+    run.phase = 'complete';
+    this.database.saveFetchRun(run);
+    this.completeReader = undefined;
     return run;
   }
 
@@ -508,6 +562,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           limit: 1000,
         }),
       ]);
+    if ([historyResult, recentResult].some(result => result.truncated || (result.rows?.length || 0) >= 1000 || Number(result.row_count || 0) > (result.rows?.length || 0)))
+      throw new Error('广告账户清单达到查询上限，保留原清单，不能据此判断账户停投');
     const rows: DorisRow[] = historyResult.rows || [];
     const recentlyActiveIds: Set<string> = new Set(
       (recentResult.rows || [])
@@ -2040,9 +2096,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             'report_date',
             'advertiser_id',
             'campaign_id',
-            'campaign_name',
             'adgroup_id',
-            'adgroup_name',
             'ad_id',
             'ad_name',
           ],
@@ -2153,10 +2207,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private async queryMetric(
     argumentsValue: Record<string, unknown>,
   ): Promise<DorisQueryResult> {
-    const result: unknown = await this.callMcpTool(
+    const result: unknown = await this.queryGate.run(() => this.callMcpTool(
       'query_metric',
-      argumentsValue,
-    );
+      { ...argumentsValue, limit: Math.min(1000, Number(argumentsValue.limit) || 1000) },
+    ));
     const object: Record<string, unknown> | undefined =
       typeof result === 'object' && result !== null
         ? (result as Record<string, unknown>)
@@ -2196,8 +2250,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     label: string,
     degradationNotes: string[],
   ): Promise<DorisQueryResult> {
+    if (this.completeReader && !label.includes('拆分')) {
+      return this.completeReader.read(primaryArguments, fallbackArguments, label);
+    }
     const checkLimit = (result: DorisQueryResult, args: Record<string, unknown>): DorisQueryResult => {
-      const limit: number = Number(args.limit);
+      const limit: number = Math.min(1000, Number(args.limit));
       if (limit > 0 && Math.max(result.rows?.length || 0, Number(result.row_count || 0)) >= limit) {
         degradationNotes.push(`${label}达到查询上限 ${limit} 行，可能截断，需补齐后再判断`);
       }
