@@ -102,6 +102,7 @@ export class GrowthMavisAnalysisService {
       .filter(
         (record): record is GrowthJudgment =>
           'preliminaryJudgment' in record &&
+          !record.campaignReview &&
           record.productId === productId &&
           (record.status === 'judgment_pending' ||
             record.status === 'judgment_deferred') &&
@@ -266,6 +267,9 @@ export class GrowthMavisAnalysisService {
         confidenceRange: [0, 100],
         observationHoursRange: [1, 168],
         requiredAnalysis: [
+          '若 judgment.campaignReview 存在，本任务是整个广告系列的综合决策；先读取 card.trend、card.blockers、card.primaryAction 及 recentOrders，合并系列内的所有指标信号，优秀系列也需要评估。',
+          '输出一个首选行动及证据。预算方向和幅度受产品策略、样本和数据成熟度约束；不要把日消耗当日预算，不把 campaign D0 当某个广告组 D0。',
+          '日累计快照每小时刷新并非小时增量。结合真实执行时点复查，不得把执行前的数据变动归因于措施。买量 ecpm 兼容字段实际是广告 CPM，不是产品变现 ECPM。',
           '不能只复述指标库越界；必须解释指标链路和可能原因',
           '对比消耗、ECPM、CTR、IPM、CPI、安装、收入和 ROAS 趋势',
           '使用可用的 Campaign、广告组、国家、版位、年龄和人群拆分',

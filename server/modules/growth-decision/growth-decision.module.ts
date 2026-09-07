@@ -7,14 +7,18 @@ import { GrowthDecisionOpenApiController } from './growth-decision.openapi.contr
 import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { GrowthMavisMcpController } from './growth-mavis-mcp.controller';
+import { CampaignDecisionController } from './campaign-decision.controller';
+import { CampaignDecisionService } from './campaign-decision.service';
 
 @Module({
   controllers: [
+    CampaignDecisionController,
     GrowthDecisionController,
     GrowthDecisionOpenApiController,
     GrowthMavisMcpController,
   ],
   providers: [
+    CampaignDecisionService,
     LocalDatabaseService,
     GrowthDecisionService,
     GrowthDataFetchService,

@@ -1,3 +1,81 @@
+export interface CampaignDecisionPolicy {
+  minSpend: number;
+  minInstalls: number;
+  consecutiveDays: number;
+  increasePct: number;
+  decreasePct: number;
+  reviewHours: number;
+}
+
+export type CampaignVerdict = 'increase' | 'decrease' | 'adjust_ads' | 'observe' | 'normal';
+
+export interface CampaignDailySnapshot {
+  key: string;
+  productId: string;
+  campaignId: string;
+  campaignName: string;
+  accountId?: string;
+  countries: string[];
+  dataDate: string;
+  fetchedAt: string;
+  metrics: GrowthDeliveryMetricValues;
+  breakdowns: GrowthDiagnosticBreakdown[];
+  qualityIssues: string[];
+}
+
+export interface CampaignDecisionCard {
+  key: string;
+  revision: string;
+  snapshot: CampaignDailySnapshot;
+  previous?: CampaignDailySnapshot;
+  trend: CampaignDailySnapshot[];
+  verdict: CampaignVerdict;
+  reason: string;
+  evidence: string[];
+  blockers: string[];
+  priority: number;
+  primaryAction: GrowthActionProposal;
+  analysisId?: string;
+  analysisStatus?: string;
+  analysis?: GrowthAiAnalysis;
+  recentOrders: GrowthDecisionCase[];
+}
+
+export interface CampaignDecisionBoard {
+  items: CampaignDecisionCard[];
+  policy: CampaignDecisionPolicy;
+  generatedAt: string;
+}
+
+export interface CampaignExecution {
+  campaignKey: string;
+  revision: string;
+  state: 'pending' | 'executed' | 'rejected' | 'observing';
+  proposal: GrowthActionProposal;
+  beforeBudget?: number;
+  afterBudget?: number;
+  acceptedAt: string;
+  executedAt?: string;
+  executionNote?: string;
+  reviewDueAt?: string;
+  baseline: CampaignDailySnapshot;
+}
+
+export interface DecideCampaignRequest {
+  key: string;
+  revision: string;
+  decision: 'accept' | 'reject' | 'observe';
+  reason: string;
+  budgetLevel?: 'campaign' | 'adset';
+  budgetTargetId?: string;
+  beforeBudget?: number;
+}
+
+export interface ExecuteCampaignRequest {
+  confirmation: 'EXECUTED';
+  note: string;
+}
+
 export interface GrowthProduct {
   id: string;
   name: string;
@@ -17,6 +95,7 @@ export interface GrowthProduct {
   metrics: GrowthMetricDefinition[];
   latestMetricValues?: GrowthMetricValues;
   analysisMode?: GrowthAnalysisMode;
+  decisionPolicy?: CampaignDecisionPolicy;
 }
 
 export type GrowthAnalysisMode = 'product_skill' | 'marvis_bridge';
@@ -197,6 +276,7 @@ export interface RecommendedAction {
 }
 
 export interface GrowthDecisionCase {
+  campaignExecution?: CampaignExecution;
   id: string;
   productId: string;
   productName: string;
@@ -276,6 +356,7 @@ export interface GrowthDashboardResponse {
 }
 
 export interface GrowthJudgment {
+  campaignReview?: { key: string; revision: string; card: CampaignDecisionCard };
   id: string;
   productId: string;
   productName: string;

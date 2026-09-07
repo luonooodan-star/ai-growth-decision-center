@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 import type {
+  CampaignDailySnapshot,
   GrowthAdAccount,
   GrowthDeliveryMetricKey,
   GrowthDeliveryMetricValues,
@@ -29,6 +30,8 @@ import type {
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
+import { buildCampaignSnapshots } from './campaign-snapshots';
+import { campaignMetric } from './campaign-decision-engine';
 import {
   dorisNumber,
   dorisString,
@@ -404,6 +407,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         latestMetricValues,
       };
       this.database.saveProduct(updatedProduct);
+      for (const snapshot of buildCampaignSnapshots(
+        product.id, deliveryRows, cohortRows, adDeliveryRows,
+        new Date().toISOString(), degradationNotes,
+      )) {
+        this.database.saveCampaignSnapshot(snapshot);
+      }
       const snapshotCount: number = this.saveDailySnapshots(
         updatedProduct,
         deliveryDates.rows || [],
@@ -788,6 +797,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       );
     let updatedCount = 0;
     for (const judgment of judgments) {
+      if (judgment.campaignReview) continue;
       const dataDate: string | undefined = this.judgmentDataDate(judgment);
       if (!dataDate) continue;
       const matchedDeliveryRows: DorisRow[] = deliveryRows.filter(
@@ -1152,19 +1162,26 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       ) {
         continue;
       }
-      const currentValue: number | undefined = this.latestExperimentValue(
-        record,
-        metric.key,
-        deliveryRows,
-        cohortRows,
-      );
+      const campaignSnapshot: CampaignDailySnapshot | undefined = 'campaignExecution' in record && record.campaignExecution
+        ? this.database.listCampaignSnapshots(product.id).find((snapshot) =>
+            snapshot.key === record.campaignExecution?.campaignKey && campaignMetric(snapshot, metric.key) !== undefined)
+        : undefined;
+      const currentValue: number | undefined = 'campaignExecution' in record && record.campaignExecution
+        ? campaignSnapshot && campaignMetric(campaignSnapshot, metric.key)
+        : this.latestExperimentValue(record, metric.key, deliveryRows, cohortRows);
       if (currentValue === undefined) continue;
 
       const withinLower: boolean =
         metric.lowerBound === undefined || currentValue >= metric.lowerBound;
       const withinUpper: boolean =
         metric.upperBound === undefined || currentValue <= metric.upperBound;
-      const isNormal: boolean = withinLower && withinUpper;
+      const executionDate: string | undefined = 'campaignExecution' in record && record.campaignExecution?.executedAt
+        ? new Date(record.campaignExecution.executedAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }) : undefined;
+      const eligibleForRecovery: boolean = !('campaignExecution' in record && record.campaignExecution) || Boolean(
+        campaignSnapshot && !campaignSnapshot.qualityIssues.length &&
+        nowMs - new Date(campaignSnapshot.fetchedAt).getTime() < 3 * 3600000 &&
+        (!executionDate || campaignSnapshot.dataDate > executionDate));
+      const isNormal: boolean = withinLower && withinUpper && eligibleForRecovery;
       const normalSince: string | undefined = isNormal
         ? this.monitoringNormalSince(record) || now
         : undefined;
@@ -1182,7 +1199,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           dorisString(row, 'report_date') === latestDeliveryDate &&
           this.rowMatchesCase(row, record),
       );
-      const metrics: GrowthDeliveryMetricValues = latestMatches.length
+      const metrics: GrowthDeliveryMetricValues = campaignSnapshot ? { ...campaignSnapshot.metrics } : latestMatches.length
         ? this.deliveryDiagnosticValues(
             this.aggregateDeliveryRows(latestMatches),
           )
@@ -1201,7 +1218,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             ? 'judgment_observation'
             : 'experiment',
         observedAt: now,
-        dataDate: latestDeliveryDate || now.slice(0, 10),
+        dataDate: campaignSnapshot?.dataDate || latestDeliveryDate || now.slice(0, 10),
         campaignId: record.campaignId,
         campaignName: record.campaignName,
         adsetId: record.adsetId,
@@ -1363,6 +1380,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       .listDecisionRecords(1000)
       .find((record): record is GrowthJudgment => {
         if (!('preliminaryJudgment' in record)) return false;
+        if (record.campaignReview) return false;
         const judgment: GrowthJudgment = record;
         return (
           judgment.productId === productId &&
@@ -2178,8 +2196,15 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     label: string,
     degradationNotes: string[],
   ): Promise<DorisQueryResult> {
+    const checkLimit = (result: DorisQueryResult, args: Record<string, unknown>): DorisQueryResult => {
+      const limit: number = Number(args.limit);
+      if (limit > 0 && Math.max(result.rows?.length || 0, Number(result.row_count || 0)) >= limit) {
+        degradationNotes.push(`${label}达到查询上限 ${limit} 行，可能截断，需补齐后再判断`);
+      }
+      return result;
+    };
     try {
-      return await this.queryMetric(primaryArguments);
+      return checkLimit(await this.queryMetric(primaryArguments), primaryArguments);
     } catch (primaryError: unknown) {
       const detail: string =
         primaryError instanceof Error
@@ -2192,7 +2217,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         degradationNotes.push(
           `${label}的可选指标/维度未被当前 Doris 接口接受，已自动改用基础数据`,
         );
-        return result;
+        return checkLimit(result, fallbackArguments);
       } catch (fallbackError: unknown) {
         const fallbackDetail: string =
           fallbackError instanceof Error

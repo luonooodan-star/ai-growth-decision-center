@@ -60,6 +60,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 
 import { JudgmentQueue } from './JudgmentQueue';
+import { CampaignDecisionBoard } from './CampaignDecisionBoard';
 import { ObservationQueue } from './ObservationQueue';
 import { FetchHistoryControl } from './FetchHistoryControl';
 import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
@@ -490,11 +491,10 @@ const GrowthDecisionPage: React.FC = () => {
             {selectedProduct?.name.toUpperCase()} · PRODUCT DECISION PAGE
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950 lg:text-3xl">
-            {selectedProduct?.name} 增长判断与投放决策
+            {selectedProduct?.name} 广告系列决策
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            本页面只使用 {selectedProduct?.name} 的 Doris 数据、Facebook
-            账户和产品 Skill；先判断异常是否成立，确认后再生成调整建议。
+            基于 {selectedProduct?.name} 的 Doris 数据与产品标准，优先处理值得加量、需要减量和广告调整的系列，登记执行并复查效果。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -529,6 +529,10 @@ const GrowthDecisionPage: React.FC = () => {
         </Alert>
       ) : null}
 
+      <CampaignDecisionBoard productId={productId} refreshedAt={selectedProduct?.lastSyncAt} onChanged={loadDashboard} />
+
+      <details>
+      <summary className="mb-4 cursor-pointer text-sm font-medium text-slate-600">展开异常明细、观察队列与历史实验</summary>
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="待判断异常"
@@ -1034,6 +1038,7 @@ const GrowthDecisionPage: React.FC = () => {
           </Card>
         </aside>
       </div>
+      </details>
 
       <Dialog
         open={Boolean(selectedCase)}

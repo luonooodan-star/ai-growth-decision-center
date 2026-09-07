@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import type {
+  CampaignDailySnapshot,
   GrowthDecisionCase,
   GrowthDecisionActivity,
   GrowthDataSnapshot,
@@ -298,6 +299,20 @@ export class LocalDatabaseService implements OnModuleDestroy {
     );
   }
 
+  listCampaignSnapshots(productId: string): CampaignDailySnapshot[] {
+    return this.database.prepare(
+      'SELECT payload FROM growth_campaign_snapshot WHERE product_id = ? ORDER BY data_date DESC',
+    ).all(productId).map((row: Record<string, unknown>): CampaignDailySnapshot =>
+      this.parsePayload<CampaignDailySnapshot>(row.payload),
+    );
+  }
+
+  saveCampaignSnapshot(snapshot: CampaignDailySnapshot): void {
+    this.database.prepare(`INSERT INTO growth_campaign_snapshot (campaign_key, product_id, data_date, payload)
+      VALUES (?, ?, ?, ?) ON CONFLICT(campaign_key, data_date) DO UPDATE SET payload = excluded.payload`)
+      .run(snapshot.key, snapshot.productId, snapshot.dataDate, JSON.stringify(snapshot));
+  }
+
   saveDataSnapshot(snapshot: GrowthDataSnapshot): void {
     this.database
       .prepare(
@@ -360,7 +375,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
     };
     const deleted: GrowthHistoryResetResult['deleted'] = {
       fetchRuns: countRows('growth_fetch_run'),
-      snapshots: countRows('growth_metric_snapshot'),
+      snapshots: countRows('growth_metric_snapshot') + countRows('growth_campaign_snapshot'),
       decisionRecords: countRows('growth_decision_record'),
       activities: countRows('growth_decision_activity'),
       mavisJobs: countRows('growth_mavis_job'),
@@ -377,6 +392,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
         DELETE FROM growth_decision_record;
         DELETE FROM growth_fetch_run;
         DELETE FROM growth_metric_snapshot;
+        DELETE FROM growth_campaign_snapshot;
         DELETE FROM growth_monitoring_snapshot;
       `);
       const updateProduct = this.database.prepare(
@@ -518,6 +534,11 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_campaign_snapshot (
+        campaign_key TEXT NOT NULL, product_id TEXT NOT NULL, data_date TEXT NOT NULL,
+        payload TEXT NOT NULL, PRIMARY KEY (campaign_key, data_date)
+      );
+      CREATE INDEX IF NOT EXISTS growth_campaign_product_date ON growth_campaign_snapshot(product_id, data_date);
       CREATE TABLE IF NOT EXISTS growth_product (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
