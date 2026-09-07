@@ -54,6 +54,21 @@ function inRange(
   );
 }
 
+export function hasZeroDelivery(snapshot: CampaignDailySnapshot): boolean {
+  return (
+    snapshot.qualityIssues.length === 0 &&
+    (
+      [
+        'spend',
+        'impressions',
+        'media_clicks',
+        'media_installs',
+        'adjust_installs',
+      ] as const
+    ).every((key) => snapshot.metrics[key] === 0)
+  );
+}
+
 export function buildCampaignCard(
   product: GrowthProduct,
   snapshots: CampaignDailySnapshot[],
@@ -74,6 +89,7 @@ export function buildCampaignCard(
     completedDays.length ? completedDays : sorted
   ).slice(0, 7);
   const snapshot: CampaignDailySnapshot = trend[0];
+  const zeroDelivery = hasZeroDelivery(snapshot);
   const policy: CampaignDecisionPolicy =
     product.decisionPolicy || DEFAULT_CAMPAIGN_POLICY;
   const previous: CampaignDailySnapshot | undefined = trend.find(
@@ -100,11 +116,15 @@ export function buildCampaignCard(
     (metric.lowerBound === undefined && metric.upperBound === undefined)
   )
     blockers.push('尚未配置产品主目标达标范围');
-  if (!metric || campaignMetric(snapshot, metric.key) === undefined)
+  if (
+    !zeroDelivery &&
+    (!metric || campaignMetric(snapshot, metric.key) === undefined)
+  )
     blockers.push('主目标指标未返回，不能判断达标');
   if (
-    (snapshot.metrics.spend ?? -1) < policy.minSpend ||
-    (snapshot.metrics.adjust_installs ?? -1) < policy.minInstalls
+    !zeroDelivery &&
+    ((snapshot.metrics.spend ?? -1) < policy.minSpend ||
+      (snapshot.metrics.adjust_installs ?? -1) < policy.minInstalls)
   ) {
     blockers.push(
       `样本不足：单日需消耗 ≥ $${policy.minSpend} 且 Adjust 安装 ≥ ${policy.minInstalls}`,
@@ -116,6 +136,25 @@ export function buildCampaignCard(
       Boolean(o.campaignExecution) &&
       [snapshot.key, ...relatedKeys].includes(o.campaignExecution!.campaignKey),
   );
+  const noRecentDelivery =
+    age <= 2 &&
+    age >= 0 &&
+    now.getTime() - Date.parse(snapshot.fetchedAt) <=
+      Math.max(3, product.dataDelayMinutes / 30) * 3600000 &&
+    [...trend, ...sorted.filter((s) => s.dataDate === today)].every(
+      hasZeroDelivery,
+    ) &&
+    !recentOrders.some(
+      (o) =>
+        o.campaignExecution?.state === 'pending' ||
+        (o.campaignExecution?.state === 'executed' && o.status !== 'completed'),
+    );
+  if (zeroDelivery)
+    blockers.push('本数据日无新增投放，CPI、CPM、D0 不适用；不代表效果不达标');
+  if (age > 1)
+    blockers.push(
+      `昨日 ${previousDay(today)} 无该系列快照，未将缺失日期补为零`,
+    );
   if (
     recentOrders.some(
       (o) =>
@@ -192,6 +231,8 @@ export function buildCampaignCard(
     .sort((a, b) => (b.metrics.spend ?? 0) - (a.metrics.spend ?? 0))[0];
   let verdict: CampaignVerdict = 'observe';
   let reason: string = blockers[0] || '等待连续完整数据日，下一次抓取后复查';
+  if (noRecentDelivery)
+    reason = '已返回窗口无新增投放，仅保留历史回流记录；不作效果异常判断';
   if (!blockers.length) {
     if (bad) {
       verdict = 'decrease';
@@ -296,6 +337,7 @@ export function buildCampaignCard(
     observationHours: policy.reviewHours,
   };
   return {
+    noRecentDelivery,
     key: snapshot.key,
     revision: campaignHash([
       trend.map((s) => ({ ...s, fetchedAt: undefined })),
@@ -303,6 +345,7 @@ export function buildCampaignCard(
       product.campaignRules || [],
       product.metrics,
       product.targetMetric,
+      noRecentDelivery,
     ]),
     snapshot,
     currentDaySnapshot: sorted.find((s) => s.dataDate === today),

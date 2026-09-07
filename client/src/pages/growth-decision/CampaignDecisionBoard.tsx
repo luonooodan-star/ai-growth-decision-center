@@ -61,7 +61,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<
-    CampaignVerdict | 'actionable' | 'urgent' | 'all'
+    CampaignVerdict | 'actionable' | 'urgent' | 'all' | 'inactive'
   >('actionable');
   const [search, setSearch] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -122,11 +122,14 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const items: CampaignDecisionCard[] = (board?.items || []).filter(
     (c) =>
       (filter === 'all' ||
-        (filter === 'actionable'
-          ? c.verdict !== 'normal'
-          : filter === 'urgent'
-            ? Boolean(c.urgent)
-            : c.verdict === filter)) &&
+        (filter === 'inactive'
+          ? c.noRecentDelivery
+          : !c.noRecentDelivery &&
+            (filter === 'actionable'
+              ? c.verdict !== 'normal'
+              : filter === 'urgent'
+                ? Boolean(c.urgent)
+                : c.verdict === filter))) &&
       [
         c.snapshot.campaignName,
         c.snapshot.campaignId,
@@ -147,7 +150,8 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pendingCount = items.filter(
-    (c) => !c.analysisId || c.analysisStatus === 'failed',
+    (c) =>
+      !c.noRecentDelivery && (!c.analysisId || c.analysisStatus === 'failed'),
   ).length;
   const analyzeVisible = async (): Promise<void> => {
     setBusy(true);
@@ -157,8 +161,9 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     let skipped = 0;
     const failures: string[] = [];
     try {
-      for (let start = 0; start < items.length; start += 20) {
-        const chunk = items.slice(start, start + 20);
+      const candidates = items.filter((c) => !c.noRecentDelivery);
+      for (let start = 0; start < candidates.length; start += 20) {
+        const chunk = candidates.slice(start, start + 20);
         try {
           const result = await api.analyzeCampaignBatch(productId, {
             campaigns: chunk.map((c) => ({ key: c.key, revision: c.revision })),

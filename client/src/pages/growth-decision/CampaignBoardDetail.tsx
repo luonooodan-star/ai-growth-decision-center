@@ -45,7 +45,10 @@ export const CampaignBoardDetail: React.FC<Props> = ({
           <p
             className={`rounded-lg p-3 font-semibold ${COLORS[selected.verdict]}`}
           >
-            {LABELS[selected.verdict]} · {selected.reason}
+            {selected.noRecentDelivery
+              ? '无新增投放'
+              : LABELS[selected.verdict]}{' '}
+            · {selected.reason}
           </p>
           <div className="space-y-1 text-sm">
             {selected.evidence.map((e, i) => (
@@ -57,7 +60,12 @@ export const CampaignBoardDetail: React.FC<Props> = ({
               {selected.blockers.join('；')}
             </div>
           )}
-          <h3 className="font-semibold">最近完整数据与趋势</h3>
+          <h3 className="font-semibold">已返回的每日数据与趋势</h3>
+          {selected.noRecentDelivery && (
+            <p className="text-sm text-slate-500">
+              消耗、展示、点击与安装均为零时，相关比率不适用。历史用户收入回流不等于新增投放；这也不代表广告平台状态已暂停。未返回的日期仍需核对。
+            </p>
+          )}
           {selected.currentDaySnapshot && (
             <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
               今天 {selected.currentDaySnapshot.dataDate}{' '}
@@ -125,6 +133,7 @@ export const CampaignBoardDetail: React.FC<Props> = ({
           </p>
           <Button
             disabled={
+              selected.noRecentDelivery ||
               busy ||
               selected.analysisStatus === 'running' ||
               Boolean(selected.analysis)

@@ -35,7 +35,7 @@ interface Props {
   load: () => Promise<void>;
   error: string;
   notice: string;
-  filter: CampaignVerdict | 'actionable' | 'urgent' | 'all';
+  filter: CampaignVerdict | 'actionable' | 'urgent' | 'all' | 'inactive';
   setFilter: (v: Props['filter']) => void;
   search: string;
   setSearch: (v: string) => void;
@@ -144,7 +144,8 @@ export const CampaignBoardList: React.FC<Props> = ({
             onClick={() => setFilter(v)}
           >
             {LABELS[v]}{' '}
-            {board?.items.filter((c) => c.verdict === v).length || 0}
+            {board?.items.filter((c) => !c.noRecentDelivery && c.verdict === v)
+              .length || 0}
           </Button>
         ))}
         <Button
@@ -153,6 +154,14 @@ export const CampaignBoardList: React.FC<Props> = ({
           onClick={() => setFilter('all')}
         >
           全部
+        </Button>
+        <Button
+          size="sm"
+          variant={filter === 'inactive' ? 'default' : 'outline'}
+          onClick={() => setFilter('inactive')}
+        >
+          无新增投放{' '}
+          {board?.items.filter((c) => c.noRecentDelivery).length || 0}
         </Button>
       </div>
       <p className="text-xs text-slate-500">
@@ -196,7 +205,7 @@ export const CampaignBoardList: React.FC<Props> = ({
               <span
                 className={`rounded-lg px-3 py-1 text-sm font-semibold ${COLORS[card.verdict]}`}
               >
-                {LABELS[card.verdict]}
+                {card.noRecentDelivery ? '无新增投放' : LABELS[card.verdict]}
               </span>
               {card.urgent && <Badge variant="destructive">异常优先处理</Badge>}
               {card.matchedRule && (

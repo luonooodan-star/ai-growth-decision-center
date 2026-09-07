@@ -66,6 +66,8 @@ export interface CampaignDailySnapshot {
 }
 
 export interface CampaignDecisionCard {
+  /** Returned recent windows have explicit zero delivery; not an ad-platform status. */
+  noRecentDelivery?: boolean;
   key: string;
   revision: string;
   snapshot: CampaignDailySnapshot;

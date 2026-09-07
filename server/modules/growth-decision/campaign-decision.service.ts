@@ -187,6 +187,10 @@ export class CampaignDecisionService {
     if (card.analysisId && card.analysisStatus !== 'failed') {
       return this.database.getDecisionRecord(card.analysisId) as GrowthJudgment;
     }
+    if (card.noRecentDelivery)
+      throw new BadRequestException(
+        '已返回窗口无新增投放，无需提交效果分析；恢复投放后会自动重新判断',
+      );
     // 强制通过现有 Codex bridge；未配置时明确失败，不能冒充模型输出。
     if (!this.analysis.getStatus(productId).mcpConfigured)
       throw new BadRequestException('请先配置 Codex 任务桥');
