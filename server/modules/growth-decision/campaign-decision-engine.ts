@@ -59,6 +59,7 @@ export function buildCampaignCard(
   snapshots: CampaignDailySnapshot[],
   orders: GrowthDecisionCase[],
   now = new Date(),
+  relatedKeys: string[] = [],
 ): CampaignDecisionCard {
   const today: string = now.toLocaleDateString('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -110,7 +111,10 @@ export function buildCampaignCard(
     );
   }
   const recentOrders: GrowthDecisionCase[] = orders.filter(
-    (o) => o.campaignExecution?.campaignKey === snapshot.key && !o.deletedAt,
+    (o) =>
+      !o.deletedAt &&
+      Boolean(o.campaignExecution) &&
+      [snapshot.key, ...relatedKeys].includes(o.campaignExecution!.campaignKey),
   );
   if (
     recentOrders.some(

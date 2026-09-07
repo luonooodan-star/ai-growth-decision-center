@@ -24,6 +24,7 @@ import {
 } from '@server/database/local-database.service';
 import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
+import { reconcileCampaignHistory } from './campaign-history';
 import {
   buildCampaignCard,
   campaignMetric,
@@ -52,16 +53,20 @@ export class CampaignDecisionService {
     const orders: GrowthDecisionCase[] = records.filter(
       (r): r is GrowthDecisionCase => !('preliminaryJudgment' in r),
     );
-    const groups: Map<string, CampaignDailySnapshot[]> = new Map();
-    for (const s of snapshots)
-      groups.set(s.key, [...(groups.get(s.key) || []), s]);
-    const items: CampaignDecisionCard[] = [...groups.values()]
-      .map((history) => {
+    const items: CampaignDecisionCard[] = reconcileCampaignHistory(snapshots)
+      .map(({ snapshots: history, relatedKeys }) => {
         const card: CampaignDecisionCard = buildCampaignCard(
           product,
           history,
           orders,
+          new Date(),
+          relatedKeys,
         );
+        if (relatedKeys.length > 1) {
+          card.evidence.push(
+            '已使用账户定位后的完整快照；旧未定位卡片不再重复展示，历史措施仍保留关联',
+          );
+        }
         const review: GrowthJudgment | undefined = records.find(
           (r): r is GrowthJudgment =>
             'preliminaryJudgment' in r &&
