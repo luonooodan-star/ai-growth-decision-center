@@ -9,6 +9,7 @@ import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { GrowthMavisMcpController } from './growth-mavis-mcp.controller';
 import { CampaignDecisionController } from './campaign-decision.controller';
 import { CampaignDecisionService } from './campaign-decision.service';
+import { CampaignBoardManagementService } from './campaign-board-management.service';
 
 @Module({
   controllers: [
@@ -18,6 +19,7 @@ import { CampaignDecisionService } from './campaign-decision.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    CampaignBoardManagementService,
     CampaignDecisionService,
     LocalDatabaseService,
     GrowthDecisionService,

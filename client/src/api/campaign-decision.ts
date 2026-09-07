@@ -2,10 +2,45 @@ import axios from 'axios';
 import type {
   CampaignDecisionBoard,
   CampaignDecisionPolicy,
+  CampaignRulesConfig,
+  CampaignBatchAnalysisRequest,
+  CampaignBatchAnalysisResult,
   DecideCampaignRequest,
   GrowthDecisionCase,
   GrowthJudgment,
 } from '@shared/api.interface';
+
+export async function getCampaignRules(
+  productId: string,
+): Promise<CampaignRulesConfig> {
+  return (
+    await axios.get<CampaignRulesConfig>(
+      `/api/growth-decision/products/${productId}/campaign-rules`,
+    )
+  ).data;
+}
+export async function saveCampaignRules(
+  productId: string,
+  rules: CampaignRulesConfig,
+): Promise<CampaignRulesConfig> {
+  return (
+    await axios.put<CampaignRulesConfig>(
+      `/api/growth-decision/products/${productId}/campaign-rules`,
+      rules,
+    )
+  ).data;
+}
+export async function analyzeCampaignBatch(
+  productId: string,
+  request: CampaignBatchAnalysisRequest,
+): Promise<CampaignBatchAnalysisResult> {
+  return (
+    await axios.post<CampaignBatchAnalysisResult>(
+      `/api/growth-decision/products/${productId}/campaign-analysis-batch`,
+      request,
+    )
+  ).data;
+}
 
 export async function getCampaignBoard(
   productId: string,

@@ -7,7 +7,45 @@ export interface CampaignDecisionPolicy {
   reviewHours: number;
 }
 
-export type CampaignVerdict = 'increase' | 'decrease' | 'adjust_ads' | 'observe' | 'normal';
+export type CampaignVerdict =
+  | 'increase'
+  | 'decrease'
+  | 'adjust_ads'
+  | 'observe'
+  | 'normal';
+
+export interface CampaignDecisionRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  verdict: CampaignVerdict;
+  priority: number;
+  urgent: boolean;
+  consecutiveDays: number;
+  conditions: Array<{
+    metric: GrowthMetricKey | GrowthDeliveryMetricKey;
+    basis: 'value' | 'previous_day_change';
+    operator: 'gte' | 'lte';
+    value: number;
+  }>;
+  actionText: string;
+  changePct?: number;
+}
+
+export interface CampaignRulesConfig {
+  rules: CampaignDecisionRule[];
+  revision: string;
+}
+
+export interface CampaignBatchAnalysisRequest {
+  campaigns: Array<{ key: string; revision: string }>;
+}
+
+export interface CampaignBatchAnalysisResult {
+  submitted: number;
+  skipped: number;
+  failed: Array<{ key: string; message: string }>;
+}
 
 export interface CampaignDailySnapshot {
   key: string;
@@ -34,6 +72,8 @@ export interface CampaignDecisionCard {
   evidence: string[];
   blockers: string[];
   priority: number;
+  urgent?: boolean;
+  matchedRule?: { id: string; name: string };
   primaryAction: GrowthActionProposal;
   analysisId?: string;
   analysisStatus?: string;
@@ -96,6 +136,7 @@ export interface GrowthProduct {
   latestMetricValues?: GrowthMetricValues;
   analysisMode?: GrowthAnalysisMode;
   decisionPolicy?: CampaignDecisionPolicy;
+  campaignRules?: CampaignDecisionRule[];
 }
 
 export type GrowthAnalysisMode = 'product_skill' | 'marvis_bridge';
@@ -356,7 +397,11 @@ export interface GrowthDashboardResponse {
 }
 
 export interface GrowthJudgment {
-  campaignReview?: { key: string; revision: string; card: CampaignDecisionCard };
+  campaignReview?: {
+    key: string;
+    revision: string;
+    card: CampaignDecisionCard;
+  };
   id: string;
   productId: string;
   productName: string;
@@ -411,9 +456,7 @@ export interface GrowthJudgment {
   createdAt: string;
 }
 
-export type GrowthMonitoringSubjectType =
-  | 'judgment_observation'
-  | 'experiment';
+export type GrowthMonitoringSubjectType = 'judgment_observation' | 'experiment';
 
 export interface GrowthMonitoringSnapshot {
   id: string;

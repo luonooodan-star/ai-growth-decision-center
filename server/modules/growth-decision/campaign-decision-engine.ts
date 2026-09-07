@@ -2,6 +2,7 @@ import type {
   CampaignDailySnapshot,
   CampaignDecisionCard,
   CampaignDecisionPolicy,
+  CampaignDecisionRule,
   CampaignVerdict,
   GrowthActionProposal,
   GrowthDecisionCase,
@@ -10,6 +11,7 @@ import type {
   GrowthProduct,
 } from '@shared/api.interface';
 import { campaignHash } from './campaign-snapshots';
+import { matchCampaignRule } from './campaign-rules';
 
 export const DEFAULT_CAMPAIGN_POLICY: CampaignDecisionPolicy = {
   minSpend: 30,
@@ -199,6 +201,31 @@ export function buildCampaignCard(
       reason = '当前表现达标，维持投放并积累连续数据';
     } else reason = secondaryFailures[0] || reason;
   }
+  const matchedRule: CampaignDecisionRule | undefined = !blockers.length
+    ? matchCampaignRule(product.campaignRules || [], contiguous, campaignMetric)
+    : undefined;
+  let appliedRule: CampaignDecisionRule | undefined;
+  if (matchedRule) {
+    if (
+      matchedRule.verdict === 'increase' &&
+      (!good || secondaryFailures.length)
+    ) {
+      verdict = 'observe';
+      reason = `规则「${matchedRule.name}」命中，但主目标未连续达标或其他指标未达标，暂不加量`;
+    } else if (
+      matchedRule.verdict === 'normal' &&
+      (!metric ||
+        !inRange(campaignMetric(snapshot, metric.key), metric) ||
+        secondaryFailures.length)
+    ) {
+      verdict = 'observe';
+      reason = `规则「${matchedRule.name}」命中，但当前存在未达标指标，不能标为正常`;
+    } else {
+      appliedRule = matchedRule;
+      verdict = matchedRule.verdict;
+      reason = `规则「${matchedRule.name}」：${matchedRule.actionText}`;
+    }
+  }
   const actionType: GrowthActionProposal['actionType'] =
     verdict === 'increase'
       ? 'increase_budget'
@@ -211,7 +238,7 @@ export function buildCampaignCard(
             : 'observe';
   const primaryAction: GrowthActionProposal = {
     actionType,
-    targetLevel: verdict === 'adjust_ads' ? 'ad' : 'campaign',
+    targetLevel: verdict === 'adjust_ads' && ad ? 'ad' : 'campaign',
     targetId: verdict === 'adjust_ads' && ad ? ad.value : snapshot.campaignId,
     targetName:
       verdict === 'adjust_ads' && ad
@@ -219,13 +246,23 @@ export function buildCampaignCard(
         : snapshot.campaignName,
     changePct:
       verdict === 'increase'
-        ? policy.increasePct
+        ? Math.min(
+            appliedRule?.changePct ?? policy.increasePct,
+            policy.increasePct,
+          )
         : verdict === 'decrease'
-          ? -policy.decreasePct
+          ? -Math.min(
+              appliedRule?.changePct ?? policy.decreasePct,
+              policy.decreasePct,
+            )
           : undefined,
     rationale: reason,
-    steps:
-      verdict === 'adjust_ads'
+    steps: appliedRule
+      ? [
+          appliedRule.actionText,
+          '登记实际执行内容，只改变一个变量并记录后续成熟数据',
+        ]
+      : verdict === 'adjust_ads'
         ? [
             '保留原广告作为对照，创建仅替换素材的测试广告',
             '登记实际执行内容，比较后续 CTR、安装和成熟回报',
@@ -253,6 +290,7 @@ export function buildCampaignCard(
     revision: campaignHash([
       trend.map((s) => ({ ...s, fetchedAt: undefined })),
       policy,
+      product.campaignRules || [],
       product.metrics,
       product.targetMetric,
     ]),
@@ -261,6 +299,12 @@ export function buildCampaignCard(
     trend,
     verdict,
     reason,
+    matchedRule: matchedRule
+      ? { id: matchedRule.id, name: matchedRule.name }
+      : undefined,
+    urgent: matchedRule
+      ? matchedRule.urgent
+      : verdict === 'decrease' || verdict === 'adjust_ads',
     evidence: [
       `数据日 ${snapshot.dataDate}；覆盖国家 ${snapshot.countries.join('、') || '未返回'}`,
       previous ? `环比对照 ${previous.dataDate}` : '前一天无同系列可比数据',

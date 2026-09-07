@@ -65,6 +65,7 @@ export class CampaignDecisionService {
         const review: GrowthJudgment | undefined = records.find(
           (r): r is GrowthJudgment =>
             'preliminaryJudgment' in r &&
+            !r.deletedAt &&
             r.campaignReview?.key === card.key &&
             r.campaignReview.revision === card.revision,
         );
@@ -95,7 +96,11 @@ export class CampaignDecisionService {
         }
         return card;
       })
-      .sort((a, b) => b.priority - a.priority);
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.urgent)) - Number(Boolean(a.urgent)) ||
+          b.priority - a.priority,
+      );
     return {
       items,
       policy: product.decisionPolicy || DEFAULT_CAMPAIGN_POLICY,
@@ -166,6 +171,7 @@ export class CampaignDecisionService {
     productId: string,
     key: string,
     revision: string,
+    prepareOnly = false,
   ): Promise<GrowthJudgment> {
     const card: CampaignDecisionCard = this.currentCard(
       productId,
@@ -206,6 +212,7 @@ export class CampaignDecisionService {
       },
     };
     this.database.saveDecisionRecord(review);
+    if (prepareOnly) return review;
     return this.analysis.analyzeJudgment(review.id, 'external_only');
   }
 
