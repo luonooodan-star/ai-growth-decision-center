@@ -322,6 +322,7 @@ const dorisString = (
 };
 
 export {
+  dorisValue,
   dorisNumber,
   dorisString,
   normalizeDorisQueryResult,

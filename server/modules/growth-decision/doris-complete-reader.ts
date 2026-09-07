@@ -6,6 +6,7 @@ import { campaignHash } from './campaign-snapshots';
 import {
   dorisNumber,
   dorisString,
+  dorisValue,
   type DorisQueryResult,
   type DorisRow,
 } from './doris-result-normalizer';
@@ -42,11 +43,17 @@ const dates = (start: string, end: string): string[] => {
     result.push(day);
   return result;
 };
-const sum = (rows: DorisRow[], metric: string): number | undefined => {
-  const values = rows.map((row) => dorisNumber(row, metric));
-  return values.every((v) => v !== undefined)
-    ? values.reduce<number>((a, b) => a + (b || 0), 0)
-    : undefined;
+// Match SQL SUM: explicit NULL is excluded, but absent/invalid fields are errors.
+// This changes reconciliation only; the original rows keep their NULL values.
+const sum = (rows: DorisRow[], metric: string): number | null | undefined => {
+  const values: number[] = [];
+  for (const row of rows) {
+    if (dorisValue(row, metric) === null) continue;
+    const value = dorisNumber(row, metric);
+    if (value === undefined) return undefined;
+    values.push(value);
+  }
+  return values.length ? values.reduce((a, b) => a + b, 0) : null;
 };
 const close = (a: number, b: number): boolean =>
   Math.abs(a - b) <= Math.max(0.01, Math.abs(a) * 0.00001);
@@ -133,7 +140,13 @@ export class DorisCompleteReader {
     const cohort = String(primary.dataset).includes('cohort');
     const dateColumn = cohort ? 'install_date' : 'report_date';
     const metrics = cohort
-      ? ['cohort_spend', 'd0_roas']
+      ? [
+          'cohort_spend',
+          ...((fallback.metrics as string[]).includes('cumulative_metric_value')
+            ? ['cumulative_metric_value']
+            : []),
+          'd0_roas',
+        ]
       : ['spend', 'impressions'];
     const aggregateQuery = { ...primary, dimensions: [dateColumn], metrics };
     const before = await this.query(aggregateQuery);
@@ -196,7 +209,7 @@ export class DorisCompleteReader {
   }
   private key(args: Query, fingerprint: string): string {
     return campaignHash([
-      'complete-v1',
+      'complete-v2-sql-null',
       this.options.productId,
       args,
       fingerprint,
@@ -381,27 +394,41 @@ export class DorisCompleteReader {
     for (const metric of metrics.filter((m) => m !== 'd0_roas')) {
       const expected = dorisNumber(aggregates[0], metric);
       const actual = sum(rows, metric);
+      if (dorisValue(aggregates[0], metric) === null && actual === null)
+        continue;
       if (
         expected === undefined ||
         actual === undefined ||
+        actual === null ||
         !close(expected, actual)
       )
-        throw new Error(`${metric} 明细与汇总不一致，未发布本日数据`);
+        throw new Error(
+          `${metric} 明细与汇总不一致（汇总 ${expected ?? 'NULL/缺失'}，明细 ${actual ?? 'NULL/缺失'}，${rows.length} 行），未发布本日数据`,
+        );
     }
     if (cohort) {
       const expected = dorisNumber(aggregates[0], 'd0_roas');
       const total = sum(rows, 'cohort_spend') || 0;
-      if (total > 0 && expected !== undefined) {
-        if (rows.some((r) => dorisNumber(r, 'd0_roas') === undefined))
+      if (total > 0) {
+        if (expected === undefined)
+          throw new Error('有消耗的 cohort 汇总缺少 D0 ROAS');
+        if (
+          rows.some(
+            (r) =>
+              (dorisNumber(r, 'cohort_spend') || 0) !== 0 &&
+              dorisNumber(r, 'd0_roas') === undefined,
+          )
+        )
           throw new Error('部分 cohort 缺少 D0 ROAS');
-        const actual =
-          rows.reduce(
-            (s, r) =>
-              s +
-              (dorisNumber(r, 'cohort_spend') || 0) *
-                (dorisNumber(r, 'd0_roas') || 0),
-            0,
-          ) / total;
+        const actual = metrics.includes('cumulative_metric_value')
+          ? (sum(rows, 'cumulative_metric_value') ?? 0) / total
+          : rows.reduce(
+              (s, r) =>
+                s +
+                (dorisNumber(r, 'cohort_spend') || 0) *
+                  (dorisNumber(r, 'd0_roas') || 0),
+              0,
+            ) / total;
         if (!close(expected, actual))
           throw new Error('D0 ROAS 与相同口径汇总不一致');
       }

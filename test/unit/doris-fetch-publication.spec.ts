@@ -71,6 +71,7 @@ describe('fetch publication and restart recovery', () => {
         spend: 50,
         impressions: 10000,
         cohort_spend: 50,
+        cumulative_metric_value: 40,
         d0_roas: 0.8,
         adjust_installs: 100,
         adjust_revenue: 40,

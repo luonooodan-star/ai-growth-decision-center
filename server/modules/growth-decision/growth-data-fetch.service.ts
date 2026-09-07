@@ -253,6 +253,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         ...filters,
         cohort_index: 0,
         observation_complete: true,
+        metric_id: 'revenue',
+        cohort_unit: 'D',
       };
 
       const [deliveryDates, cohortDates] = await Promise.all([
@@ -398,8 +400,6 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
                   'metric_value',
                   'cumulative_metric_value',
                   'd0_roas',
-                  'd7_roas',
-                  'd30_roas',
                   'cohort_roas',
                 ],
                 limit: 5000,
@@ -410,7 +410,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
                 start_date: startDate,
                 end_date: cohortDate,
                 filters_json: JSON.stringify(cohortFilters),
-                metrics: ['cohort_spend', 'd0_roas'],
+                metrics: ['cohort_spend', 'cumulative_metric_value', 'd0_roas'],
                 limit: 1000,
               },
               'cohort 明细',

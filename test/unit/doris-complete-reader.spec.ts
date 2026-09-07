@@ -89,6 +89,97 @@ function setup(
 }
 
 describe('complete Doris reads', () => {
+  it('includes revenue from NULL/zero-spend cohorts when reconciling ROAS', async () => {
+    const q = {
+      ...args,
+      metrics: ['cohort_spend', 'cumulative_metric_value', 'd0_roas'],
+    };
+    const rows = [
+      {
+        ...source(1)[0],
+        cohort_spend: 20,
+        cumulative_metric_value: 10,
+        d0_roas: 0.5,
+      },
+      {
+        ...source(2)[1],
+        cohort_spend: null,
+        cumulative_metric_value: 2,
+        d0_roas: null,
+      },
+      {
+        ...source(3)[2],
+        cohort_spend: 0,
+        cumulative_metric_value: 3,
+        d0_roas: null,
+      },
+    ];
+    const { reader, gaps } = setup(async (query) => ({
+      rows:
+        (query.dimensions as string[]).length === 1
+          ? [
+              {
+                install_date: day,
+                cohort_spend: 20,
+                cumulative_metric_value: 15,
+                d0_roas: 0.75,
+              },
+            ]
+          : rows,
+    }));
+    expect((await reader.read(q, q, 'cohort')).rows).toEqual(rows);
+    expect(gaps).toEqual([]);
+  });
+  it('reconciles SQL NULL groups without converting missing metrics to zero', async () => {
+    const rows = [
+      { ...source(1)[0], cohort_spend: 20, d0_roas: 0.5 },
+      { ...source(2)[1], cohort_spend: null, d0_roas: null },
+      { ...source(3)[2], cohort_spend: 0, d0_roas: null },
+    ];
+    const { reader, gaps } = setup(async (q) => ({
+      rows:
+        (q.dimensions as string[]).length === 1
+          ? [{ install_date: day, cohort_spend: 20, d0_roas: 0.5 }]
+          : rows,
+    }));
+    const result = await reader.read(args, args, 'cohort');
+    expect(gaps).toEqual([]);
+    expect(result.rows).toEqual(rows);
+    expect(result.rows?.[1].cohort_spend).toBeNull();
+  });
+  it('accepts all-NULL groups only with an all-NULL aggregate', async () => {
+    const { reader, gaps } = setup(async (q) => ({
+      rows: [
+        {
+          ...((q.dimensions as string[]).length === 1
+            ? { install_date: day }
+            : source(1)[0]),
+          cohort_spend: null,
+          d0_roas: null,
+        },
+      ],
+    }));
+    expect((await reader.read(args, args, 'cohort')).rows).toHaveLength(1);
+    expect(gaps).toEqual([]);
+  });
+  it.each(['absent', 'invalid', 'missing-roas', 'wrong-sum'])(
+    'still rejects %s data',
+    async (kind) => {
+      const row: DorisRow = { ...source(1)[0], cohort_spend: 20, d0_roas: 0.5 };
+      if (kind === 'absent') delete row.cohort_spend;
+      if (kind === 'invalid') row.cohort_spend = 'invalid';
+      if (kind === 'missing-roas') row.d0_roas = null;
+      if (kind === 'wrong-sum') row.cohort_spend = 19;
+      const { reader, gaps } = setup(async (q) => ({
+        rows:
+          (q.dimensions as string[]).length === 1
+            ? [{ install_date: day, cohort_spend: 20, d0_roas: 0.5 }]
+            : [row],
+      }));
+      expect((await reader.read(args, args, 'cohort')).rows).toHaveLength(0);
+      expect(gaps).toHaveLength(1);
+    },
+  );
   it.each([999, 1000, 1501])(
     'reads %i rows without losing capped campaigns',
     async (size) => {
