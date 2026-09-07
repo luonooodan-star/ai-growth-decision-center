@@ -31,6 +31,21 @@ const snapshot = (): CampaignDailySnapshot => ({
   },
 });
 describe('zero delivery is not a missing target anomaly', () => {
+  it('does not mistake Adjust attribution installs for new media delivery', () => {
+    const source = {
+      ...snapshot(),
+      metrics: {
+        ...snapshot().metrics,
+        adjust_installs: 2,
+        cpi: 0,
+        adjust_revenue: 0.395,
+      },
+    };
+    const card = buildCampaignCard(product, [source], [], now);
+    expect(card.noRecentDelivery).toBe(true);
+    expect(card.snapshot.metrics.adjust_installs).toBe(2);
+    expect(card.blockers.join()).not.toContain('主目标指标未返回');
+  });
   it('separates residual revenue from acquisition activity', () => {
     const card = buildCampaignCard(product, [snapshot()], [], now);
     expect(card.noRecentDelivery).toBe(true);
@@ -44,7 +59,7 @@ describe('zero delivery is not a missing target anomaly', () => {
     { impressions: undefined },
     { media_clicks: 1 },
     { spend: 1 },
-    { adjust_installs: 1 },
+    { media_installs: 1 },
   ])('does not hide missing or positive delivery: %j', (metrics) => {
     expect(
       buildCampaignCard(

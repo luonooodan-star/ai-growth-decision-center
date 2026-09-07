@@ -57,15 +57,9 @@ function inRange(
 export function hasZeroDelivery(snapshot: CampaignDailySnapshot): boolean {
   return (
     snapshot.qualityIssues.length === 0 &&
-    (
-      [
-        'spend',
-        'impressions',
-        'media_clicks',
-        'media_installs',
-        'adjust_installs',
-      ] as const
-    ).every((key) => snapshot.metrics[key] === 0)
+    (['spend', 'impressions', 'media_clicks', 'media_installs'] as const).every(
+      (key) => snapshot.metrics[key] === 0,
+    )
   );
 }
 

@@ -63,7 +63,8 @@ export const CampaignBoardDetail: React.FC<Props> = ({
           <h3 className="font-semibold">已返回的每日数据与趋势</h3>
           {selected.noRecentDelivery && (
             <p className="text-sm text-slate-500">
-              消耗、展示、点击与安装均为零时，相关比率不适用。历史用户收入回流不等于新增投放；这也不代表广告平台状态已暂停。未返回的日期仍需核对。
+              消耗、展示、点击与媒体安装均为零，未发现新增媒体投放。Adjust
+              安装和收入仍保留，可能来自历史归因回补，不单独作为当天投放证据；不代表广告平台已暂停。未返回日期仍需核对。
             </p>
           )}
           {selected.currentDaySnapshot && (
