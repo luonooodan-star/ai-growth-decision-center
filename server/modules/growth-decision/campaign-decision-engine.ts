@@ -54,9 +54,17 @@ function inRange(
   );
 }
 
+function hasDeliveryQualityFailure(snapshot: CampaignDailySnapshot): boolean {
+  // Unresolved ownership blocks ad actions, but does not invalidate measured zero spend.
+  // All other integrity warnings remain blocking; never treat a failed fetch as zero.
+  return snapshot.qualityIssues.some(
+    (issue) => issue !== '广告账户归属尚未唯一确认',
+  );
+}
+
 export function hasZeroDelivery(snapshot: CampaignDailySnapshot): boolean {
   return (
-    snapshot.qualityIssues.length === 0 &&
+    !hasDeliveryQualityFailure(snapshot) &&
     (['spend', 'impressions', 'media_clicks', 'media_installs'] as const).every(
       (key) => snapshot.metrics[key] === 0,
     )
@@ -135,7 +143,7 @@ export function buildCampaignCard(
   for (const day of completedDays) {
     if (
       day.dataDate !== zeroDate ||
-      day.qualityIssues.length ||
+      hasDeliveryQualityFailure(day) ||
       day.metrics.spend !== 0
     )
       break;
@@ -146,13 +154,18 @@ export function buildCampaignCard(
   const resumedToday = sorted.some(
     (s) => s.dataDate === today && (s.metrics.spend ?? 0) > 0,
   );
+  const staleAt = Math.min(
+    Date.parse(`${snapshot.dataDate}T00:00:00+08:00`) + 3 * 86400000,
+    Date.parse(snapshot.fetchedAt) +
+      Math.max(3, product.dataDelayMinutes / 30) * 3600000,
+  );
+  const staleHistory =
+    age >= 0 && Number.isFinite(staleAt) && now.getTime() > staleAt;
   const noRecentDelivery =
-    age <= 2 &&
     age >= 0 &&
-    now.getTime() - Date.parse(snapshot.fetchedAt) <=
-      Math.max(3, product.dataDelayMinutes / 30) * 3600000 &&
     !resumedToday &&
-    (twoZeroDays ||
+    (staleHistory ||
+      twoZeroDays ||
       [...trend, ...sorted.filter((s) => s.dataDate === today)].every(
         hasZeroDelivery,
       )) &&
@@ -171,7 +184,9 @@ export function buildCampaignCard(
           ) +
             8 * 86400000,
         ).toISOString()
-      : undefined;
+      : noRecentDelivery && staleHistory
+        ? new Date(staleAt + 7 * 86400000).toISOString()
+        : undefined;
   if (zeroDelivery)
     blockers.push('本数据日无新增投放，CPI、CPM、D0 不适用；不代表效果不达标');
   if (age > 1)
@@ -258,6 +273,9 @@ export function buildCampaignCard(
     reason = '已返回窗口无新增投放，仅保留历史回流记录；不作效果异常判断';
   if (noRecentDelivery && twoZeroDays)
     reason = `连续 ${zeroSpendDays.length} 个已结束数据日无消耗，归入无新增投放`;
+  if (noRecentDelivery && staleHistory)
+    reason =
+      '历史数据已过期，移入无新增投放；当前投放状态待确认，不代表实际消耗为零';
   if (!blockers.length) {
     if (bad) {
       verdict = 'decrease';
@@ -363,6 +381,7 @@ export function buildCampaignCard(
   };
   return {
     noRecentDelivery,
+    staleHistory: noRecentDelivery && staleHistory,
     noDeliveryHideAfter,
     key: snapshot.key,
     revision: campaignHash([

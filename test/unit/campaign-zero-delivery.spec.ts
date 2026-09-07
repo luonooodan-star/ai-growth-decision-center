@@ -31,6 +31,38 @@ const snapshot = (): CampaignDailySnapshot => ({
   },
 });
 describe('zero delivery is not a missing target anomaly', () => {
+  it('separates unresolved ownership from spend integrity while retaining action guardrails', () => {
+    const days = ['2026-09-06', '2026-09-05'].map((dataDate) => ({
+      ...snapshot(),
+      dataDate,
+      accountId: undefined,
+      qualityIssues: ['广告账户归属尚未唯一确认'],
+    }));
+    const card = buildCampaignCard(product, days, [], now);
+    expect(card.noRecentDelivery).toBe(true);
+    expect(card.noDeliveryHideAfter).toBeDefined();
+    expect(card.blockers).toContain('广告账户归属尚未唯一确认');
+    expect(card.primaryAction.changePct).toBeUndefined();
+    expect(
+      buildCampaignCard(
+        product,
+        days.map((s) => ({
+          ...s,
+          qualityIssues: [...s.qualityIssues, '汇总不一致'],
+        })),
+        [],
+        now,
+      ).noRecentDelivery,
+    ).toBe(false);
+    expect(
+      buildCampaignCard(
+        product,
+        days.map((s) => ({ ...s, metrics: { ...s.metrics, spend: 50 } })),
+        [],
+        now,
+      ).noRecentDelivery,
+    ).toBe(false);
+  });
   it('classifies two consecutive zero-spend days even with earlier spend and attribution', () => {
     const days = ['2026-09-06', '2026-09-05', '2026-09-04'].map(
       (dataDate, i) => ({
@@ -170,7 +202,7 @@ describe('zero delivery is not a missing target anomaly', () => {
     expect(card.blockers.join()).toContain('昨日 2026-09-06 无该系列快照');
     expect(card.trend).toHaveLength(1);
   });
-  it('does not hide corrupt or stale zero snapshots', () => {
+  it('keeps fresh integrity failures visible but classifies stale history separately', () => {
     expect(
       buildCampaignCard(
         product,
@@ -183,6 +215,27 @@ describe('zero delivery is not a missing target anomaly', () => {
       buildCampaignCard(
         product,
         [{ ...snapshot(), fetchedAt: '2026-09-06T01:00:00Z' }],
+        [],
+        now,
+      ).noRecentDelivery,
+    ).toBe(true);
+  });
+  it('archives stale positive-spend history without claiming zero and restores fresh spend', () => {
+    const source = {
+      ...snapshot(),
+      fetchedAt: '2026-09-06T01:00:00Z',
+      metrics: { ...snapshot().metrics, spend: 50 },
+    };
+    const card = buildCampaignCard(product, [source], [], now);
+    expect(card.noRecentDelivery).toBe(true);
+    expect(card.staleHistory).toBe(true);
+    expect(card.reason).toContain('不代表实际消耗为零');
+    expect(card.blockers).toContain('数据已过期，需要重新抓取');
+    expect(card.noDeliveryHideAfter).toBe('2026-09-13T04:00:00.000Z');
+    expect(
+      buildCampaignCard(
+        product,
+        [{ ...source, fetchedAt: now.toISOString() }],
         [],
         now,
       ).noRecentDelivery,
