@@ -60,7 +60,7 @@ export function validateCampaignRules(
       );
     }
     ids.add(rule.id);
-    for (const condition of rule.conditions) {
+    for (const [index, condition] of rule.conditions.entries()) {
       if (
         !condition ||
         !METRICS.includes(condition.metric) ||
@@ -71,7 +71,9 @@ export function validateCampaignRules(
         Math.abs(condition.value) > 1e12 ||
         (condition.basis === 'value' && condition.value < 0)
       )
-        throw new BadRequestException('规则条件的指标、比较方式或阈值不合法');
+        throw new BadRequestException(
+          `规则「${rule.name}」第 ${index + 1} 个条件不合法：请检查指标、比较方式和阈值是否填写完整。当日指标值不能为负数；较前一天变化允许负数（例如 -25）。停用规则也须填写完整或删除后再保存。`,
+        );
     }
     if (
       rule.changePct !== undefined &&

@@ -40,6 +40,48 @@ const rule = (
 });
 
 describe('campaign rules and one-click batch', () => {
+  it('accepts negative day-over-day thresholds and identifies incomplete drafts by rule and condition', () => {
+    const valid = rule({
+      name: 'D0 ROAS 突降',
+      enabled: false,
+      consecutiveDays: 1,
+      conditions: [
+        {
+          metric: 'd0_roas',
+          basis: 'previous_day_change',
+          operator: 'lte',
+          value: -25,
+        },
+      ],
+    });
+    expect(validateCampaignRules([valid])[0].conditions[0].value).toBe(-25);
+    const draft = rule({
+      id: 'draft-cpi',
+      name: 'CPI 突涨并越界',
+      enabled: false,
+      conditions: [
+        {
+          metric: 'cpi',
+          basis: 'previous_day_change',
+          operator: 'gte',
+          value: 30,
+        },
+        { metric: 'cpi', basis: 'value', operator: 'gte', value: Number.NaN },
+      ],
+    });
+    expect(() =>
+      validateCampaignRules(JSON.parse(JSON.stringify([valid, draft]))),
+    ).toThrow('规则「CPI 突涨并越界」第 2 个条件');
+    expect(() =>
+      validateCampaignRules([
+        rule({
+          conditions: [
+            { metric: 'd0_roas', basis: 'value', operator: 'lte', value: -25 },
+          ],
+        }),
+      ]),
+    ).toThrow('当日指标值不能为负数');
+  });
   it('uses the custom increase duration and surfaces independently matched urgent rules', () => {
     const today = new Date().toLocaleDateString('en-CA', {
       timeZone: 'Asia/Shanghai',

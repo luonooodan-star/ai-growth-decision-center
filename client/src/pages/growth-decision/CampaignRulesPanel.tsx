@@ -158,6 +158,23 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
     setError('');
     setNotice('');
     try {
+      // All categories are saved together. Focus incomplete drafts instead of
+      // sending NaN (serialized as null) and showing an unrelated generic error.
+      for (const rule of config.rules) {
+        const index = rule.conditions.findIndex(
+          (condition) =>
+            !Number.isFinite(condition.value) ||
+            Math.abs(condition.value) > 1e12 ||
+            (condition.basis === 'value' && condition.value < 0),
+        );
+        if (index >= 0) {
+          setCategory(rule.verdict);
+          setSelectedId(rule.id);
+          throw new Error(
+            `规则「${rule.name}」第 ${index + 1} 个条件的阈值未填写完整或不合法。已定位该规则；请补齐，或删除该草稿后保存。较前一天变化允许填写 -25，表示下降至少 25%（配合小于等于）。`,
+          );
+        }
+      }
       const saved = await saveCampaignRules(productId, config);
       setConfig({ rules: saved.rules, revision: saved.revision });
       setDirty(false);
