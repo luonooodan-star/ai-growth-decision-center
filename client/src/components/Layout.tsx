@@ -39,12 +39,9 @@ const Layout = () => {
               <Activity className="size-3.5" />
               产品中心
             </NavLink>
-            <NavLink to="/experiments" className={navClass}>
-              <Database className="size-3.5" />
-              实验库
-            </NavLink>
             <NavLink to="/operations" className={navClass}>
-              <Activity className="size-3.5" />操作复盘
+              <Activity className="size-3.5" />
+              操作复盘
             </NavLink>
             <NavLink to="/metrics" className={navClass}>
               <Gauge className="size-3.5" />

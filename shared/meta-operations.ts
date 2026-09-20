@@ -61,6 +61,7 @@ export interface MetaAdEntity {
   fetchedAt: string;
 }
 export interface MetaOperationReview {
+  decision?: import('./skill-review').OperationDecisionEvidence;
   operation: MetaOperation;
   before: CampaignDailySnapshot[];
   after: CampaignDailySnapshot[];

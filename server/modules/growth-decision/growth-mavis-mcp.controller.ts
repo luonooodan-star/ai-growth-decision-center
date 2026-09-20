@@ -14,6 +14,7 @@ import type {
 
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { MetaOperationsService } from './meta-operations.service';
+import { SkillReviewService } from './skill-review.service';
 
 interface MavisMcpRequest {
   jsonrpc: '2.0';
@@ -34,9 +35,51 @@ interface MavisMcpResponse {
 
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
+    name: 'claim_weekly_skill_review',
+    description:
+      '领取一个按产品和上海自然周去重的 Skill 复盘，返回冻结证据和租约；无任务返回 null。',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'submit_weekly_skill_review',
+    description:
+      '提交周复盘及证据关联候选，不修改正式规则；合同见 shared/skill-review.ts。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        leaseToken: { type: 'string' },
+        summary: { type: 'string' },
+        candidates: { type: 'array', items: { type: 'object' }, maxItems: 20 },
+      },
+      required: ['id', 'leaseToken', 'summary', 'candidates'],
+    },
+  },
+  {
+    name: 'fail_weekly_skill_review',
+    description: '结束失败的周复盘，不遗留运行状态。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        leaseToken: { type: 'string' },
+        error: { type: 'string' },
+      },
+      required: ['id', 'leaseToken', 'error'],
+    },
+  },
+  {
     name: 'import_meta_operations',
-    description: '导入只读 Meta 操作日志，按稳定指纹去重，并关联 Doris 系列快照；不执行广告变更。合同见 shared/meta-operations.ts。',
-    inputSchema: { type: 'object', properties: { operations: { type: 'array', maxItems: 500, items: { type: 'object' } }, entities: { type: 'array', maxItems: 500, items: { type: 'object' } } }, required: ['operations'] },
+    description:
+      '导入只读 Meta 操作日志，按稳定指纹去重，并关联 Doris 系列快照；不执行广告变更。合同见 shared/meta-operations.ts。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        operations: { type: 'array', maxItems: 500, items: { type: 'object' } },
+        entities: { type: 'array', maxItems: 500, items: { type: 'object' } },
+      },
+      required: ['operations'],
+    },
   },
   {
     name: 'claim_analysis_job',
@@ -107,6 +150,7 @@ export class GrowthMavisMcpController {
   constructor(
     private readonly growthMavisAnalysisService: GrowthMavisAnalysisService,
     private readonly metaOperations: MetaOperationsService,
+    private readonly skillReviews: SkillReviewService,
   ) {}
 
   @Post()
@@ -155,7 +199,13 @@ export class GrowthMavisMcpController {
   }
 
   private callTool(name: string, args: Record<string, unknown>): unknown {
-    if (name === 'import_meta_operations') return this.metaOperations.import(args);
+    if (name === 'claim_weekly_skill_review') return this.skillReviews.claim();
+    if (name === 'submit_weekly_skill_review')
+      return this.skillReviews.submit(args);
+    if (name === 'fail_weekly_skill_review')
+      return this.skillReviews.fail(args);
+    if (name === 'import_meta_operations')
+      return this.metaOperations.import(args);
     if (name === 'claim_analysis_job') {
       const job: GrowthMavisJob | undefined =
         this.growthMavisAnalysisService.claimNextJob(

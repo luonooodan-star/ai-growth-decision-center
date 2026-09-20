@@ -16,6 +16,7 @@ import { PaidGrowthController } from './paid-growth.controller';
 import { PaidGrowthService } from './paid-growth.service';
 import { MetaOperationsService } from './meta-operations.service';
 import { MetaOperationsController } from './meta-operations.controller';
+import { SkillReviewService } from './skill-review.service';
 
 @Module({
   controllers: [
@@ -27,6 +28,7 @@ import { MetaOperationsController } from './meta-operations.controller';
     GrowthMavisMcpController,
   ],
   providers: [
+    SkillReviewService,
     MetaOperationsService,
     PaidGrowthService,
     OptimizerWorkflowService,

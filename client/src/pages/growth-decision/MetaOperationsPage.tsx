@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import type {
   MetaOperationOverview,
   MetaOperationCategory,
   CampaignDailySnapshot,
 } from '@shared/api.interface';
-import { getMetaOperations } from '@/api/meta-operations';
+import { getMetaOperations, saveOperationReason } from '@/api/meta-operations';
+import { Textarea } from '@/components/ui/textarea';
+import ExperimentLibraryPage from './ExperimentLibraryPage';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -32,6 +34,9 @@ const Day = ({ row }: { row: CampaignDailySnapshot }) => (
 );
 
 export default function MetaOperationsPage() {
+  const [params, setParams] = useSearchParams();
+  const [conflictsOnly, setConflictsOnly] = useState(false);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [data, setData] = useState<MetaOperationOverview | null>(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<MetaOperationCategory | 'all'>('all');
@@ -58,6 +63,20 @@ export default function MetaOperationsPage() {
       active = false;
     };
   }, [page, refresh]);
+  if (params.get('view') === 'history')
+    return (
+      <>
+        <div className="mx-auto max-w-[1380px] px-5 pt-6">
+          <Button variant="outline" onClick={() => setParams({})}>
+            返回 Meta 操作复盘
+          </Button>
+          <p className="mt-2 text-sm text-slate-500">
+            原实验库已合并至操作复盘；以下为保留的人工措施与历史观察记录。
+          </p>
+        </div>
+        <ExperimentLibraryPage />
+      </>
+    );
   return (
     <div className="mx-auto max-w-[1540px] space-y-6 px-5 py-8 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -89,6 +108,24 @@ export default function MetaOperationsPage() {
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
+          variant="outline"
+          onClick={() => setParams({ view: 'history' })}
+        >
+          历史措施与观察
+        </Button>
+        <Link
+          className="rounded-lg border px-3 py-2 text-sm text-blue-600"
+          to="/skills"
+        >
+          每周 Skill 复盘 →
+        </Link>
+        <Button
+          variant={conflictsOnly ? 'default' : 'outline'}
+          onClick={() => setConflictsOnly(!conflictsOnly)}
+        >
+          本页仅看建议分歧
+        </Button>
+        <Button
           variant={filter === 'all' ? 'default' : 'outline'}
           onClick={() => setFilter('all')}
         >
@@ -111,6 +148,12 @@ export default function MetaOperationsPage() {
         </p>
       )}
       {data?.items
+        .filter((r) => !conflictsOnly || r.decision?.state === 'conflict')
+        .sort(
+          (a, b) =>
+            Number(b.decision?.state === 'conflict') -
+            Number(a.decision?.state === 'conflict'),
+        )
         .filter((r) => filter === 'all' || r.operation.category === filter)
         .map((review) => {
           const op = review.operation;
@@ -149,6 +192,70 @@ export default function MetaOperationsPage() {
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
                 {review.summary}
               </p>
+              {review.decision && (
+                <div
+                  className={`rounded-lg p-3 text-sm ${review.decision.state === 'conflict' ? 'border border-red-200 bg-red-50 text-red-800' : 'bg-slate-50 text-slate-600'}`}
+                >
+                  <p className="font-medium">
+                    {review.decision.state === 'conflict'
+                      ? '建议分歧 · 优先复盘'
+                      : review.decision.state === 'aligned'
+                        ? '操作方向一致'
+                        : '历史建议不足'}
+                  </p>
+                  <p>{review.decision.explanation}</p>
+                  {review.decision.recommendation && (
+                    <p className="mt-2">
+                      操作前建议：{review.decision.recommendation.action} ·
+                      记录于{' '}
+                      {new Date(
+                        review.decision.recommendation.recordedAt,
+                      ).toLocaleString('zh-CN')}{' '}
+                      · 规则{' '}
+                      {review.decision.recommendation.rule?.name || '默认判断'}
+                    </p>
+                  )}
+                  <details className="mt-2">
+                    <summary className="cursor-pointer">
+                      补充人工判断理由（可选，不阻塞自动记录）
+                    </summary>
+                    <Textarea
+                      aria-label="人工调整理由"
+                      className="mt-2 bg-white"
+                      maxLength={2000}
+                      value={
+                        reasons[op.id] ?? review.decision.humanReason ?? ''
+                      }
+                      onChange={(e) =>
+                        setReasons({ ...reasons, [op.id]: e.target.value })
+                      }
+                    />
+                    <Button
+                      className="mt-2"
+                      size="sm"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          await saveOperationReason(
+                            op.id,
+                            reasons[op.id] ??
+                              review.decision?.humanReason ??
+                              '',
+                          );
+                          setRefresh((v) => v + 1);
+                        } catch {
+                          setError('理由保存失败，请填写有效内容后重试');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      保存理由并留档
+                    </Button>
+                  </details>
+                </div>
+              )}
               <details>
                 <summary className="cursor-pointer text-sm font-medium text-blue-600">
                   查看操作前后数据与证据

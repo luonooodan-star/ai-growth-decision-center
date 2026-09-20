@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { DeleteRecordButton } from './DeleteRecordButton';
 import { CampaignRulesPanel } from './CampaignRulesPanel';
+import { WeeklySkillReviews } from './WeeklySkillReviews';
 
 const SkillIterationPage: React.FC = () => {
   const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
@@ -89,8 +90,8 @@ const SkillIterationPage: React.FC = () => {
             产品 Skill 迭代
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            人工确认/否决形成判断规则候选，实验的有效与无效结果形成证据；两者共同进入下一版产品
-            Skill。
+            系统规则 × 优化师实际操作 × Doris
+            结果：保留分歧证据，按周归纳，经人工审核共同更新产品 Skill。
           </p>
         </div>
         <Button
@@ -109,6 +110,7 @@ const SkillIterationPage: React.FC = () => {
         </p>
       ) : null}
 
+      <WeeklySkillReviews onUpdated={load} />
       <section className="mt-6 grid gap-5 lg:grid-cols-2">
         {products.map((product: GrowthProduct) => {
           const productCandidates: GrowthJudgment[] = candidates.filter(
@@ -125,7 +127,8 @@ const SkillIterationPage: React.FC = () => {
               item.resultClassification === 'partial',
           ).length;
           const ready: boolean =
-            productCandidates.length > 0 && productExperiments.length > 0;
+            Boolean(product.knowledge?.length) ||
+            (productCandidates.length > 0 && productExperiments.length > 0);
 
           return (
             <Card
@@ -164,7 +167,7 @@ const SkillIterationPage: React.FC = () => {
                         <article className="border-t pt-2" key={k.id}>
                           <p>{k.conclusion}</p>
                           <p className="text-xs text-slate-500">
-                            {k.caution} 来源实验 {k.sourceCaseId} ·{' '}
+                            {k.caution} 来源复盘 {k.sourceCaseId} ·{' '}
                             {new Date(k.approvedAt).toLocaleString('zh-CN')}
                           </p>
                         </article>
@@ -178,10 +181,10 @@ const SkillIterationPage: React.FC = () => {
                     value={productCandidates.length}
                   />
                   <SkillFact
-                    label="完成实验"
-                    value={productExperiments.length}
+                    label="已审核 Skill 知识"
+                    value={product.knowledge?.length || 0}
                   />
-                  <SkillFact label="有效实验" value={effective} />
+                  <SkillFact label="历史改善记录" value={effective} />
                 </div>
 
                 <div className="mt-5 max-h-72 space-y-2 overflow-y-auto pr-1">
@@ -231,8 +234,8 @@ const SkillIterationPage: React.FC = () => {
                 <div className="mt-4 rounded-xl bg-violet-50 p-4 text-xs leading-5 text-violet-800">
                   <span className="font-semibold">下一版建议：</span>
                   {ready
-                    ? `将 ${productCandidates.length} 条判断候选与 ${productExperiments.length} 条实验结果纳入复盘，区分有效和无效规则后再发布新版本。`
-                    : '继续积累人工判断与完成实验；未形成结果闭环前不自动修改线上规则。'}
+                    ? `结合 ${product.knowledge?.length || 0} 条已审核知识、${productCandidates.length} 条历史判断候选和实操结果，试跑数值规则后再发布。`
+                    : '自动积累 Meta 操作与 Doris 结果，每周形成候选；无需重复人工登记实验，证据不足不自动修改规则。'}
                 </div>
               </CardContent>
             </Card>

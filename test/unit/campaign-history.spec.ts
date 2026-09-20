@@ -123,6 +123,7 @@ describe('campaign history reconciliation', () => {
       listDecisionRecords: () => [order],
       listMetaOperations: () => [],
       listMetaEntities: () => [],
+      saveCampaignRecommendation: () => undefined,
     } as unknown as LocalDatabaseService;
     const service = new CampaignDecisionService(
       database,

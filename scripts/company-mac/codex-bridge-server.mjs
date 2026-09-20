@@ -21,6 +21,9 @@ const responseDirectory = join(runtimeDirectory, 'codex-responses');
 const readyPath = join(runtimeDirectory, 'codex-bridge.ready');
 const workerScript = join(scriptDirectory, 'marvis-worker.mjs');
 const allowedCommands = new Set([
+  'claim-weekly',
+  'submit-weekly',
+  'fail-weekly',
   'import-meta',
   'check',
   'claim',
@@ -46,7 +49,10 @@ function validateRequest(payload) {
   if (!isSafeIdentifier(requestId) || !allowedCommands.has(command)) {
     throw new Error('请求标识或命令无效');
   }
-  if (command === 'check' && args.length !== 0) {
+  if (
+    (command === 'check' || command === 'claim-weekly') &&
+    args.length !== 0
+  ) {
     throw new Error('check 命令不接受参数');
   }
   if (command === 'claim') {
@@ -54,7 +60,11 @@ function validateRequest(payload) {
       throw new Error('claim 参数无效');
     }
   }
-  if (command === 'import-meta' && (args.length !== 1 || !/^\/private\/tmp\/codex-growth-[a-zA-Z0-9_-]+\.json$/.test(args[0]))) {
+  if (
+    ['import-meta', 'submit-weekly', 'fail-weekly'].includes(command) &&
+    (args.length !== 1 ||
+      !/^\/private\/tmp\/codex-growth-[a-zA-Z0-9_-]+\.json$/.test(args[0]))
+  ) {
     throw new Error('Meta 导入文件路径无效');
   }
   if (command === 'submit' || command === 'submit-batch') {

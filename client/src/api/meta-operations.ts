@@ -2,7 +2,30 @@ import axios from 'axios';
 import type {
   MetaOperationOverview,
   MetaAdEntity,
+  WeeklySkillReportSummary,
 } from '@shared/api.interface';
+const root = '/api/growth-decision/meta-operations';
+export const getWeeklyReviews = async (): Promise<WeeklySkillReportSummary[]> =>
+  (await axios.get(`${root}/weekly`)).data;
+export const generateWeeklyReviews = async (): Promise<
+  WeeklySkillReportSummary[]
+> => (await axios.post(`${root}/weekly`)).data;
+export const retryWeeklyReview = async (id: string) =>
+  (await axios.post(`${root}/weekly/${encodeURIComponent(id)}/retry`)).data;
+export const reviewWeeklyCandidate = async (
+  id: string,
+  index: number,
+  decision: 'approved' | 'rejected',
+) =>
+  (
+    await axios.post(`${root}/weekly/${encodeURIComponent(id)}/review`, {
+      index,
+      decision,
+    })
+  ).data;
+export const saveOperationReason = async (id: string, reason: string) =>
+  (await axios.post(`${root}/${encodeURIComponent(id)}/reason`, { reason }))
+    .data;
 
 export async function getMetaOperations(
   page = 1,

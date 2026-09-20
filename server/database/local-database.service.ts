@@ -19,6 +19,9 @@ import type {
   GrowthProduct,
   MetaOperation,
   MetaAdEntity,
+  OperationDecisionEvidence,
+  WeeklySkillReport,
+  SavedCampaignRecommendation,
 } from '@shared/api.interface';
 
 type DecisionRecord = GrowthDecisionCase | GrowthJudgment;
@@ -123,25 +126,38 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   saveMetaOperation(item: MetaOperation): boolean {
-    const result = this.database.prepare(
-      'INSERT OR IGNORE INTO growth_meta_operation (id, occurred_at, payload) VALUES (?, ?, ?)',
-    ).run(item.id, item.occurredAt, JSON.stringify(item));
+    const result = this.database
+      .prepare(
+        'INSERT OR IGNORE INTO growth_meta_operation (id, occurred_at, payload) VALUES (?, ?, ?)',
+      )
+      .run(item.id, item.occurredAt, JSON.stringify(item));
     return result.changes === 1;
   }
 
   listMetaOperations(): MetaOperation[] {
-    return this.database.prepare('SELECT payload FROM growth_meta_operation ORDER BY occurred_at DESC, id')
-      .all().map((row) => this.parsePayload<MetaOperation>(row.payload));
+    return this.database
+      .prepare(
+        'SELECT payload FROM growth_meta_operation ORDER BY occurred_at DESC, id',
+      )
+      .all()
+      .map((row) => this.parsePayload<MetaOperation>(row.payload));
   }
 
   saveMetaEntity(item: MetaAdEntity): void {
-    this.database.prepare(`INSERT INTO growth_meta_entity (account_id, id, fetched_at, payload) VALUES (?, ?, ?, ?)
+    this.database
+      .prepare(
+        `INSERT INTO growth_meta_entity (account_id, id, fetched_at, payload) VALUES (?, ?, ?, ?)
       ON CONFLICT(account_id, id) DO UPDATE SET fetched_at = excluded.fetched_at, payload = excluded.payload
-      WHERE excluded.fetched_at >= growth_meta_entity.fetched_at`).run(item.accountId, item.id, item.fetchedAt, JSON.stringify(item));
+      WHERE excluded.fetched_at >= growth_meta_entity.fetched_at`,
+      )
+      .run(item.accountId, item.id, item.fetchedAt, JSON.stringify(item));
   }
 
   listMetaEntities(): MetaAdEntity[] {
-    return this.database.prepare('SELECT payload FROM growth_meta_entity').all().map((row) => this.parsePayload<MetaAdEntity>(row.payload));
+    return this.database
+      .prepare('SELECT payload FROM growth_meta_entity')
+      .all()
+      .map((row) => this.parsePayload<MetaAdEntity>(row.payload));
   }
 
   listProducts(): GrowthProduct[] {
@@ -152,6 +168,48 @@ export class LocalDatabaseService implements OnModuleDestroy {
       (row: Record<string, unknown>): GrowthProduct =>
         this.normalizeProduct(this.parsePayload<GrowthProduct>(row.payload)),
     );
+  }
+
+  getOperationEvidence(id: string): OperationDecisionEvidence | undefined {
+    const row = this.database
+      .prepare('SELECT payload FROM growth_operation_evidence WHERE id = ?')
+      .get(id);
+    return row
+      ? this.parsePayload<OperationDecisionEvidence>(row.payload)
+      : undefined;
+  }
+  saveCampaignRecommendation(item: SavedCampaignRecommendation): void {
+    this.database
+      .prepare(
+        'INSERT OR IGNORE INTO growth_campaign_recommendation (id, payload) VALUES (?, ?)',
+      )
+      .run(item.id, JSON.stringify(item));
+  }
+  listCampaignRecommendations(): SavedCampaignRecommendation[] {
+    return this.database
+      .prepare('SELECT payload FROM growth_campaign_recommendation')
+      .all()
+      .map((r) => this.parsePayload<SavedCampaignRecommendation>(r.payload));
+  }
+  saveOperationEvidence(item: OperationDecisionEvidence): void {
+    this.database
+      .prepare(
+        'INSERT INTO growth_operation_evidence (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
+      )
+      .run(item.operationId, JSON.stringify(item));
+  }
+  listSkillReports(): WeeklySkillReport[] {
+    return this.database
+      .prepare('SELECT payload FROM growth_skill_report ORDER BY id DESC')
+      .all()
+      .map((r) => this.parsePayload<WeeklySkillReport>(r.payload));
+  }
+  saveSkillReport(report: WeeklySkillReport): void {
+    this.database
+      .prepare(
+        'INSERT INTO growth_skill_report (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
+      )
+      .run(report.id, JSON.stringify(report));
   }
 
   getBiCache(key: string): string | undefined {
@@ -168,7 +226,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
       )
       .run(key, payload);
     // Only disposable BI cache is bounded; decision snapshots and history are untouched.
-    this.database.prepare(`DELETE FROM growth_bi_cache WHERE cache_key IN (
+    this.database
+      .prepare(
+        `DELETE FROM growth_bi_cache WHERE cache_key IN (
       SELECT cache_key FROM (
         SELECT cache_key,
           SUM(length(CAST(payload AS BLOB))) OVER (
@@ -177,7 +237,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
           ROW_NUMBER() OVER (ORDER BY json_extract(payload, '$.updatedAt') DESC, cache_key) AS position
         FROM growth_bi_cache
       ) WHERE bytes > 134217728 OR position > 1500
-    )`).run();
+    )`,
+      )
+      .run();
   }
 
   getProduct(id: string): GrowthProduct | undefined {
@@ -222,9 +284,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
     );
     return includeDeleted
       ? records
-      : records.filter(
-          (record: DecisionRecord): boolean => !record.deletedAt,
-        );
+      : records.filter((record: DecisionRecord): boolean => !record.deletedAt);
   }
 
   getDecisionRecord(id: string): DecisionRecord | undefined {
@@ -351,31 +411,53 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   listCampaignSnapshots(productId: string): CampaignDailySnapshot[] {
-    return this.database.prepare(
-      'SELECT payload FROM growth_campaign_snapshot WHERE product_id = ? ORDER BY data_date DESC',
-    ).all(productId).map((row: Record<string, unknown>): CampaignDailySnapshot =>
-      this.parsePayload<CampaignDailySnapshot>(row.payload),
-    );
+    return this.database
+      .prepare(
+        'SELECT payload FROM growth_campaign_snapshot WHERE product_id = ? ORDER BY data_date DESC',
+      )
+      .all(productId)
+      .map(
+        (row: Record<string, unknown>): CampaignDailySnapshot =>
+          this.parsePayload<CampaignDailySnapshot>(row.payload),
+      );
   }
 
   saveCampaignSnapshot(snapshot: CampaignDailySnapshot): void {
-    this.database.prepare(`INSERT INTO growth_campaign_snapshot (campaign_key, product_id, data_date, payload)
-      VALUES (?, ?, ?, ?) ON CONFLICT(campaign_key, data_date) DO UPDATE SET payload = excluded.payload`)
-      .run(snapshot.key, snapshot.productId, snapshot.dataDate, JSON.stringify(snapshot));
+    this.database
+      .prepare(
+        `INSERT INTO growth_campaign_snapshot (campaign_key, product_id, data_date, payload)
+      VALUES (?, ?, ?, ?) ON CONFLICT(campaign_key, data_date) DO UPDATE SET payload = excluded.payload`,
+      )
+      .run(
+        snapshot.key,
+        snapshot.productId,
+        snapshot.dataDate,
+        JSON.stringify(snapshot),
+      );
   }
 
   getFetchCheckpoint(key: string): GrowthFetchCheckpoint | undefined {
-    const row = this.database.prepare('SELECT payload FROM growth_fetch_checkpoint WHERE checkpoint_key = ?').get(key);
-    return row ? this.parsePayload<GrowthFetchCheckpoint>(row.payload) : undefined;
+    const row = this.database
+      .prepare(
+        'SELECT payload FROM growth_fetch_checkpoint WHERE checkpoint_key = ?',
+      )
+      .get(key);
+    return row
+      ? this.parsePayload<GrowthFetchCheckpoint>(row.payload)
+      : undefined;
   }
 
   saveFetchCheckpoint(value: GrowthFetchCheckpoint): void {
-    this.database.prepare('INSERT INTO growth_fetch_checkpoint (checkpoint_key, updated_at, payload) VALUES (?, ?, ?) ON CONFLICT(checkpoint_key) DO UPDATE SET updated_at = excluded.updated_at, payload = excluded.payload')
+    this.database
+      .prepare(
+        'INSERT INTO growth_fetch_checkpoint (checkpoint_key, updated_at, payload) VALUES (?, ?, ?) ON CONFLICT(checkpoint_key) DO UPDATE SET updated_at = excluded.updated_at, payload = excluded.payload',
+      )
       .run(value.key, value.updatedAt, JSON.stringify(value));
   }
 
   pruneFetchCheckpoints(): void {
-    this.database.prepare('DELETE FROM growth_fetch_checkpoint WHERE updated_at < ?')
+    this.database
+      .prepare('DELETE FROM growth_fetch_checkpoint WHERE updated_at < ?')
       .run(new Date(Date.now() - 48 * 3600_000).toISOString());
   }
 
@@ -441,7 +523,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
     };
     const deleted: GrowthHistoryResetResult['deleted'] = {
       fetchRuns: countRows('growth_fetch_run'),
-      snapshots: countRows('growth_metric_snapshot') + countRows('growth_campaign_snapshot'),
+      snapshots:
+        countRows('growth_metric_snapshot') +
+        countRows('growth_campaign_snapshot'),
       decisionRecords: countRows('growth_decision_record'),
       activities: countRows('growth_decision_activity'),
       mavisJobs: countRows('growth_mavis_job'),
@@ -601,6 +685,9 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_operation_evidence (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS growth_campaign_recommendation (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS growth_skill_report (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_meta_operation (
         id TEXT PRIMARY KEY, occurred_at TEXT NOT NULL, payload TEXT NOT NULL
       );

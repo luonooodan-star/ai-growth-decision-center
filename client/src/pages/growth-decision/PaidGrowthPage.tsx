@@ -11,6 +11,10 @@ import { format, subDays } from 'date-fns';
 import axios from 'axios';
 import { biRows } from '@shared/paid-growth';
 import {
+  biMetricSignal,
+  type MetricStandardProduct,
+} from '@shared/metric-signals';
+import {
   BI_LEVELS,
   type BiDay,
   type BiLevel,
@@ -20,7 +24,11 @@ import {
 import { getBiDay, getBiProducts, syncBiProducts } from '@/api/paid-growth';
 import type { MetaAdEntity } from '@shared/api.interface';
 import { getMetaEntities } from '@/api/meta-operations';
-import { CampaignMetaFilters, type MetaFilter, type MetaFilterItem } from './CampaignMetaFilters';
+import {
+  CampaignMetaFilters,
+  type MetaFilter,
+  type MetaFilterItem,
+} from './CampaignMetaFilters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -118,6 +126,25 @@ function DateFilter({
 export default function PaidGrowthPage() {
   const [params, setParams] = useSearchParams();
   const [products, setProducts] = useState<BiProduct[]>([]);
+  const [standards, setStandards] = useState<MetricStandardProduct[]>([]);
+  const [badOnly, setBadOnly] = useState(false);
+  const [badFirst, setBadFirst] = useState(true);
+  const refreshStandards = () =>
+    axios
+      .get<MetricStandardProduct[]>('/api/growth-decision/bi/standards')
+      .then((r) => setStandards(r.data))
+      .catch((e) => {
+        setStandards([]);
+        setError(`指标标准读取失败：${errorText(e)}`);
+      });
+  useEffect(() => {
+    void refreshStandards();
+    const refresh = () => {
+      void refreshStandards();
+    };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
   const [appId, setAppId] = useState(params.get('appId') || 'all');
   const [media, setMedia] = useState(params.get('media') || 'all');
   const [start, setStart] = useState(new Date());
@@ -133,7 +160,11 @@ export default function PaidGrowthPage() {
   const [search, setSearch] = useState('');
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
-  useEffect(() => { void getMetaEntities().then(setMetaEntities).catch((e) => setError(errorText(e))); }, []);
+  useEffect(() => {
+    void getMetaEntities()
+      .then(setMetaEntities)
+      .catch((e) => setError(errorText(e)));
+  }, []);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
@@ -147,6 +178,7 @@ export default function PaidGrowthPage() {
   }, []);
 
   const load = async (refresh = false, requestedLevel: BiLevel = level) => {
+    void refreshStandards();
     const dayCount =
       Math.round(
         (Date.parse(format(end, 'yyyy-MM-dd')) -
@@ -257,16 +289,35 @@ export default function PaidGrowthPage() {
       setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
   };
   const rows = useMemo(() => biRows(days), [days]);
+  const hasBad = (row: BiRow) =>
+    columns.some((c) => biMetricSignal(row, c.key, standards).state === 'bad');
   const rowMeta = useMemo(() => {
     const result = new Map<string, MetaFilterItem>();
     for (const row of rows) {
-      const entities = metaEntities.filter((e) => e.campaignId === row.campaignId);
+      const entities = metaEntities.filter(
+        (e) => e.campaignId === row.campaignId,
+      );
       // BI lacks account dimension: never combine metadata if ownership is ambiguous.
-      const unique = new Set(entities.map((e) => e.accountId)).size === 1 ? entities : [];
+      const unique =
+        new Set(entities.map((e) => e.accountId)).size === 1 ? entities : [];
       result.set(row.key, {
-        metaObjectives: [...new Set(unique.flatMap((e) => e.objective ? [e.objective] : []))],
-        metaOptimizationGoals: [...new Set(unique.flatMap((e) => e.optimizationGoal ? [e.optimizationGoal] : []))],
-        metaConversionEvents: [...new Set(unique.flatMap((e) => e.conversionEvent ? [e.conversionEvent] : []))],
+        metaObjectives: [
+          ...new Set(unique.flatMap((e) => (e.objective ? [e.objective] : []))),
+        ],
+        metaOptimizationGoals: [
+          ...new Set(
+            unique.flatMap((e) =>
+              e.optimizationGoal ? [e.optimizationGoal] : [],
+            ),
+          ),
+        ],
+        metaConversionEvents: [
+          ...new Set(
+            unique.flatMap((e) =>
+              e.conversionEvent ? [e.conversionEvent] : [],
+            ),
+          ),
+        ],
       });
     }
     return result;
@@ -274,15 +325,38 @@ export default function PaidGrowthPage() {
   const filtered = useMemo(
     () =>
       rows
-        .filter((r) => level !== 'campaigns' || !metaFilter || (metaFilter.value === '__missing' ?
-          !rowMeta.get(r.key)?.[metaFilter.key]?.length : rowMeta.get(r.key)?.[metaFilter.key]?.includes(metaFilter.value)))
+        .filter((r) => !badOnly || hasBad(r))
+        .filter(
+          (r) =>
+            level !== 'campaigns' ||
+            !metaFilter ||
+            (metaFilter.value === '__missing'
+              ? !rowMeta.get(r.key)?.[metaFilter.key]?.length
+              : rowMeta
+                  .get(r.key)
+                  ?.[metaFilter.key]?.includes(metaFilter.value)),
+        )
         .filter((r) =>
           `${r.appName} ${r.media} ${r.label} ${r.campaignName || ''}`
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
-        .sort((a, b) => Number(b[sort] ?? -1) - Number(a[sort] ?? -1)),
-    [rows, search, sort, level, metaFilter, rowMeta],
+        .sort(
+          (a, b) =>
+            (badFirst ? Number(hasBad(b)) - Number(hasBad(a)) : 0) ||
+            Number(b[sort] ?? -1) - Number(a[sort] ?? -1),
+        ),
+    [
+      rows,
+      search,
+      sort,
+      level,
+      metaFilter,
+      rowMeta,
+      badOnly,
+      badFirst,
+      standards,
+    ],
   );
   const issues = days.flatMap((day) =>
     (['daily', 'revenue', 'events'] as const).flatMap((key) =>
@@ -470,7 +544,16 @@ export default function PaidGrowthPage() {
           </span>
         </div>
       </section>
-      {level === 'campaigns' && <CampaignMetaFilters items={[...rowMeta.values()]} value={metaFilter} onChange={(value) => { setMetaFilter(value); setPage(0); }} />}
+      {level === 'campaigns' && (
+        <CampaignMetaFilters
+          items={[...rowMeta.values()]}
+          value={metaFilter}
+          onChange={(value) => {
+            setMetaFilter(value);
+            setPage(0);
+          }}
+        />
+      )}
       {busy && (
         <p role="status" className="text-sm text-blue-600">
           {progress} · 按日串行读取，避免公司 Mac 和 Doris 过载
@@ -617,6 +700,34 @@ export default function PaidGrowthPage() {
             </Button>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 text-xs">
+          <Button
+            variant={badFirst ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setBadFirst(!badFirst);
+              setPage(0);
+            }}
+          >
+            不达标优先
+          </Button>
+          <Button
+            variant={badOnly ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setBadOnly(!badOnly);
+              setPage(0);
+            }}
+          >
+            仅看不达标（{rows.filter(hasBad).length}）
+          </Button>
+          <span className="text-red-700">红：未达产品标准</span>
+          <span className="text-emerald-700">绿：达到标准（含等于）</span>
+          <span className="text-slate-500">
+            灰：未设标准/缺数。当前 D0
+            为抓取时数据，非成熟结论；筛选仅影响明细。
+          </span>
+        </div>
         <div className="max-h-[560px] overflow-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-slate-50">
@@ -642,7 +753,10 @@ export default function PaidGrowthPage() {
                   (p) => p.appId === row.appId && p.channel === row.media,
                 );
                 return (
-                  <TableRow key={row.key}>
+                  <TableRow
+                    key={row.key}
+                    className={hasBad(row) ? 'bg-red-50/40' : ''}
+                  >
                     <TableCell>
                       <p className="max-w-96 break-words font-medium">
                         {row.label}
@@ -668,14 +782,23 @@ export default function PaidGrowthPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    {columns.map((c) => (
-                      <TableCell
-                        key={c.key}
-                        className="whitespace-nowrap text-right tabular-nums"
-                      >
-                        {number(row[c.key] as number | null, c.decimals)}
-                      </TableCell>
-                    ))}
+                    {columns.map((c) => {
+                      const signal = biMetricSignal(row, c.key, standards);
+                      return (
+                        <TableCell
+                          key={c.key}
+                          title={signal.label}
+                          className={`whitespace-nowrap text-right tabular-nums ${signal.state === 'bad' ? 'bg-red-50 font-semibold text-red-700' : signal.state === 'good' ? 'bg-emerald-50 font-semibold text-emerald-700' : ''}`}
+                        >
+                          {number(row[c.key] as number | null, c.decimals)}
+                          {signal.state !== 'unknown' && (
+                            <span className="block text-[10px] font-normal">
+                              {signal.label}
+                            </span>
+                          )}
+                        </TableCell>
+                      );
+                    })}
                     <TableCell>
                       {product?.productId ? (
                         <Link

@@ -12,6 +12,10 @@ import {
   normalizeMetaOperation,
   reviewMetaOperation,
 } from './meta-operation-engine';
+import { operationDecisionEvidence } from './operation-decision-evidence';
+import { buildCampaignCard } from './campaign-decision-engine';
+import { reconcileCampaignHistory } from './campaign-history';
+import { campaignHash } from './campaign-snapshots';
 
 @Injectable()
 export class MetaOperationsService {
@@ -22,6 +26,33 @@ export class MetaOperationsService {
 
   captureSnapshots(productId: string): void {
     const snapshots = this.db.listCampaignSnapshots(productId);
+    const product = this.db.getProduct(productId);
+    if (product)
+      for (const {
+        snapshots: history,
+        relatedKeys,
+      } of reconcileCampaignHistory(snapshots)) {
+        const card = buildCampaignCard(
+          product,
+          history,
+          [],
+          new Date(),
+          relatedKeys,
+        );
+        this.db.saveCampaignRecommendation({
+          id: campaignHash({
+            productId,
+            key: card.key,
+            revision: card.revision,
+            skill: product.skillVersion,
+          }),
+          productId,
+          createdAt: new Date().toISOString(),
+          skillVersion: product.skillVersion,
+          rules: product.campaignRules,
+          card,
+        });
+      }
     for (const record of this.db.listDecisionRecords(10000)) {
       if (
         'preliminaryJudgment' in record ||
@@ -117,7 +148,7 @@ export class MetaOperationsService {
     };
   }
 
-  private linkedOperations(): MetaOperation[] {
+  linkedOperations(): MetaOperation[] {
     const products = this.db.listProducts();
     const entities = this.db.listMetaEntities();
     const histories = products.map((p) => ({
@@ -160,11 +191,14 @@ export class MetaOperationsService {
             o.productId,
             this.db.listCampaignSnapshots(o.productId),
           );
-        return reviewMetaOperation(
-          o,
-          histories.get(o.productId || '') || [],
-          operations,
-        );
+        return {
+          ...reviewMetaOperation(
+            o,
+            histories.get(o.productId || '') || [],
+            operations,
+          ),
+          decision: this.decisionEvidence(o),
+        };
       });
     return {
       items,
@@ -177,12 +211,50 @@ export class MetaOperationsService {
     };
   }
 
+  decisionEvidence(op: MetaOperation) {
+    const stored = this.db.getOperationEvidence(op.id);
+    if (stored) return stored;
+    const result = operationDecisionEvidence(
+      op,
+      this.db.listDecisionRecords(10000),
+      this.db.listCampaignRecommendations(),
+    );
+    if (op.linked) this.db.saveOperationEvidence(result);
+    return result;
+  }
+
+  annotate(id: string, reason: unknown) {
+    const op = this.linkedOperations().find((o) => o.id === id);
+    if (
+      !op ||
+      typeof reason !== 'string' ||
+      !reason.trim() ||
+      reason.length > 2000
+    )
+      throw new BadRequestException('请提供有效操作及 1～2000 字判断理由');
+    const evidence = {
+      ...this.decisionEvidence(op),
+      humanReason: reason.trim(),
+      reasonUpdatedAt: new Date().toISOString(),
+    };
+    this.db.saveOperationEvidence(evidence);
+    this.db.appendActivity({
+      caseId: id,
+      action: 'operation_reason_updated',
+      actor: 'growth',
+      detail: reason.trim(),
+      metadata: {},
+    });
+    return evidence;
+  }
+
   /** Called after import and after Doris snapshots arrive. Idempotent; no ad writes. */
   reconcile(): void {
     const operations = this.linkedOperations().sort((a, b) =>
       a.occurredAt.localeCompare(b.occurredAt),
     );
     for (const op of operations) {
+      this.decisionEvidence(op);
       if (!op.productId || op.category === 'other') continue;
       const id = `meta-${op.id}`;
       if (this.db.getDecisionRecord(id)) continue;

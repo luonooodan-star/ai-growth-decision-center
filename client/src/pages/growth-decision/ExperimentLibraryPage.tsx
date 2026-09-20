@@ -90,15 +90,18 @@ const formatMetric = (
 };
 
 const ExperimentLibraryPage: React.FC = () => {
-  const [dashboard, setDashboard] =
-    useState<GrowthDashboardResponse | null>(null);
+  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
+    null,
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [dimension, setDimension] = useState<ReviewDimension>('action');
-  const [selectedGroup, setSelectedGroup] =
-    useState<ExperimentGroup | null>(null);
-  const [selectedItem, setSelectedItem] =
-    useState<GrowthDecisionCase | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<ExperimentGroup | null>(
+    null,
+  );
+  const [selectedItem, setSelectedItem] = useState<GrowthDecisionCase | null>(
+    null,
+  );
   const [snapshots, setSnapshots] = useState<GrowthMonitoringSnapshot[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
@@ -109,9 +112,7 @@ const ExperimentLibraryPage: React.FC = () => {
       setDashboard(await growthDecision.getDashboard());
     } catch (requestError: unknown) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : '实验库加载失败',
+        requestError instanceof Error ? requestError.message : '实验库加载失败',
       );
     } finally {
       setLoading(false);
@@ -162,16 +163,15 @@ const ExperimentLibraryPage: React.FC = () => {
     return Array.from(grouped.values()).sort(
       (left: ExperimentGroup, right: ExperimentGroup): number =>
         Number(
-          right.items.some(
-            (item: GrowthDecisionCase): boolean => Boolean(item.isFocused),
+          right.items.some((item: GrowthDecisionCase): boolean =>
+            Boolean(item.isFocused),
           ),
         ) -
           Number(
-            left.items.some(
-              (item: GrowthDecisionCase): boolean => Boolean(item.isFocused),
+            left.items.some((item: GrowthDecisionCase): boolean =>
+              Boolean(item.isFocused),
             ),
-          ) ||
-        right.items.length - left.items.length,
+          ) || right.items.length - left.items.length,
     );
   }, [dimension, experiments]);
 
@@ -200,10 +200,10 @@ const ExperimentLibraryPage: React.FC = () => {
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-blue-700">
-            <Database className="size-4" /> EXPERIMENT LIBRARY
+            <Database className="size-4" /> OPERATION HISTORY
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
-            实验与结果追踪
+            历史措施与结果追踪
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
             按采取措施汇总成效，或按广告组回看一系列异常和行动。
@@ -226,7 +226,11 @@ const ExperimentLibraryPage: React.FC = () => {
               <Target className="size-4" /> 按广告组
             </Button>
           </div>
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button
+            variant="outline"
+            onClick={() => void load()}
+            disabled={loading}
+          >
             <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
             刷新
           </Button>
@@ -234,8 +238,16 @@ const ExperimentLibraryPage: React.FC = () => {
       </header>
 
       <section className="mt-6 grid gap-4 md:grid-cols-3">
-        <SummaryCard label="行动实验" value={experiments.length} icon={<Database />} />
-        <SummaryCard label="已结束观测" value={completed.length} icon={<CheckCircle2 />} />
+        <SummaryCard
+          label="行动实验"
+          value={experiments.length}
+          icon={<Database />}
+        />
+        <SummaryCard
+          label="已结束观测"
+          value={completed.length}
+          icon={<CheckCircle2 />}
+        />
         <SummaryCard
           label="产生预期改善"
           value={
@@ -280,9 +292,8 @@ const ExperimentLibraryPage: React.FC = () => {
                       <Badge variant="outline">
                         {dimension === 'action' ? '措施组' : '广告组'}
                       </Badge>
-                      {group.items.some(
-                        (item: GrowthDecisionCase): boolean =>
-                          Boolean(item.isFocused),
+                      {group.items.some((item: GrowthDecisionCase): boolean =>
+                        Boolean(item.isFocused),
                       ) ? (
                         <Badge className="border-amber-200 bg-amber-50 text-amber-700">
                           <Star className="size-3 fill-current" /> 重点关注
@@ -427,7 +438,9 @@ const ExperimentHistory: React.FC<ExperimentHistoryProps> = ({
     </div>
     <div className="rounded-xl bg-slate-50 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{STATUS_LABELS[item.status] || item.status}</Badge>
+        <Badge variant="outline">
+          {STATUS_LABELS[item.status] || item.status}
+        </Badge>
         {item.supersededByCaseId ? (
           <Badge variant="secondary">已由新异常措施接续</Badge>
         ) : null}
@@ -447,9 +460,14 @@ const ExperimentHistory: React.FC<ExperimentHistoryProps> = ({
         {item.actualResult || '仍在观察，尚未形成结论'}
       </p>
     </div>
-    {loading ? <p className="text-sm text-slate-500">正在读取小时快照…</p> : null}
+    {loading ? (
+      <p className="text-sm text-slate-500">正在读取小时快照…</p>
+    ) : null}
     {snapshots.map((snapshot: GrowthMonitoringSnapshot) => (
-      <article key={snapshot.id} className="rounded-xl border border-slate-200 p-4">
+      <article
+        key={snapshot.id}
+        className="rounded-xl border border-slate-200 p-4"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-semibold text-slate-900">
             {new Date(snapshot.observedAt).toLocaleString('zh-CN')}

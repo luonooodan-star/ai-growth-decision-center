@@ -1,5 +1,6 @@
 import type { MetaOperation } from './meta-operations';
 export type * from './meta-operations';
+export type * from './skill-review';
 
 export interface CampaignDecisionPolicy {
   minSpend: number;

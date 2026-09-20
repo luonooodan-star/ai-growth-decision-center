@@ -76,6 +76,7 @@ const errorText = (e: unknown): string =>
       : '操作失败';
 
 interface CampaignRulesPanelProps {
+  initialRule?: CampaignDecisionRule;
   productId: string;
   open: boolean;
   onClose: () => void;
@@ -86,6 +87,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
   open,
   onClose,
   onSaved,
+  initialRule,
 }) => {
   const [config, setConfig] = useState<CampaignRulesConfig | null>(null);
   const [category, setCategory] = useState<CampaignVerdict>('increase');
@@ -120,7 +122,21 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
       });
     void getCampaignRules(productId)
       .then((data) => {
-        if (!cancelled) setConfig(data);
+        if (!cancelled) {
+          if (initialRule) {
+            const rule = {
+              ...initialRule,
+              id: `weekly-${Date.now()}`,
+              enabled: false,
+            };
+            setConfig({ ...data, rules: [...data.rules, rule] });
+            setSelectedId(rule.id);
+            setDirty(true);
+            setNotice(
+              '周复盘候选已带入（默认停用）。请核对、启用候选并历史试跑后再发布。',
+            );
+          } else setConfig(data);
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(errorText(e));
@@ -128,7 +144,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, productId]);
+  }, [open, productId, initialRule]);
   const selected = config?.rules.find((r) => r.id === selectedId);
   const edit = (changes: Partial<CampaignDecisionRule>): void => {
     if (!config || !selected || saving) return;

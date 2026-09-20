@@ -36,9 +36,7 @@ function connectionConfig() {
     const password = optionalSecret(REMOTE_PASSWORD_SERVICE);
     const token = optionalSecret(REMOTE_TOKEN_SERVICE);
     if (!password || !token) {
-      throw new Error(
-        '远程分析凭据不完整，请运行远程连接配置脚本',
-      );
+      throw new Error('远程分析凭据不完整，请运行远程连接配置脚本');
     }
     return {
       url: process.env.AI_GROWTH_MCP_URL || remoteUrl,
@@ -52,9 +50,7 @@ function connectionConfig() {
   const password = optionalSecret(ACCESS_KEYCHAIN_SERVICE);
   const token = optionalSecret(MARVIS_KEYCHAIN_SERVICE);
   if (!password || !token) {
-    throw new Error(
-      '未找到本机或远程 Keychain 凭据，请运行远程连接配置脚本',
-    );
+    throw new Error('未找到本机或远程 Keychain 凭据，请运行远程连接配置脚本');
   }
   return {
     url:
@@ -157,6 +153,24 @@ function validateBatchIds(context, analyses) {
 
 async function main() {
   const command = process.argv[2] || 'claim';
+  if (command === 'claim-weekly') {
+    printJson(await callTool('claim_weekly_skill_review', {}));
+    return;
+  }
+  if (command === 'submit-weekly' || command === 'fail-weekly') {
+    const path = process.argv[3];
+    if (!path) throw new Error('需要周复盘 JSON 文件路径');
+    const payload = JSON.parse(await readFile(path, 'utf8'));
+    printJson(
+      await callTool(
+        command === 'submit-weekly'
+          ? 'submit_weekly_skill_review'
+          : 'fail_weekly_skill_review',
+        payload,
+      ),
+    );
+    return;
+  }
   if (command === 'import-meta') {
     const path = process.argv[3];
     if (!path) throw new Error('用法：import-meta <operations.json>');

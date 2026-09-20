@@ -87,13 +87,66 @@ export class CampaignDecisionService {
           );
         }
         card.workQueue = workQueue(card);
-        card.metaOperations = metaOperations.filter((o) =>
-          (o.campaignId || (o.objectLevel === 'campaign' ? o.objectId : metaEntities.find((e) => e.accountId === o.accountId && e.id === o.objectId)?.campaignId)) === card.snapshot.campaignId && o.accountId === card.snapshot.accountId && o.category !== 'other').slice(0, 10);
-        const entities = metaEntities.filter((e) => e.accountId === card.snapshot.accountId && e.campaignId === card.snapshot.campaignId);
-        card.metaObjectives = [...new Set(entities.map((o) => o.objective).filter((v): v is string => !!v))];
-        card.metaOptimizationGoals = [...new Set(entities.map((o) => o.optimizationGoal).filter((v): v is string => !!v))];
-        card.metaConversionEvents = [...new Set(entities.map((o) => o.conversionEvent).filter((v): v is string => !!v))];
-        if (card.metaOperations.length || entities.length) card.revision = campaignHash({ revision: card.revision, operations: card.metaOperations.map((o) => o.id), goals: [card.metaObjectives, card.metaOptimizationGoals, card.metaConversionEvents] });
+        card.metaOperations = metaOperations
+          .filter(
+            (o) =>
+              (o.campaignId ||
+                (o.objectLevel === 'campaign'
+                  ? o.objectId
+                  : metaEntities.find(
+                      (e) => e.accountId === o.accountId && e.id === o.objectId,
+                    )?.campaignId)) === card.snapshot.campaignId &&
+              o.accountId === card.snapshot.accountId &&
+              o.category !== 'other',
+          )
+          .slice(0, 10);
+        const entities = metaEntities.filter(
+          (e) =>
+            e.accountId === card.snapshot.accountId &&
+            e.campaignId === card.snapshot.campaignId,
+        );
+        card.metaObjectives = [
+          ...new Set(
+            entities.map((o) => o.objective).filter((v): v is string => !!v),
+          ),
+        ];
+        card.metaOptimizationGoals = [
+          ...new Set(
+            entities
+              .map((o) => o.optimizationGoal)
+              .filter((v): v is string => !!v),
+          ),
+        ];
+        card.metaConversionEvents = [
+          ...new Set(
+            entities
+              .map((o) => o.conversionEvent)
+              .filter((v): v is string => !!v),
+          ),
+        ];
+        if (card.metaOperations.length || entities.length)
+          card.revision = campaignHash({
+            revision: card.revision,
+            operations: card.metaOperations.map((o) => o.id),
+            goals: [
+              card.metaObjectives,
+              card.metaOptimizationGoals,
+              card.metaConversionEvents,
+            ],
+          });
+        this.database.saveCampaignRecommendation({
+          id: campaignHash({
+            productId,
+            key: card.key,
+            revision: card.revision,
+            skill: product.skillVersion,
+          }),
+          productId,
+          createdAt: new Date().toISOString(),
+          skillVersion: product.skillVersion,
+          rules: product.campaignRules,
+          card,
+        });
         const dueAt = Math.max(
           0,
           ...card.recentOrders
