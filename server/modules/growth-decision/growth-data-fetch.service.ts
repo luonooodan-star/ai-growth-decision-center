@@ -66,6 +66,7 @@ const DELIVERY_METRIC_KEYS: GrowthDeliveryMetricKey[] = [
 export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GrowthDataFetchService.name);
   private timer?: NodeJS.Timeout;
+  private startupTimer?: NodeJS.Timeout;
   private activeRun?: Promise<GrowthFetchRun[]>;
   private readonly queryGate = new DorisQueryGate();
   private completeReader?: DorisCompleteReader;
@@ -93,10 +94,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       });
     }, FETCH_INTERVAL_MS);
     this.timer.unref();
+    // A deployment/restart must not keep postponing the first sync by another hour.
+    this.startupTimer = setTimeout(() => {
+      const overdue = this.database.listProducts().some(p => p.status === 'active' &&
+        (!p.lastSyncAt || !Number.isFinite(Date.parse(p.lastSyncAt)) || Date.now() - Date.parse(p.lastSyncAt) >= FETCH_INTERVAL_MS));
+      if (overdue) void this.trigger('scheduled').catch(error => this.logger.error(String(error)));
+    }, 60_000);
+    this.startupTimer.unref();
   }
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.startupTimer) clearTimeout(this.startupTimer);
   }
 
   getHistory(productId?: string): GrowthFetchHistoryResponse {
@@ -423,7 +432,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               degradationNotes,
             )
           : Promise.resolve({ rows: [], row_count: 0 }),
-        deliveryDate && discoveredAppId
+        deliveryDate && discoveredAppId && product.channel.toLowerCase() === 'facebook'
           ? this.queryAdDeliveryDetails(
               discoveredAppId,
               startDate,
@@ -465,6 +474,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       for (const snapshot of buildCampaignSnapshots(
         product.id, deliveryRows, cohortRows, adDeliveryRows,
         new Date().toISOString(), degradationNotes,
+        { channel: product.channel, entities: this.database.listMetaEntities() },
       )) {
         this.database.saveCampaignSnapshot(snapshot);
       }

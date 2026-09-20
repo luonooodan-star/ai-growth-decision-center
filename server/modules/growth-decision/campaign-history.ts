@@ -1,4 +1,4 @@
-import type { CampaignDailySnapshot } from '@shared/api.interface';
+import type { CampaignDailySnapshot, MetaAdEntity } from '@shared/api.interface';
 
 export interface CampaignHistoryGroup {
   snapshots: CampaignDailySnapshot[];
@@ -8,7 +8,17 @@ export interface CampaignHistoryGroup {
 /** Read-time reconciliation only: source snapshots and order identities stay intact. */
 export function reconcileCampaignHistory(
   snapshots: CampaignDailySnapshot[],
+  entities: MetaAdEntity[] = [],
+  channel = 'facebook',
 ): CampaignHistoryGroup[] {
+  snapshots = snapshots.map(s => {
+    if (channel.toLowerCase() !== 'facebook') return { ...s,
+      qualityIssues: s.qualityIssues.filter(i => i !== '广告账户归属尚未唯一确认') };
+    if (s.accountId || snapshots.some(other => other.productId === s.productId && other.campaignId === s.campaignId && other.accountId)) return s;
+    const owners = [...new Set(entities.filter(e => e.campaignId === s.campaignId).map(e => e.accountId))];
+    return owners.length === 1 ? { ...s, accountId: owners[0],
+      qualityIssues: s.qualityIssues.filter(i => i !== '广告账户归属尚未唯一确认') } : s;
+  });
   const groups = new Map<string, CampaignHistoryGroup>();
   for (const snapshot of snapshots) {
     const group = groups.get(snapshot.key) || {

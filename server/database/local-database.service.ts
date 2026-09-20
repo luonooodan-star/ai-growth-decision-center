@@ -144,13 +144,20 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   saveMetaEntity(item: MetaAdEntity): void {
+    const row = this.database.prepare('SELECT payload FROM growth_meta_entity WHERE account_id = ? AND id = ?')
+      .get(item.accountId, item.id);
+    const previous = row ? this.parsePayload<MetaAdEntity>(row.payload) : undefined;
+    if (previous && Date.parse(previous.fetchedAt) > Date.parse(item.fetchedAt)) return;
+    // A partial attributes response must not erase fields fetched in a previous batch.
+    const merged = { ...previous, ...Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined)) } as MetaAdEntity;
+    if (item.conversionEventStatus === 'not_configured') delete merged.conversionEvent;
     this.database
       .prepare(
         `INSERT INTO growth_meta_entity (account_id, id, fetched_at, payload) VALUES (?, ?, ?, ?)
       ON CONFLICT(account_id, id) DO UPDATE SET fetched_at = excluded.fetched_at, payload = excluded.payload
       WHERE excluded.fetched_at >= growth_meta_entity.fetched_at`,
       )
-      .run(item.accountId, item.id, item.fetchedAt, JSON.stringify(item));
+      .run(item.accountId, item.id, item.fetchedAt, JSON.stringify(merged));
   }
 
   listMetaEntities(): MetaAdEntity[] {

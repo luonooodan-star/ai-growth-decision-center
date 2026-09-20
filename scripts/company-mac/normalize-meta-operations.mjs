@@ -83,10 +83,15 @@ export function normalizeMetaLogs(
       campaignId: level === 'campaign' ? id(e.id) : id(e.campaign_id),
       level,
       name: String(e.name || e.id),
+      adsetId: level === 'ad' && e.adset_id ? id(e.adset_id) : undefined,
       objective: e.objective,
       optimizationGoal: e.optimization_goal,
       // Only explicit event fields, never billing_event or a name-based inference.
       conversionEvent: e.promoted_object?.custom_event_type,
+      conversionEventStatus: e.promoted_object?.custom_event_type ? 'returned'
+        : Object.hasOwn(e, 'promoted_object') &&
+          (e.promoted_object === null || Object.keys(e.promoted_object || {}).length === 0)
+          ? 'not_configured' : undefined,
       fetchedAt,
     })),
   );

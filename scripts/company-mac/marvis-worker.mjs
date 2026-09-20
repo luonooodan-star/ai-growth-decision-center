@@ -153,6 +153,12 @@ function validateBatchIds(context, analyses) {
 
 async function main() {
   const command = process.argv[2] || 'claim';
+  if (command === 'meta-plan') {
+    const offset = Number(process.argv[3] || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('offset 必须为非负整数');
+    printJson(await callTool('get_meta_sync_plan', { offset }));
+    return;
+  }
   if (command === 'claim-weekly') {
     printJson(await callTool('claim_weekly_skill_review', {}));
     return;

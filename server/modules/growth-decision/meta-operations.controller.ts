@@ -34,6 +34,9 @@ export class MetaOperationsController {
   entities() {
     return this.service.entities();
   }
+  @Get('sync-plan') plan(@Query('offset') offset?: string) {
+    return this.service.syncPlan(Number(offset || 0));
+  }
   @Get()
   list(@Query('page') page?: string) {
     return this.service.overview(Number(page || 1));

@@ -26,6 +26,8 @@ import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { reconcileCampaignHistory } from './campaign-history';
 import { campaignHash } from './campaign-snapshots';
+import { campaignDataHealth } from './campaign-data-health';
+import { metaTargets } from '@shared/meta-targets';
 import {
   canReuseAnalysis,
   workQueue,
@@ -72,7 +74,7 @@ export class CampaignDecisionService {
       );
     const metaOperations = this.database.listMetaOperations();
     const metaEntities = this.database.listMetaEntities();
-    const items: CampaignDecisionCard[] = reconcileCampaignHistory(snapshots)
+    const items: CampaignDecisionCard[] = reconcileCampaignHistory(snapshots, metaEntities, product.channel)
       .map(({ snapshots: history, relatedKeys }) => {
         const card: CampaignDecisionCard = buildCampaignCard(
           product,
@@ -86,6 +88,7 @@ export class CampaignDecisionService {
             '已使用账户定位后的完整快照；旧未定位卡片不再重复展示，历史措施仍保留关联',
           );
         }
+        card.dataHealth = campaignDataHealth(card, product);
         card.workQueue = workQueue(card);
         card.metaOperations = metaOperations
           .filter(
@@ -110,6 +113,8 @@ export class CampaignDecisionService {
             entities.map((o) => o.objective).filter((v): v is string => !!v),
           ),
         ];
+        if ((product.channel || 'facebook').toLowerCase() === 'facebook')
+          card.metaTargets = metaTargets(entities);
         card.metaOptimizationGoals = [
           ...new Set(
             entities

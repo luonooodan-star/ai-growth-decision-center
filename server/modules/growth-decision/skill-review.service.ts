@@ -139,7 +139,6 @@ export class SkillReviewService {
             conclusion: '适用条件与结论',
             caution: '样本/数据/因果限制',
             evidenceIds: ['仅使用本任务操作或人工记录 ID'],
-            suggestedRule: '可选，符合 CampaignDecisionRule，仅候选不自动启用',
           },
         ],
       },

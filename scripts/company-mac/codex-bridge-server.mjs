@@ -21,6 +21,7 @@ const responseDirectory = join(runtimeDirectory, 'codex-responses');
 const readyPath = join(runtimeDirectory, 'codex-bridge.ready');
 const workerScript = join(scriptDirectory, 'marvis-worker.mjs');
 const allowedCommands = new Set([
+  'meta-plan',
   'claim-weekly',
   'submit-weekly',
   'fail-weekly',
@@ -59,6 +60,9 @@ function validateRequest(payload) {
     if (args.length > 1 || (args[0] && !isSafeIdentifier(args[0]))) {
       throw new Error('claim 参数无效');
     }
+  }
+  if (command === 'meta-plan' && (args.length > 1 || (args[0] && !/^\d{1,8}$/.test(args[0])))) {
+    throw new Error('meta-plan offset 无效');
   }
   if (
     ['import-meta', 'submit-weekly', 'fail-weekly'].includes(command) &&

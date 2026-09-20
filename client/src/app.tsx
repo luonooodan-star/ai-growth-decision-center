@@ -21,7 +21,7 @@ const RoutesComponent = () => {
         <Route path="metrics" element={<MetricLibraryPage />} />
         <Route
           path="experiments"
-          element={<Navigate to="/operations?view=history" replace />}
+          element={<Navigate to="/operations" replace />}
         />
         <Route path="skills" element={<SkillIterationPage />} />
       </Route>

@@ -3,6 +3,7 @@ import type {
   CampaignDailySnapshot,
   GrowthDeliveryMetricValues,
   GrowthDiagnosticBreakdown,
+  MetaAdEntity,
 } from '@shared/api.interface';
 import {
   dorisNumber,
@@ -99,9 +100,15 @@ export function buildCampaignSnapshots(
   ads: DorisRow[],
   fetchedAt: string,
   issues: string[],
+  identity: { channel: string; entities: MetaAdEntity[] } = { channel: 'facebook', entities: [] },
 ): CampaignDailySnapshot[] {
   const snapshots: CampaignDailySnapshot[] = [];
   const campaignAccounts: Map<string, Set<string>> = new Map();
+  for (const entity of identity.entities) {
+    const accounts = campaignAccounts.get(entity.campaignId) || new Set<string>();
+    accounts.add(entity.accountId);
+    campaignAccounts.set(entity.campaignId, accounts);
+  }
   for (const row of [...delivery, ...ads]) {
     const campaign: string = dorisString(row, 'campaign_id') || '';
     const account: string = dorisString(row, 'advertiser_id') || '';
@@ -128,7 +135,7 @@ export function buildCampaignSnapshots(
         ((issue.includes('投放明细') && !issue.startsWith('广告级')) ||
           /cohort/i.test(issue)),
     );
-    if (!accountId) qualityIssues.push('广告账户归属尚未唯一确认');
+    if (!accountId && identity.channel.toLowerCase() === 'facebook') qualityIssues.push('广告账户归属尚未唯一确认');
     const matching: DorisRow[] = cohorts.filter(
       (row: DorisRow) =>
         dorisString(row, 'campaign_id') === campaignId &&

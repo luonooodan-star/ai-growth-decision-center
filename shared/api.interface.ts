@@ -95,6 +95,12 @@ export interface CampaignDailySnapshot {
 }
 
 export interface CampaignDecisionCard {
+  metaTargets?: import('./meta-operations').MetaTargetSummary;
+  dataHealth?: {
+    state: 'ready' | 'waiting' | 'repair';
+    reasons: string[];
+    nextStep: string;
+  };
   metaOperations?: MetaOperation[];
   metaObjectives?: string[];
   metaOptimizationGoals?: string[];

@@ -161,9 +161,13 @@ export default function PaidGrowthPage() {
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
   useEffect(() => {
-    void getMetaEntities()
+    const refresh = () => { void getMetaEntities()
       .then(setMetaEntities)
-      .catch((e) => setError(errorText(e)));
+      .catch((e) => setError(errorText(e))); };
+    refresh();
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { window.removeEventListener('focus', refresh); window.clearInterval(timer); };
   }, []);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<keyof BiRow>('spend');
@@ -179,6 +183,7 @@ export default function PaidGrowthPage() {
 
   const load = async (refresh = false, requestedLevel: BiLevel = level) => {
     void refreshStandards();
+    void getMetaEntities().then(setMetaEntities).catch(e => setError(errorText(e)));
     const dayCount =
       Math.round(
         (Date.parse(format(end, 'yyyy-MM-dd')) -

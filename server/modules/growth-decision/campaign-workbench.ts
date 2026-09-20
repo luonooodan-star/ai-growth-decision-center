@@ -35,12 +35,13 @@ export function workQueue(
       : 'inactive';
   // Stale or incomplete acquisition data is a repair task, never evidence of zero spend.
   if (
-    card.staleHistory ||
+    card.dataHealth ? card.dataHealth.state === 'repair' : card.staleHistory ||
     card.snapshot.qualityIssues.length ||
     card.snapshot.metrics.spend === undefined ||
     card.blockers.some((b) => /未返回|无该系列快照/.test(b))
   )
     return 'repair';
+  if (card.dataHealth?.state === 'waiting') return 'observation';
   if (
     card.urgent ||
     card.verdict === 'decrease' ||

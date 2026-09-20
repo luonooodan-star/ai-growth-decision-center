@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type {
-  CampaignDecisionRule,
   WeeklySkillReportSummary,
 } from '@shared/api.interface';
 import {
@@ -21,7 +20,6 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
-import { CampaignRulesPanel } from './CampaignRulesPanel';
 const statuses = {
   pending: '等待 Codex',
   running: 'Codex 复盘中',
@@ -41,10 +39,6 @@ export function WeeklySkillReviews({
     id: string;
     index: number;
     decision: 'approved' | 'rejected';
-  } | null>(null);
-  const [draft, setDraft] = useState<{
-    productId: string;
-    rule: CampaignDecisionRule;
   } | null>(null);
   const load = async () => setReports(await getWeeklyReviews());
   const run = async (fn: () => Promise<unknown>) => {
@@ -86,7 +80,7 @@ export function WeeklySkillReviews({
       <p className="text-sm text-slate-500">
         按上海时间上一完整自然周、产品去重；记录系统建议与人工实操差异，结合
         Doris
-        结果。采纳只加入产品知识；数值规则必须另行历史试跑与发布。数据不足时不强行归纳。
+        结果。审核采纳后更新产品 Skill 知识，不再手动编辑候选规则，也不会自动修改广告。数据不足时不强行归纳。
       </p>
       {error && (
         <p role="alert" className="text-red-700">
@@ -182,20 +176,6 @@ export function WeeklySkillReviews({
                       </Button>
                     </>
                   )}
-                  {c.suggestedRule && c.decision !== 'rejected' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setDraft({
-                          productId: r.productId,
-                          rule: c.suggestedRule!,
-                        })
-                      }
-                    >
-                      带入候选规则 → 历史试跑
-                    </Button>
-                  )}
                 </div>
               </div>
             ))}
@@ -234,15 +214,6 @@ export function WeeklySkillReviews({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {draft && (
-        <CampaignRulesPanel
-          open
-          productId={draft.productId}
-          initialRule={draft.rule}
-          onClose={() => setDraft(null)}
-          onSaved={load}
-        />
-      )}
     </section>
   );
 }

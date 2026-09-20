@@ -35,6 +35,11 @@ interface MavisMcpResponse {
 
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
+    name: 'get_meta_sync_plan',
+    description: '读取产品中心近30日 Facebook 广告系列的实体同步清单，按稳定 ID 分页；仅同步清单中的账户与系列，不修改广告。',
+    inputSchema: { type: 'object', properties: { offset: { type: 'integer', minimum: 0 } } },
+  },
+  {
     name: 'claim_weekly_skill_review',
     description:
       '领取一个按产品和上海自然周去重的 Skill 复盘，返回冻结证据和租约；无任务返回 null。',
@@ -199,6 +204,7 @@ export class GrowthMavisMcpController {
   }
 
   private callTool(name: string, args: Record<string, unknown>): unknown {
+    if (name === 'get_meta_sync_plan') return this.metaOperations.syncPlan(Number(args.offset || 0));
     if (name === 'claim_weekly_skill_review') return this.skillReviews.claim();
     if (name === 'submit_weekly_skill_review')
       return this.skillReviews.submit(args);

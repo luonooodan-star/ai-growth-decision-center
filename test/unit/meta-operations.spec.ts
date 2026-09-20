@@ -75,6 +75,35 @@ describe('Meta read-only operation lifecycle', () => {
       db.listDecisionRecords().filter((r) => 'metaOperationId' in r),
     ).toHaveLength(1);
   });
+  it('enriches current targets without inventing historical operation fields', () => {
+    service.import({ operations: [input], entities: [
+      { accountId: input.accountId, id: input.campaignId!, campaignId: input.campaignId!, level: 'campaign', name: 'campaign', objective: 'OUTCOME_SALES', fetchedAt: '2026-09-20T01:00:00Z' },
+      { accountId: input.accountId, id: '123456', campaignId: input.campaignId!, level: 'adset', name: 'adset', optimizationGoal: 'OFFSITE_CONVERSIONS', conversionEvent: 'PURCHASE', conversionEventStatus: 'returned', fetchedAt: '2026-09-20T01:00:00Z' },
+    ] });
+    const operation = service.linkedOperations()[0];
+    expect(operation.objective).toBeUndefined();
+    expect(operation.currentTargets?.objectives).toEqual(['OUTCOME_SALES']);
+    expect(operation.currentTargets?.conversionEvents).toEqual(['PURCHASE']);
+    const adset = db.listMetaEntities().find(e => e.level === 'adset')!;
+    db.saveMetaEntity({ ...adset, optimizationGoal: undefined, conversionEvent: undefined, fetchedAt: '2026-09-20T02:00:00Z' });
+    expect(db.listMetaEntities().find(e => e.level === 'adset')?.conversionEvent).toBe('PURCHASE');
+    db.saveMetaEntity({ ...adset, conversionEvent: undefined, conversionEventStatus: 'not_configured', fetchedAt: '2026-09-20T03:00:00Z' });
+    expect(db.listMetaEntities().find(e => e.level === 'adset')?.conversionEvent).toBeUndefined();
+    db.saveMetaEntity(adset);
+    expect(db.listMetaEntities().find(e => e.level === 'adset')?.conversionEvent).toBeUndefined();
+  });
+  it('plans only recent project campaigns and paginates metadata synchronization', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    for (let i = 0; i < 23; i++) db.saveCampaignSnapshot({ ...snapshot(today), key: `target-${i}`, campaignId: String(10000 + i) });
+    const first = service.syncPlan();
+    expect(first.total).toBe(23);
+    expect(first.targets).toHaveLength(20);
+    expect(first.nextOffset).toBe(20);
+    expect(first.targets[0].missingFields).toEqual(['objective', 'optimization_goal', 'promoted_object']);
+    expect(service.syncPlan(20).targets).toHaveLength(3);
+    expect(service.syncPlan(20).nextOffset).toBeNull();
+    expect(first.targets.every(t => t.accountId === input.accountId)).toBe(true);
+  });
   it('does not guess account identity, but relinks after Doris arrives', () => {
     service.import({ operations: [input] });
     expect(service.overview().items[0].operation.linked).toBe(false);

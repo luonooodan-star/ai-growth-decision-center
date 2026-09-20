@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
+import { metaEventStatusLabel } from '@shared/meta-targets';
 import type {
   MetaOperationOverview,
   MetaOperationCategory,
@@ -8,7 +9,6 @@ import type {
 } from '@shared/api.interface';
 import { getMetaOperations, saveOperationReason } from '@/api/meta-operations';
 import { Textarea } from '@/components/ui/textarea';
-import ExperimentLibraryPage from './ExperimentLibraryPage';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -34,7 +34,6 @@ const Day = ({ row }: { row: CampaignDailySnapshot }) => (
 );
 
 export default function MetaOperationsPage() {
-  const [params, setParams] = useSearchParams();
   const [conflictsOnly, setConflictsOnly] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [data, setData] = useState<MetaOperationOverview | null>(null);
@@ -63,20 +62,6 @@ export default function MetaOperationsPage() {
       active = false;
     };
   }, [page, refresh]);
-  if (params.get('view') === 'history')
-    return (
-      <>
-        <div className="mx-auto max-w-[1380px] px-5 pt-6">
-          <Button variant="outline" onClick={() => setParams({})}>
-            返回 Meta 操作复盘
-          </Button>
-          <p className="mt-2 text-sm text-slate-500">
-            原实验库已合并至操作复盘；以下为保留的人工措施与历史观察记录。
-          </p>
-        </div>
-        <ExperimentLibraryPage />
-      </>
-    );
   return (
     <div className="mx-auto max-w-[1540px] space-y-6 px-5 py-8 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -107,12 +92,6 @@ export default function MetaOperationsPage() {
         刷新只读取已同步记录，不代表已连接 Meta。调整当日不参与前后完整日对照。
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => setParams({ view: 'history' })}
-        >
-          历史措施与观察
-        </Button>
         <Link
           className="rounded-lg border px-3 py-2 text-sm text-blue-600"
           to="/skills"
@@ -186,9 +165,15 @@ export default function MetaOperationsPage() {
               <p className="text-xs text-slate-500">
                 原始数值单位以 Meta 日志为准；预算未转换为美元。目标：
                 {op.objective || '未返回'} · 优化：
-                {op.optimizationGoal || '未返回'} · 事件：
-                {op.conversionEvent || '未返回'}
+                {op.optimizationGoal || '日志未记录'} · 事件：
+                {op.conversionEvent || '日志未记录'}
               </p>
+              {op.currentTargets && <p className="mt-2 text-xs text-slate-500">
+                当前设置（非操作时历史值）：系列目标 {op.currentTargets.objectives.join(' / ') || '待同步'} ·
+                优化目标 {op.currentTargets.optimizationGoals.join(' / ') || '待同步'} ·
+                转化事件 {op.currentTargets.conversionEvents.join(' / ') || metaEventStatusLabel[op.currentTargets.eventStatus]}
+                {op.currentTargets.fetchedAt && ` · 获取于 ${new Date(op.currentTargets.fetchedAt).toLocaleString('zh-CN')}`}
+              </p>}
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
                 {review.summary}
               </p>

@@ -38,6 +38,8 @@ export interface MetaOperationInput {
   raw: string;
 }
 export interface MetaOperation extends MetaOperationInput {
+  /** Current entity settings; never interpreted as settings at occurredAt. */
+  currentTargets?: MetaTargetSummary;
   id: string;
   importedAt: string;
   category: MetaOperationCategory;
@@ -55,10 +57,35 @@ export interface MetaAdEntity {
   campaignId: string;
   level: 'campaign' | 'adset' | 'ad';
   name: string;
+  adsetId?: string;
   objective?: string;
   optimizationGoal?: string;
   conversionEvent?: string;
+  conversionEventStatus?: 'returned' | 'not_configured' | 'unsupported';
   fetchedAt: string;
+}
+export interface MetaTargetSummary {
+  objectives: string[];
+  optimizationGoals: string[];
+  conversionEvents: string[];
+  fetchedAt?: string;
+  eventStatus: 'returned' | 'not_configured' | 'unsupported' | 'pending';
+}
+export interface MetaSyncPlan {
+  generatedAt: string;
+  total: number;
+  offset: number;
+  nextOffset: number | null;
+  targets: Array<{
+    productId: string;
+    accountId: string;
+    campaignId: string;
+    adsetIds: string[];
+    adIds: string[];
+    lastFetchedAt?: string;
+    missingFields: string[];
+  }>;
+  unresolvedCampaigns: number;
 }
 export interface MetaOperationReview {
   decision?: import('./skill-review').OperationDecisionEvidence;

@@ -275,8 +275,9 @@ export const CampaignBoardList: React.FC<Props> = ({
             {!!card.metaOperations?.length && <p className="mt-2 text-xs text-blue-700">
               Meta 最近操作：{card.metaOperations[0].eventType} · {new Date(card.metaOperations[0].occurredAt).toLocaleString('zh-CN')}（已执行事实，非待执行建议）
             </p>}
-            {!!card.metaObjectives?.length && <p className="mt-1 text-xs text-slate-500">
-              {card.metaObjectives.join(' / ')} · 优化 {card.metaOptimizationGoals?.join(' / ') || '未返回'} · 事件 {card.metaConversionEvents?.join(' / ') || '未返回'}
+            {card.metaTargets && <p className="mt-1 text-xs text-slate-500">
+              系列目标 {card.metaObjectives?.join(' / ') || '待 Meta 同步'} · 优化 {card.metaOptimizationGoals?.join(' / ') || '待 Meta 同步'} · 事件 {card.metaConversionEvents?.join(' / ') || (card.metaTargets.eventStatus === 'not_configured' ? 'Meta 未配置具体事件' : card.metaTargets.eventStatus === 'unsupported' ? '接口不支持' : '待 Meta 同步')}
+              {card.metaTargets.fetchedAt && ` · 当前设置获取于 ${new Date(card.metaTargets.fetchedAt).toLocaleString('zh-CN')}`}
             </p>}
             <p className="mt-1 break-all text-xs text-slate-500">
               账户 {card.snapshot.accountId || '待确认'} · Campaign{' '}
@@ -302,9 +303,13 @@ export const CampaignBoardList: React.FC<Props> = ({
             <p className="text-sm text-slate-800">{card.reason}</p>
             {card.workQueue === 'repair' && (
               <p className="mt-2 text-sm text-amber-800">
-                数据待修复，不代表停止投放。请先补齐缺失数据；不会自动送入效果分析。
+                {card.dataHealth?.reasons.join('；') || '数据待修复，不代表停止投放。'}
+                {' '}{card.dataHealth?.nextStep || '请先补齐缺失数据；不会自动送入效果分析。'}
               </p>
             )}
+            {card.dataHealth?.state === 'waiting' && <p className="mt-2 text-sm text-blue-700">
+              {card.dataHealth.reasons.join('；')}。{card.dataHealth.nextStep}
+            </p>}
             {card.previous && (
               <p className="mt-2 text-xs text-slate-500">
                 较 {card.previous.dataDate}：
