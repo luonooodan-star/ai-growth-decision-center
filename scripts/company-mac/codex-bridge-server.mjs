@@ -21,6 +21,7 @@ const responseDirectory = join(runtimeDirectory, 'codex-responses');
 const readyPath = join(runtimeDirectory, 'codex-bridge.ready');
 const workerScript = join(scriptDirectory, 'marvis-worker.mjs');
 const allowedCommands = new Set([
+  'import-meta',
   'check',
   'claim',
   'submit',
@@ -52,6 +53,9 @@ function validateRequest(payload) {
     if (args.length > 1 || (args[0] && !isSafeIdentifier(args[0]))) {
       throw new Error('claim 参数无效');
     }
+  }
+  if (command === 'import-meta' && (args.length !== 1 || !/^\/private\/tmp\/codex-growth-[a-zA-Z0-9_-]+\.json$/.test(args[0]))) {
+    throw new Error('Meta 导入文件路径无效');
   }
   if (command === 'submit' || command === 'submit-batch') {
     if (

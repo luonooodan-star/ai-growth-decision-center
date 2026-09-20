@@ -30,6 +30,7 @@ import type {
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionService } from './growth-decision.service';
+import { MetaOperationsService } from './meta-operations.service';
 import { buildCampaignSnapshots } from './campaign-snapshots';
 import { DorisCompleteReader } from './doris-complete-reader';
 import { DorisQueryGate } from './doris-query-gate';
@@ -73,6 +74,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly database: LocalDatabaseService,
     private readonly growthDecisionService: GrowthDecisionService,
+    private readonly metaOperations: MetaOperationsService,
   ) {}
 
   onModuleInit(): void {
@@ -487,6 +489,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         cohortRows,
         adDeliveryRows,
       );
+      this.metaOperations.reconcile();
+      this.metaOperations.captureSnapshots(updatedProduct.id);
       this.updateMonitoringSnapshots(
         updatedProduct,
         deliveryRows,
@@ -1212,6 +1216,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     );
 
     for (const record of records) {
+      // Meta observation snapshots are recorded independently of product thresholds.
+      if ('metaOperationId' in record && record.metaOperationId) continue;
       const metric: GrowthMetricDefinition | undefined = product.metrics.find(
         (item: GrowthMetricDefinition): boolean =>
           item.key === record.targetMetric,

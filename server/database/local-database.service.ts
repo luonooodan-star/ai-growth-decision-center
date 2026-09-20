@@ -17,6 +17,8 @@ import type {
   GrowthMetricDefinition,
   GrowthMonitoringSnapshot,
   GrowthProduct,
+  MetaOperation,
+  MetaAdEntity,
 } from '@shared/api.interface';
 
 type DecisionRecord = GrowthDecisionCase | GrowthJudgment;
@@ -118,6 +120,28 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.database.close();
+  }
+
+  saveMetaOperation(item: MetaOperation): boolean {
+    const result = this.database.prepare(
+      'INSERT OR IGNORE INTO growth_meta_operation (id, occurred_at, payload) VALUES (?, ?, ?)',
+    ).run(item.id, item.occurredAt, JSON.stringify(item));
+    return result.changes === 1;
+  }
+
+  listMetaOperations(): MetaOperation[] {
+    return this.database.prepare('SELECT payload FROM growth_meta_operation ORDER BY occurred_at DESC, id')
+      .all().map((row) => this.parsePayload<MetaOperation>(row.payload));
+  }
+
+  saveMetaEntity(item: MetaAdEntity): void {
+    this.database.prepare(`INSERT INTO growth_meta_entity (account_id, id, fetched_at, payload) VALUES (?, ?, ?, ?)
+      ON CONFLICT(account_id, id) DO UPDATE SET fetched_at = excluded.fetched_at, payload = excluded.payload
+      WHERE excluded.fetched_at >= growth_meta_entity.fetched_at`).run(item.accountId, item.id, item.fetchedAt, JSON.stringify(item));
+  }
+
+  listMetaEntities(): MetaAdEntity[] {
+    return this.database.prepare('SELECT payload FROM growth_meta_entity').all().map((row) => this.parsePayload<MetaAdEntity>(row.payload));
   }
 
   listProducts(): GrowthProduct[] {
@@ -577,6 +601,13 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_meta_operation (
+        id TEXT PRIMARY KEY, occurred_at TEXT NOT NULL, payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS growth_meta_entity (
+        account_id TEXT NOT NULL, id TEXT NOT NULL, fetched_at TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY (account_id, id)
+      );
       CREATE TABLE IF NOT EXISTS growth_bi_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_fetch_checkpoint (
         checkpoint_key TEXT PRIMARY KEY,

@@ -1,0 +1,211 @@
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
+import type {
+  MetaOperationOverview,
+  MetaOperationCategory,
+  CampaignDailySnapshot,
+} from '@shared/api.interface';
+import { getMetaOperations } from '@/api/meta-operations';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+
+const LABELS: Record<MetaOperationCategory, string> = {
+  increase: '已执行加量',
+  decrease: '已执行减量',
+  pause: '停投观察',
+  adjust: '调整后观察',
+  other: '其他审计记录',
+};
+const metric = (v?: number, percent = false): string =>
+  v === undefined ? '—' : percent ? `${(v * 100).toFixed(2)}%` : v.toFixed(2);
+const Day = ({ row }: { row: CampaignDailySnapshot }) => (
+  <div className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3 text-sm">
+    <span>{row.dataDate}</span>
+    <span>消耗 ${metric(row.metrics.spend)}</span>
+    <span>CPI ${metric(row.metrics.cpi)}</span>
+    <span>D0 {metric(row.metrics.d0_roas, true)}</span>
+    {!!row.qualityIssues.length && (
+      <span className="text-amber-700">完整性待核对</span>
+    )}
+  </div>
+);
+
+export default function MetaOperationsPage() {
+  const [data, setData] = useState<MetaOperationOverview | null>(null);
+  const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<MetaOperationCategory | 'all'>('all');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setBusy(true);
+    getMetaOperations(page)
+      .then((result) => {
+        if (active) {
+          setData(result);
+          setError('');
+        }
+      })
+      .catch(() => {
+        if (active) setError('操作记录加载失败，请检查服务连接后重试');
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [page, refresh]);
+  return (
+    <div className="mx-auto max-w-[1540px] space-y-6 px-5 py-8 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">操作与效果复盘</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Meta 实际操作 × Doris 日级快照。自动登记，只读跟踪，不修改投放。
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => setRefresh((v) => v + 1)}
+        >
+          <RefreshCw className="size-4" />
+          刷新记录
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">
+          {error}
+        </p>
+      )}
+      <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">
+        {data?.lastImportAt
+          ? `最近接收 ${new Date(data.lastImportAt).toLocaleString('zh-CN')} · 共 ${data.total} 条`
+          : '尚未接收 Meta 操作日志。需在已连接 Meta MCP 的 Codex 同步任务中启用操作导入。'}{' '}
+        刷新只读取已同步记录，不代表已连接 Meta。调整当日不参与前后完整日对照。
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={filter === 'all' ? 'default' : 'outline'}
+          onClick={() => setFilter('all')}
+        >
+          本页全部
+        </Button>
+        {(Object.keys(LABELS) as MetaOperationCategory[]).map((key) => (
+          <Button
+            key={key}
+            variant={filter === key ? 'default' : 'outline'}
+            onClick={() => setFilter(key)}
+          >
+            {LABELS[key]}
+          </Button>
+        ))}
+      </div>
+      {busy && <p>加载中…</p>}
+      {!busy && data && !data.items.length && (
+        <p className="rounded-xl border bg-white p-8 text-slate-500">
+          没有已同步记录；不会生成模拟操作或虚构复盘结论。
+        </p>
+      )}
+      {data?.items
+        .filter((r) => filter === 'all' || r.operation.category === filter)
+        .map((review) => {
+          const op = review.operation;
+          return (
+            <section
+              key={op.id}
+              className="space-y-4 rounded-xl border bg-white p-5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge>{LABELS[op.category]}</Badge>
+                <span className="text-sm text-slate-500">
+                  {op.actorName} ·{' '}
+                  {new Date(op.occurredAt).toLocaleString('zh-CN')}
+                </span>
+                {!op.linked && <Badge variant="outline">归属待确认</Badge>}
+              </div>
+              <h2 className="break-words font-semibold">
+                {op.campaignName || op.objectName}
+              </h2>
+              <p className="text-xs text-slate-500">
+                账户 {op.accountId} · {op.objectLevel} {op.objectName} ·{' '}
+                {op.objectId}
+              </p>
+              <p className="text-sm">
+                {op.eventType}：{String(op.before ?? '未返回')} →{' '}
+                {String(op.after ?? '未返回')}
+                {op.changePct !== undefined &&
+                  `（${op.changePct > 0 ? '+' : ''}${op.changePct.toFixed(1)}%）`}
+              </p>
+              <p className="text-xs text-slate-500">
+                原始数值单位以 Meta 日志为准；预算未转换为美元。目标：
+                {op.objective || '未返回'} · 优化：
+                {op.optimizationGoal || '未返回'} · 事件：
+                {op.conversionEvent || '未返回'}
+              </p>
+              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                {review.summary}
+              </p>
+              <details>
+                <summary className="cursor-pointer text-sm font-medium text-blue-600">
+                  查看操作前后数据与证据
+                </summary>
+                <p className="my-3 text-xs text-slate-500">
+                  Doris 日界：{review.dataTimezone}
+                  ；对照范围为广告系列。广告组／广告操作不等于已取得该对象的
+                  D0。
+                </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <h3>调整前最近 3 日</h3>
+                    {review.before.map((s) => (
+                      <Day key={s.dataDate} row={s} />
+                    ))}
+                    {!review.before.length && <p>尚无匹配快照</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <h3>调整后 7 日内完整日</h3>
+                    {review.after.map((s) => (
+                      <Day key={s.dataDate} row={s} />
+                    ))}
+                    {!review.after.length && <p>等待完整数据日</p>}
+                  </div>
+                </div>
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-3 text-xs">
+                  {op.raw}
+                </pre>
+              </details>
+              {op.productId && op.campaignId && (
+                <Link
+                  className="text-sm text-blue-600"
+                  to={`/products/${op.productId}?campaignId=${encodeURIComponent(op.campaignId)}`}
+                >
+                  进入对应广告系列决策 →
+                </Link>
+              )}
+            </section>
+          );
+        })}
+      <div className="flex items-center justify-end gap-3">
+        <Button
+          variant="outline"
+          disabled={busy || page <= 1}
+          onClick={() => setPage((p) => p - 1)}
+        >
+          上一页
+        </Button>
+        <span className="text-sm">第 {page} 页 · 每页 50 条</span>
+        <Button
+          variant="outline"
+          disabled={busy || page * 50 >= (data?.total || 0)}
+          onClick={() => setPage((p) => p + 1)}
+        >
+          下一页
+        </Button>
+      </div>
+    </div>
+  );
+}

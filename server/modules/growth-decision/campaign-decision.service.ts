@@ -25,6 +25,7 @@ import {
 import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { reconcileCampaignHistory } from './campaign-history';
+import { campaignHash } from './campaign-snapshots';
 import {
   canReuseAnalysis,
   workQueue,
@@ -69,6 +70,8 @@ export class CampaignDecisionService {
             }
           : o,
       );
+    const metaOperations = this.database.listMetaOperations();
+    const metaEntities = this.database.listMetaEntities();
     const items: CampaignDecisionCard[] = reconcileCampaignHistory(snapshots)
       .map(({ snapshots: history, relatedKeys }) => {
         const card: CampaignDecisionCard = buildCampaignCard(
@@ -84,6 +87,13 @@ export class CampaignDecisionService {
           );
         }
         card.workQueue = workQueue(card);
+        card.metaOperations = metaOperations.filter((o) =>
+          (o.campaignId || (o.objectLevel === 'campaign' ? o.objectId : metaEntities.find((e) => e.accountId === o.accountId && e.id === o.objectId)?.campaignId)) === card.snapshot.campaignId && o.accountId === card.snapshot.accountId && o.category !== 'other').slice(0, 10);
+        const entities = metaEntities.filter((e) => e.accountId === card.snapshot.accountId && e.campaignId === card.snapshot.campaignId);
+        card.metaObjectives = [...new Set(entities.map((o) => o.objective).filter((v): v is string => !!v))];
+        card.metaOptimizationGoals = [...new Set(entities.map((o) => o.optimizationGoal).filter((v): v is string => !!v))];
+        card.metaConversionEvents = [...new Set(entities.map((o) => o.conversionEvent).filter((v): v is string => !!v))];
+        if (card.metaOperations.length || entities.length) card.revision = campaignHash({ revision: card.revision, operations: card.metaOperations.map((o) => o.id), goals: [card.metaObjectives, card.metaOptimizationGoals, card.metaConversionEvents] });
         const dueAt = Math.max(
           0,
           ...card.recentOrders

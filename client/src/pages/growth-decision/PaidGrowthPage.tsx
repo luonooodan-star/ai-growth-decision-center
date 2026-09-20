@@ -18,6 +18,9 @@ import {
   type BiRow,
 } from '@shared/paid-growth.interface';
 import { getBiDay, getBiProducts, syncBiProducts } from '@/api/paid-growth';
+import type { MetaAdEntity } from '@shared/api.interface';
+import { getMetaEntities } from '@/api/meta-operations';
+import { CampaignMetaFilters, type MetaFilter, type MetaFilterItem } from './CampaignMetaFilters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -128,6 +131,9 @@ export default function PaidGrowthPage() {
   const [progress, setProgress] = useState('');
   const [warming, setWarming] = useState('');
   const [search, setSearch] = useState('');
+  const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
+  const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
+  useEffect(() => { void getMetaEntities().then(setMetaEntities).catch((e) => setError(errorText(e))); }, []);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
@@ -251,16 +257,32 @@ export default function PaidGrowthPage() {
       setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
   };
   const rows = useMemo(() => biRows(days), [days]);
+  const rowMeta = useMemo(() => {
+    const result = new Map<string, MetaFilterItem>();
+    for (const row of rows) {
+      const entities = metaEntities.filter((e) => e.campaignId === row.campaignId);
+      // BI lacks account dimension: never combine metadata if ownership is ambiguous.
+      const unique = new Set(entities.map((e) => e.accountId)).size === 1 ? entities : [];
+      result.set(row.key, {
+        metaObjectives: [...new Set(unique.flatMap((e) => e.objective ? [e.objective] : []))],
+        metaOptimizationGoals: [...new Set(unique.flatMap((e) => e.optimizationGoal ? [e.optimizationGoal] : []))],
+        metaConversionEvents: [...new Set(unique.flatMap((e) => e.conversionEvent ? [e.conversionEvent] : []))],
+      });
+    }
+    return result;
+  }, [rows, metaEntities]);
   const filtered = useMemo(
     () =>
       rows
+        .filter((r) => level !== 'campaigns' || !metaFilter || (metaFilter.value === '__missing' ?
+          !rowMeta.get(r.key)?.[metaFilter.key]?.length : rowMeta.get(r.key)?.[metaFilter.key]?.includes(metaFilter.value)))
         .filter((r) =>
           `${r.appName} ${r.media} ${r.label} ${r.campaignName || ''}`
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
         .sort((a, b) => Number(b[sort] ?? -1) - Number(a[sort] ?? -1)),
-    [rows, search, sort],
+    [rows, search, sort, level, metaFilter, rowMeta],
   );
   const issues = days.flatMap((day) =>
     (['daily', 'revenue', 'events'] as const).flatMap((key) =>
@@ -448,6 +470,7 @@ export default function PaidGrowthPage() {
           </span>
         </div>
       </section>
+      {level === 'campaigns' && <CampaignMetaFilters items={[...rowMeta.values()]} value={metaFilter} onChange={(value) => { setMetaFilter(value); setPage(0); }} />}
       {busy && (
         <p role="status" className="text-sm text-blue-600">
           {progress} · 按日串行读取，避免公司 Mac 和 Doris 过载

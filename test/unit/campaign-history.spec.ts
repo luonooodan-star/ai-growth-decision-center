@@ -121,6 +121,8 @@ describe('campaign history reconciliation', () => {
       getProduct: () => ({ ...product, id: 'product' }),
       listCampaignSnapshots: () => source,
       listDecisionRecords: () => [order],
+      listMetaOperations: () => [],
+      listMetaEntities: () => [],
     } as unknown as LocalDatabaseService;
     const service = new CampaignDecisionService(
       database,

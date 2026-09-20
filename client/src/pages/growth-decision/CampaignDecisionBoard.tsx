@@ -31,6 +31,7 @@ import {
 } from './campaign-workbench-display';
 import { OptimizerReviewPanel } from './OptimizerReviewPanel';
 import { BatchObserveButton } from './BatchObserveButton';
+import { CampaignMetaFilters, type MetaFilter } from './CampaignMetaFilters';
 
 interface CampaignDecisionBoardProps {
   productId: string;
@@ -103,6 +104,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<WorkbenchFilter>('today');
   const [search, setSearch] = useState('');
+  const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
   const [policy, setPolicy] = useState<CampaignDecisionPolicy | null>(null);
@@ -161,6 +163,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const items: CampaignDecisionCard[] = (board?.items || []).filter(
     (c) =>
       inWorkbench(c, filter) &&
+      (!metaFilter || (metaFilter.value === '__missing' ? !c[metaFilter.key]?.length : c[metaFilter.key]?.includes(metaFilter.value))) &&
       [
         c.snapshot.campaignName,
         c.snapshot.campaignId,
@@ -283,6 +286,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
           await onChanged();
         }}
       />
+      <CampaignMetaFilters items={board?.items || []} value={metaFilter} onChange={setMetaFilter} />
       <CampaignBoardList
         highlightedCampaignId={campaignFromData || undefined}
         board={board}

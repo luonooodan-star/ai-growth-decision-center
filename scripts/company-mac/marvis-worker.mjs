@@ -157,6 +157,13 @@ function validateBatchIds(context, analyses) {
 
 async function main() {
   const command = process.argv[2] || 'claim';
+  if (command === 'import-meta') {
+    const path = process.argv[3];
+    if (!path) throw new Error('用法：import-meta <operations.json>');
+    const payload = JSON.parse(await readFile(path, 'utf8'));
+    printJson(await callTool('import_meta_operations', payload));
+    return;
+  }
   if (command === 'check') {
     const connection = connectionConfig();
     const result = await callMcp('tools/list');

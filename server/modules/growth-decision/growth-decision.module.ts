@@ -14,9 +14,12 @@ import { OptimizerWorkflowService } from './optimizer-workflow.service';
 import { OptimizerWeeklyService } from './optimizer-weekly.service';
 import { PaidGrowthController } from './paid-growth.controller';
 import { PaidGrowthService } from './paid-growth.service';
+import { MetaOperationsService } from './meta-operations.service';
+import { MetaOperationsController } from './meta-operations.controller';
 
 @Module({
   controllers: [
+    MetaOperationsController,
     PaidGrowthController,
     CampaignDecisionController,
     GrowthDecisionController,
@@ -24,6 +27,7 @@ import { PaidGrowthService } from './paid-growth.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    MetaOperationsService,
     PaidGrowthService,
     OptimizerWorkflowService,
     OptimizerWeeklyService,

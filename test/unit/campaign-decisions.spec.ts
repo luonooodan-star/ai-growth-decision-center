@@ -11,6 +11,7 @@ import { GrowthDecisionService } from '@server/modules/growth-decision/growth-de
 import { GrowthMavisAnalysisService } from '@server/modules/growth-decision/growth-mavis-analysis.service';
 import { CampaignDecisionService } from '@server/modules/growth-decision/campaign-decision.service';
 import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-data-fetch.service';
+import { MetaOperationsService } from '@server/modules/growth-decision/meta-operations.service';
 import {
   buildCampaignCard,
   previousDay,
@@ -381,7 +382,7 @@ describe('campaign decisions and execution lifecycle', () => {
         (r) =>
           'campaignExecution' in r && r.campaignExecution?.state === 'executed',
       )!;
-    new GrowthDataFetchService(db, decisionService)[
+    new GrowthDataFetchService(db, decisionService, new MetaOperationsService(db))[
       'updateMonitoringSnapshots'
     ](product, [], []);
     const record = db.getDecisionRecord(executed.id)!;

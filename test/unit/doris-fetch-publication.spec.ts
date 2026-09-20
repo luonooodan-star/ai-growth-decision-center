@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { GrowthDecisionService } from '@server/modules/growth-decision/growth-decision.service';
 import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-data-fetch.service';
+import { MetaOperationsService } from '@server/modules/growth-decision/meta-operations.service';
 import { campaignHash } from '@server/modules/growth-decision/campaign-snapshots';
 import type {
   DorisQueryResult,
@@ -26,7 +27,7 @@ describe('fetch publication and restart recovery', () => {
     directory = mkdtempSync(join(tmpdir(), 'fetch-publication-'));
     process.env.GROWTH_DATABASE_PATH = join(directory, 'test.sqlite');
     db = new LocalDatabaseService();
-    service = new GrowthDataFetchService(db, new GrowthDecisionService(db));
+    service = new GrowthDataFetchService(db, new GrowthDecisionService(db), new MetaOperationsService(db));
   });
   afterEach(() => {
     service.onModuleDestroy();
@@ -158,7 +159,7 @@ describe('fetch publication and restart recovery', () => {
     });
     db.onModuleDestroy();
     db = new LocalDatabaseService();
-    service = new GrowthDataFetchService(db, new GrowthDecisionService(db));
+    service = new GrowthDataFetchService(db, new GrowthDecisionService(db), new MetaOperationsService(db));
     service.onModuleInit();
     expect(db.getFetchCheckpoint('saved-part')?.rows).toEqual([{ a: 1 }]);
     expect(db.listFetchRuns(product.id)[0].status).toBe('partial');

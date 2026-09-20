@@ -1,3 +1,6 @@
+import type { MetaOperation } from './meta-operations';
+export type * from './meta-operations';
+
 export interface CampaignDecisionPolicy {
   minSpend: number;
   minInstalls: number;
@@ -91,6 +94,10 @@ export interface CampaignDailySnapshot {
 }
 
 export interface CampaignDecisionCard {
+  metaOperations?: MetaOperation[];
+  metaObjectives?: string[];
+  metaOptimizationGoals?: string[];
+  metaConversionEvents?: string[];
   workQueue?:
     | 'urgent'
     | 'opportunity'
@@ -396,6 +403,7 @@ export interface RecommendedAction {
 }
 
 export interface GrowthDecisionCase {
+  metaOperationId?: string;
   campaignExecution?: CampaignExecution;
   id: string;
   productId: string;

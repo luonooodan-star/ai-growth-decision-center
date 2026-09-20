@@ -13,6 +13,7 @@ import type {
 } from '@shared/api.interface';
 
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
+import { MetaOperationsService } from './meta-operations.service';
 
 interface MavisMcpRequest {
   jsonrpc: '2.0';
@@ -32,6 +33,11 @@ interface MavisMcpResponse {
 }
 
 const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
+  {
+    name: 'import_meta_operations',
+    description: '导入只读 Meta 操作日志，按稳定指纹去重，并关联 Doris 系列快照；不执行广告变更。合同见 shared/meta-operations.ts。',
+    inputSchema: { type: 'object', properties: { operations: { type: 'array', maxItems: 500, items: { type: 'object' } }, entities: { type: 'array', maxItems: 500, items: { type: 'object' } } }, required: ['operations'] },
+  },
   {
     name: 'claim_analysis_job',
     description: '领取一个等待 Codex 分析的整批广告异常任务',
@@ -100,6 +106,7 @@ const MAVIS_MCP_TOOLS: Array<Record<string, unknown>> = [
 export class GrowthMavisMcpController {
   constructor(
     private readonly growthMavisAnalysisService: GrowthMavisAnalysisService,
+    private readonly metaOperations: MetaOperationsService,
   ) {}
 
   @Post()
@@ -148,6 +155,7 @@ export class GrowthMavisMcpController {
   }
 
   private callTool(name: string, args: Record<string, unknown>): unknown {
+    if (name === 'import_meta_operations') return this.metaOperations.import(args);
     if (name === 'claim_analysis_job') {
       const job: GrowthMavisJob | undefined =
         this.growthMavisAnalysisService.claimNextJob(

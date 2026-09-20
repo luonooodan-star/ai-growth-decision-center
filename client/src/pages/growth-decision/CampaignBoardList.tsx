@@ -272,6 +272,12 @@ export const CampaignBoardList: React.FC<Props> = ({
             <h3 className="mt-3 break-words font-semibold text-slate-900">
               {card.snapshot.campaignName}
             </h3>
+            {!!card.metaOperations?.length && <p className="mt-2 text-xs text-blue-700">
+              Meta 最近操作：{card.metaOperations[0].eventType} · {new Date(card.metaOperations[0].occurredAt).toLocaleString('zh-CN')}（已执行事实，非待执行建议）
+            </p>}
+            {!!card.metaObjectives?.length && <p className="mt-1 text-xs text-slate-500">
+              {card.metaObjectives.join(' / ')} · 优化 {card.metaOptimizationGoals?.join(' / ') || '未返回'} · 事件 {card.metaConversionEvents?.join(' / ') || '未返回'}
+            </p>}
             <p className="mt-1 break-all text-xs text-slate-500">
               账户 {card.snapshot.accountId || '待确认'} · Campaign{' '}
               {card.snapshot.campaignId} · {card.snapshot.countries.join(' / ')}

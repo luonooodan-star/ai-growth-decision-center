@@ -78,6 +78,7 @@ export function analysisEvidence(card: CampaignDecisionCard): string {
     blockers: card.blockers,
     action: card.primaryAction,
     rule: card.matchedRule,
+    metaOperations: (card.metaOperations || []).map((o) => o.id).sort(),
     trend: card.trend.map(({ fetchedAt: _f, ...s }) => s),
   });
 }
@@ -98,6 +99,8 @@ export function canReuseAnalysis(
     blockers: c.blockers,
     action: c.primaryAction,
     rule: c.matchedRule,
+    metaOperations: (c.metaOperations || []).map((o) => o.id).sort(),
+    metaGoals: [c.metaObjectives || [], c.metaOptimizationGoals || [], c.metaConversionEvents || []],
   });
   if (campaignHash(decision(before)) !== campaignHash(decision(after)))
     return false;
