@@ -78,7 +78,7 @@ const columns: Array<{ key: keyof BiRow; label: string; decimals?: number }> = [
   { key: 'mediaInstalls', label: '媒体安装', decimals: 0 },
   { key: 'mediaCpi', label: '媒体 CPI ($)', decimals: 3 },
   { key: 'cpm', label: '买量 CPM ($)', decimals: 3 },
-  { key: 'revenue', label: '成熟 D0 收入 ($)' },
+  { key: 'revenue', label: '当前 D0 收入 ($)' },
   { key: 'd0Roas', label: 'D0 收入 / 全部消耗 (%)' },
   { key: 'events', label: 'D0 收入事件数', decimals: 0 },
 ];
@@ -117,8 +117,8 @@ export default function PaidGrowthPage() {
   const [products, setProducts] = useState<BiProduct[]>([]);
   const [appId, setAppId] = useState(params.get('appId') || 'all');
   const [media, setMedia] = useState(params.get('media') || 'all');
-  const [start, setStart] = useState(subDays(new Date(), 1));
-  const [end, setEnd] = useState(subDays(new Date(), 1));
+  const [start, setStart] = useState(new Date());
+  const [end, setEnd] = useState(new Date());
   const [level, setLevel] = useState<BiLevel>('overall');
   const [days, setDays] = useState<BiDay[]>([]);
   const [busy, setBusy] = useState(false);
@@ -126,6 +126,7 @@ export default function PaidGrowthPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [progress, setProgress] = useState('');
+  const [warming, setWarming] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<keyof BiRow>('spend');
@@ -139,7 +140,7 @@ export default function PaidGrowthPage() {
     return () => controller.current?.abort();
   }, []);
 
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, requestedLevel: BiLevel = level) => {
     const dayCount =
       Math.round(
         (Date.parse(format(end, 'yyyy-MM-dd')) -
@@ -156,9 +157,12 @@ export default function PaidGrowthPage() {
     setBusy(true);
     setError('');
     setNotice('');
+    setWarming('');
     setDays([]);
     setPage(0);
-    setLoadedScope(queryScope);
+    setLoadedScope(
+      `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
+    );
     setParams(
       {
         ...(appId === 'all' ? {} : { appId }),
@@ -176,7 +180,7 @@ export default function PaidGrowthPage() {
             await getBiDay(
               {
                 date,
-                level,
+                level: requestedLevel,
                 appId: appId === 'all' ? undefined : appId,
                 media: media === 'all' ? undefined : media,
                 refresh: refresh ? '1' : undefined,
@@ -191,7 +195,13 @@ export default function PaidGrowthPage() {
             rows: [],
             message: errorText(e),
           };
-          next.push({ date, level, daily: part, revenue: part, events: part });
+          next.push({
+            date,
+            level: requestedLevel,
+            daily: part,
+            revenue: part,
+            events: part,
+          });
         }
         if (!abort.signal.aborted) setDays([...next]);
       }
@@ -203,6 +213,42 @@ export default function PaidGrowthPage() {
         setProgress('');
       }
     }
+    // One background request at a time. Responses persist on the server, not in browser memory.
+    for (const other of Object.keys(BI_LEVELS) as BiLevel[]) {
+      if (other === requestedLevel || abort.signal.aborted) continue;
+      for (let i = 0; i < dayCount; i++) {
+        if (abort.signal.aborted) return;
+        const date = format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd');
+        setWarming(`后台缓存：${BI_LEVELS[other]} · ${date}`);
+        try {
+          const warmed = await getBiDay(
+            {
+              date,
+              level: other,
+              appId: appId === 'all' ? undefined : appId,
+              media: media === 'all' ? undefined : media,
+              refresh: refresh ? '1' : undefined,
+            },
+            abort.signal,
+          );
+          if (
+            [warmed.daily, warmed.revenue, warmed.events].some(
+              (p) => p.state === 'missing' || p.state === 'stale',
+            )
+          ) {
+            if (!abort.signal.aborted)
+              setNotice(
+                '部分维度预取失败，切换到该维度后将自动重试并展示具体原因。',
+              );
+          }
+        } catch (e) {
+          if (abort.signal.aborted) return;
+          setNotice(`后台缓存未完成：${errorText(e)}；切换维度会自动重试。`);
+        }
+      }
+    }
+    if (!abort.signal.aborted)
+      setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
   };
   const rows = useMemo(() => biRows(days), [days]);
   const filtered = useMemo(
@@ -331,6 +377,10 @@ export default function PaidGrowthPage() {
         </div>
       )}
       <section className="space-y-4 rounded-2xl border bg-white p-5">
+        <p className="text-xs text-slate-500">
+          展示 Doris 当前已入库数据，源头可能延迟；不是广告平台实时直连。
+          {warming}
+        </p>
         <div className="flex flex-wrap gap-3">
           <div className="min-w-52">
             <Select value={appId} onValueChange={setAppId} disabled={busy}>
@@ -385,13 +435,16 @@ export default function PaidGrowthPage() {
               size="sm"
               disabled={busy}
               variant={level === key ? 'default' : 'ghost'}
-              onClick={() => setLevel(key as BiLevel)}
+              onClick={() => {
+                setLevel(key as BiLevel);
+                void load(false, key as BiLevel);
+              }}
             >
               {label}
             </Button>
           ))}
           <span className="ml-auto self-center text-xs text-slate-500">
-            切换条件后点击查询 · 缓存 1 小时 · 最多 31 天
+            切换维度自动查询 · 后台预取全部维度 · 缓存 5 分钟 · 最多 31 天
           </span>
         </div>
       </section>
@@ -409,7 +462,7 @@ export default function PaidGrowthPage() {
         {[
           ['消耗 ($)', total('spend')],
           ['Adjust 安装', total('installs')],
-          ['成熟 D0 收入 ($)', total('revenue')],
+          ['当前 D0 收入 ($)', total('revenue')],
         ].map(([label, value]) => (
           <section
             key={String(label)}
@@ -584,7 +637,11 @@ export default function PaidGrowthPage() {
                           variant="outline"
                           className="mt-2 text-amber-700"
                         >
-                          部分指标未返回
+                          {row.spend === null
+                            ? '投放数据未返回'
+                            : level === 'adgroups'
+                              ? '广告组不支持 D0'
+                              : '当前 D0 未返回'}
                         </Badge>
                       )}
                     </TableCell>
@@ -667,9 +724,10 @@ export default function PaidGrowthPage() {
             eCPM。
           </p>
           <p>
-            本页 D0 = 已成熟 D0 收入 / 全部媒体消耗；决策页 cohort D0
-            可能使用匹配 cohort 消耗，分母不同，不应直接判定为数据错误。今日
-            cohort 尚未成熟时保留缺失，不作为不达标。
+            本页 D0 = 查询时已入库 D0 收入 /
+            全部媒体消耗（含未完成观察期的数据）；决策页 cohort D0 可能使用匹配
+            cohort 消耗，分母不同，不应直接判定为数据错误。今日
+            数据可能继续回补，不用于直接判定达标。未返回保持空值，不当作零。
           </p>
           <p>
             收入事件数不是付费人数；广告组不具备 cohort 归因，故不展示推算

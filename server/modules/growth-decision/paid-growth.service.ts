@@ -87,7 +87,6 @@ export class PaidGrowthService {
       ...filters,
       cohort_index: 0,
       cohort_unit: 'D',
-      observation_complete: true,
     };
     const revenue = await this.part(
       {
@@ -121,7 +120,7 @@ export class PaidGrowthService {
     if (
       !refresh &&
       cache?.updatedAt &&
-      Date.now() - Date.parse(cache.updatedAt) < 3600000
+      Date.now() - Date.parse(cache.updatedAt) < 300000
     )
       return Promise.resolve({ ...cache, state: 'cached' });
     const promise = (async (): Promise<BiPart> => {

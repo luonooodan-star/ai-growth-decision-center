@@ -173,6 +173,42 @@ describe('BI persistence and product registration', () => {
     query.mockRejectedValue(new Error('connection unavailable'));
     expect((await s.day({ ...q, refresh: '1' })).daily.state).toBe('stale');
   });
+  test('live BI never filters out unfinished D0 and expires cache after five minutes', async () => {
+    const query = jest.fn(async (args: Record<string, unknown>) => {
+      expect(JSON.parse(String(args.filters_json))).not.toHaveProperty(
+        'observation_complete',
+      );
+      return { rows: [] };
+    });
+    const s = service(query);
+    const q = { date: '2026-09-20', level: 'overall' as const };
+    await s.day(q);
+    const calls = query.mock.calls.length;
+    await s.day(q);
+    expect(query.mock.calls.length).toBe(calls);
+    const now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 301000);
+    try {
+      expect((await s.day(q)).daily.state).toBe('fresh');
+      expect(query.mock.calls.length).toBeGreaterThan(calls);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  test('cache prunes only disposable BI records while retaining product data', () => {
+    const products = db.listProducts();
+    for (let i = 0; i < 1502; i++)
+      db.saveBiCache(
+        `bounded-${i}`,
+        JSON.stringify({
+          rows: [],
+          updatedAt: new Date(1700000000000 + i * 1000).toISOString(),
+        }),
+      );
+    expect(db.getBiCache('bounded-0')).toBeUndefined();
+    expect(db.getBiCache('bounded-1501')).toBeDefined();
+    expect(db.listProducts()).toEqual(products);
+  });
   test('adgroup queries never request unsupported cohort dimensions', async () => {
     const query = jest.fn(async () => ({ rows: [] }));
     const report = await service(query).day({
@@ -210,7 +246,9 @@ describe('BI persistence and product registration', () => {
     expect(a[0].productId).toBe(b[0].productId);
     const product = db.getProduct(a[0].productId!)!;
     expect(product.dorisAppId).toBe(12);
-    expect(product.metrics.some(m => m.key === product.targetMetric)).toBe(true);
+    expect(product.metrics.some((m) => m.key === product.targetMetric)).toBe(
+      true,
+    );
     expect(product.campaignRules?.length || 0).toBe(0);
     expect(
       product.metrics.every(

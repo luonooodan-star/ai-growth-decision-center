@@ -67,6 +67,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const [dataParams] = useSearchParams();
   const campaignFromData = dataParams.get('campaignId');
   const openedFromData = useRef('');
+  const focusSection = useRef<HTMLElement>(null);
   useEffect(() => {
     if (
       !campaignFromData ||
@@ -84,6 +85,17 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     );
     // Multiple accounts may share a source ID: filter first, never guess one account.
     setSearch(matches[0].snapshot.campaignName || campaignFromData);
+    setNotice(
+      matches.length === 1
+        ? '已定位来自投放数据页的广告系列（蓝色标记）'
+        : '此系列匹配多个账户，请核对蓝色标记卡片的账户信息。',
+    );
+    requestAnimationFrame(() =>
+      focusSection.current?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      }),
+    );
     if (matches.length === 1) setDetail(matches[0].key);
   }, [board, campaignFromData]);
   const [error, setError] = useState('');
@@ -245,7 +257,24 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   );
 
   return (
-    <section className="mb-6 space-y-4" data-ai-section-type="card-list">
+    <section
+      ref={focusSection}
+      className="mb-6 space-y-4"
+      data-ai-section-type="card-list"
+    >
+      {campaignFromData &&
+        board &&
+        !board.items.some(
+          (c) => c.snapshot.campaignId === campaignFromData,
+        ) && (
+          <p
+            role="status"
+            className="rounded-lg bg-amber-50 p-3 text-amber-800"
+          >
+            该系列尚无决策快照（ID：{campaignFromData}
+            ），请先在本产品抓取数据；不会跳到其他系列。
+          </p>
+        )}
       <BatchObserveButton
         productId={productId}
         cards={items}
@@ -255,6 +284,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
         }}
       />
       <CampaignBoardList
+        highlightedCampaignId={campaignFromData || undefined}
         board={board}
         busy={busy}
         pendingCount={pendingCount}

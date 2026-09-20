@@ -31,6 +31,7 @@ import {
   type WorkbenchFilter,
 } from './campaign-workbench-display';
 interface Props {
+  highlightedCampaignId?: string;
   board: Board | null;
   busy: boolean;
   pendingCount: number;
@@ -52,6 +53,7 @@ interface Props {
   ) => void;
 }
 export const CampaignBoardList: React.FC<Props> = ({
+  highlightedCampaignId,
   board,
   busy,
   pendingCount,
@@ -239,8 +241,13 @@ export const CampaignBoardList: React.FC<Props> = ({
         {items.map((card, index) => (
           <article
             key={card.key}
-            className="rounded-xl border border-slate-200 p-4"
+            className={`rounded-xl border p-4 ${highlightedCampaignId === card.snapshot.campaignId ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200'}`}
           >
+            {highlightedCampaignId === card.snapshot.campaignId && (
+              <p className="mb-2 font-semibold text-blue-700">
+                投放数据页定位的广告系列
+              </p>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span
                 className={`rounded-lg px-3 py-1 text-sm font-semibold ${COLORS[card.verdict]}`}

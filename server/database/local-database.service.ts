@@ -143,6 +143,17 @@ export class LocalDatabaseService implements OnModuleDestroy {
         'INSERT INTO growth_bi_cache (cache_key, payload) VALUES (?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload',
       )
       .run(key, payload);
+    // Only disposable BI cache is bounded; decision snapshots and history are untouched.
+    this.database.prepare(`DELETE FROM growth_bi_cache WHERE cache_key IN (
+      SELECT cache_key FROM (
+        SELECT cache_key,
+          SUM(length(CAST(payload AS BLOB))) OVER (
+            ORDER BY json_extract(payload, '$.updatedAt') DESC, cache_key
+          ) AS bytes,
+          ROW_NUMBER() OVER (ORDER BY json_extract(payload, '$.updatedAt') DESC, cache_key) AS position
+        FROM growth_bi_cache
+      ) WHERE bytes > 134217728 OR position > 1500
+    )`).run();
   }
 
   getProduct(id: string): GrowthProduct | undefined {
