@@ -8,12 +8,14 @@ import ProductOverviewPage from './pages/growth-decision/ProductOverviewPage';
 import MetricLibraryPage from './pages/growth-decision/MetricLibraryPage';
 import ExperimentLibraryPage from './pages/growth-decision/ExperimentLibraryPage';
 import SkillIterationPage from './pages/growth-decision/SkillIterationPage';
+import PaidGrowthPage from './pages/growth-decision/PaidGrowthPage';
 
 const RoutesComponent = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<ProductOverviewPage />} />
+        <Route path="data" element={<PaidGrowthPage />} />
         <Route path="products/:productId" element={<GrowthDecisionPage />} />
         <Route path="metrics" element={<MetricLibraryPage />} />
         <Route path="experiments" element={<ExperimentLibraryPage />} />

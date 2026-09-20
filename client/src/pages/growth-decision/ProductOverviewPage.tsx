@@ -63,7 +63,7 @@ const ProductOverviewPage: React.FC = () => {
             每个产品，一套独立的增长判断系统
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            每个页面只读取该产品的 Doris 数据、Facebook 账户、达标标准和 Skill 规则，判断与实验不会跨产品混用。
+            每个页面只读取该产品和渠道的 Doris 数据、达标标准和 Skill 规则，判断与实验不会跨产品混用。可从“投放数据”同步更多有投放的产品。
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -79,13 +79,13 @@ const ProductOverviewPage: React.FC = () => {
           const cases = dashboard?.cases.filter((item) => item.productId === product.id) || [];
           const pending = judgments.filter((item) => item.status === 'judgment_pending' || item.status === 'judgment_deferred').length;
           const fresh = Boolean(product.lastSyncAt) && Date.now() - new Date(product.lastSyncAt || 0).getTime() <= product.dataDelayMinutes * 2 * 60 * 1000;
-          const calibrated = Object.keys(product.thresholds || {}).length > 0;
+          const calibrated = product.metrics.some(metric => metric.lowerBound != null || metric.upperBound != null || metric.standardValue != null);
           const activeAccountCount = (product.adAccounts || []).filter(
             (account) =>
               account.activityStatus === 'active' ||
               account.activityStatus === 'new',
           ).length;
-          const accountSummary = product.accountSyncAt
+          const accountSummary = product.channel.toLowerCase() !== 'facebook' ? '按产品 / 渠道独立取数' : product.accountSyncAt
             ? `${activeAccountCount} 活跃 / ${product.accountIds.length} 已发现`
             : `${product.accountIds.length} 个账户（待动态同步）`;
           return <Link key={product.id} to={`/products/${product.id}`} className="group block">

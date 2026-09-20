@@ -1,4 +1,10 @@
-import { Activity, Database, FlaskConical, Gauge, Sparkles } from 'lucide-react';
+import {
+  Activity,
+  Database,
+  FlaskConical,
+  Gauge,
+  Sparkles,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 const Layout = () => {
@@ -10,7 +16,7 @@ const Layout = () => {
   return (
     <div className="min-h-screen bg-slate-50 text-foreground">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1540px] items-center justify-between gap-6 px-5 py-3 lg:px-8">
+        <div className="mx-auto flex max-w-[1540px] flex-wrap items-center justify-between gap-3 px-5 py-3 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
               <Sparkles className="size-4" />
@@ -24,12 +30,12 @@ const Layout = () => {
               </p>
             </div>
           </div>
-          <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 md:flex">
-            <NavLink
-              to="/"
-              className={navClass}
-              end
-            >
+          <nav className="order-last flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl bg-slate-100 p-1 md:order-none md:w-auto">
+            <NavLink to="/data" className={navClass}>
+              <Database className="size-3.5" />
+              投放数据
+            </NavLink>
+            <NavLink to="/" className={navClass} end>
               <Activity className="size-3.5" />
               产品中心
             </NavLink>
@@ -37,10 +43,7 @@ const Layout = () => {
               <Database className="size-3.5" />
               实验库
             </NavLink>
-            <NavLink
-              to="/metrics"
-              className={navClass}
-            >
+            <NavLink to="/metrics" className={navClass}>
               <Gauge className="size-3.5" />
               指标库
             </NavLink>

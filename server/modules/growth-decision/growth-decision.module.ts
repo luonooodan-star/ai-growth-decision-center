@@ -12,15 +12,19 @@ import { CampaignDecisionService } from './campaign-decision.service';
 import { CampaignBoardManagementService } from './campaign-board-management.service';
 import { OptimizerWorkflowService } from './optimizer-workflow.service';
 import { OptimizerWeeklyService } from './optimizer-weekly.service';
+import { PaidGrowthController } from './paid-growth.controller';
+import { PaidGrowthService } from './paid-growth.service';
 
 @Module({
   controllers: [
+    PaidGrowthController,
     CampaignDecisionController,
     GrowthDecisionController,
     GrowthDecisionOpenApiController,
     GrowthMavisMcpController,
   ],
   providers: [
+    PaidGrowthService,
     OptimizerWorkflowService,
     OptimizerWeeklyService,
     CampaignBoardManagementService,

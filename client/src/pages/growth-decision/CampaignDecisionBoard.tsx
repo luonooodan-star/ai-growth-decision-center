@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { useSearchParams } from 'react-router-dom';
 import type {
   CampaignDecisionBoard as Board,
   CampaignDecisionCard,
@@ -63,6 +64,28 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   onChanged,
 }) => {
   const [board, setBoard] = useState<Board | null>(null);
+  const [dataParams] = useSearchParams();
+  const campaignFromData = dataParams.get('campaignId');
+  const openedFromData = useRef('');
+  useEffect(() => {
+    if (
+      !campaignFromData ||
+      !board ||
+      openedFromData.current === campaignFromData
+    )
+      return;
+    const matches = board.items.filter(
+      (c) => c.snapshot.campaignId === campaignFromData,
+    );
+    if (!matches.length) return;
+    openedFromData.current = campaignFromData;
+    setFilter(
+      matches.every((c) => c.workQueue === 'archive') ? 'archive' : 'all',
+    );
+    // Multiple accounts may share a source ID: filter first, never guess one account.
+    setSearch(matches[0].snapshot.campaignName || campaignFromData);
+    if (matches.length === 1) setDetail(matches[0].key);
+  }, [board, campaignFromData]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);

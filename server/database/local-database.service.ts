@@ -130,6 +130,21 @@ export class LocalDatabaseService implements OnModuleDestroy {
     );
   }
 
+  getBiCache(key: string): string | undefined {
+    const row = this.database
+      .prepare('SELECT payload FROM growth_bi_cache WHERE cache_key = ?')
+      .get(key);
+    return row ? String(row.payload) : undefined;
+  }
+
+  saveBiCache(key: string, payload: string): void {
+    this.database
+      .prepare(
+        'INSERT INTO growth_bi_cache (cache_key, payload) VALUES (?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload',
+      )
+      .run(key, payload);
+  }
+
   getProduct(id: string): GrowthProduct | undefined {
     const row: Record<string, unknown> | undefined = this.database
       .prepare('SELECT payload FROM growth_product WHERE id = ?')
@@ -551,6 +566,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_bi_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_fetch_checkpoint (
         checkpoint_key TEXT PRIMARY KEY,
         updated_at TEXT NOT NULL,

@@ -240,10 +240,14 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       run.startDate = startDate;
       run.endDate = endDate;
       const filters = {
-        app_name:
-          product.name.toLowerCase() === 'wingslite'
-            ? 'WingsLite(Android)'
-            : product.name,
+        ...(product.dorisAppId
+          ? { app_id: product.dorisAppId }
+          : {
+              app_name:
+                product.name.toLowerCase() === 'wingslite'
+                  ? 'WingsLite(Android)'
+                  : product.name,
+            }),
         media_source: product.channel.toLowerCase(),
         country_code: product.thresholds.markets
           ? String(product.thresholds.markets).split(',')
@@ -2204,7 +2208,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return [];
   }
 
-  private async queryMetric(
+  async queryMetric(
     argumentsValue: Record<string, unknown>,
   ): Promise<DorisQueryResult> {
     const result: unknown = await this.queryGate.run(() => this.callMcpTool(

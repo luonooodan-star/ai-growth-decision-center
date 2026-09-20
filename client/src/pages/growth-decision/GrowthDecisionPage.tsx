@@ -90,6 +90,14 @@ const GrowthDecisionPage: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link
+              to={`/data?${new URLSearchParams({ ...(product?.dorisAppId ? { appId: String(product.dorisAppId) } : {}), media: product?.channel.toLowerCase() || '' })}`}
+            >
+              <Database className="size-4" />
+              查看投放数据
+            </Link>
+          </Button>
           <Badge variant="outline">公司 Mac 局域网服务</Badge>
           <FetchHistoryControl
             productId={productId}
