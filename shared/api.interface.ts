@@ -35,6 +35,31 @@ export interface CampaignDecisionRule {
 export interface CampaignRulesConfig {
   rules: CampaignDecisionRule[];
   revision: string;
+  previewToken?: string;
+}
+
+export interface CampaignRulesPreview {
+  token: string;
+  evaluated: number;
+  changed: number;
+  urgentBefore: number;
+  urgentAfter: number;
+  items: Array<{
+    key: string;
+    name: string;
+    date: string;
+    before: CampaignVerdict;
+    after: CampaignVerdict;
+    blockers: string[];
+    winner?: string;
+    conflicts: string[];
+  }>;
+}
+
+export interface CampaignRuleVersion {
+  id: string;
+  createdAt: string;
+  rules: CampaignDecisionRule[];
 }
 
 export interface CampaignRulesSaveResult extends CampaignRulesConfig {
@@ -66,6 +91,17 @@ export interface CampaignDailySnapshot {
 }
 
 export interface CampaignDecisionCard {
+  workQueue?:
+    | 'urgent'
+    | 'opportunity'
+    | 'due'
+    | 'pending'
+    | 'observation'
+    | 'normal'
+    | 'repair'
+    | 'inactive'
+    | 'archive';
+  analysisReused?: boolean;
   /** Returned recent windows have explicit zero delivery; not an ad-platform status. */
   noRecentDelivery?: boolean;
   staleHistory?: boolean;
@@ -108,6 +144,13 @@ export interface CampaignExecution {
   executedAt?: string;
   executionNote?: string;
   reviewDueAt?: string;
+  reviewCompletedAt?: string;
+  observationPlan?: {
+    minSpend: number;
+    minInstalls: number;
+    escalation: string;
+    endCondition: string;
+  };
   baseline: CampaignDailySnapshot;
 }
 
@@ -127,6 +170,14 @@ export interface ExecuteCampaignRequest {
 }
 
 export interface GrowthProduct {
+  weeklyReviewEnabled?: boolean;
+  knowledge?: Array<{
+    id: string;
+    sourceCaseId: string;
+    conclusion: string;
+    caution: string;
+    approvedAt: string;
+  }>;
   id: string;
   name: string;
   status: string;
@@ -787,4 +838,31 @@ export interface GrowthDecisionActivity {
 
 export interface GrowthDecisionHistoryResponse {
   items: GrowthDecisionActivity[];
+}
+
+export interface OptimizerReview {
+  opened: number;
+  analysisSubmitted: number;
+  analysisSkipped: number;
+  from: string;
+  to: string;
+  scope: string;
+  pending: number;
+  due: number;
+  executed: number;
+  accepted: number;
+  completedReviews: number;
+  repair: number;
+  medianDecisionMinutes: number | null;
+  results: GrowthDecisionCase[];
+}
+
+export interface OptimizerWeeklyState {
+  enabled: boolean;
+  reports: Array<{
+    id: string;
+    createdAt: string;
+    week: string;
+    summary: string;
+  }>;
 }

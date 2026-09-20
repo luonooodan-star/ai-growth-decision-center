@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { DeleteRecordButton } from './DeleteRecordButton';
+import { CampaignRulesPanel } from './CampaignRulesPanel';
 
 const SkillIterationPage: React.FC = () => {
   const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
@@ -28,6 +29,7 @@ const SkillIterationPage: React.FC = () => {
   );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+  const [rulesProduct, setRulesProduct] = useState<string | null>(null);
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -52,17 +54,19 @@ const SkillIterationPage: React.FC = () => {
   const products: GrowthProduct[] = dashboard?.products || [];
   const candidates: GrowthJudgment[] = useMemo(
     (): GrowthJudgment[] =>
-      (dashboard?.judgments || []).filter(
-        (item: GrowthJudgment): boolean =>
-          !item.skillCandidateDeletedAt &&
-          (Boolean(item.skillRuleCandidate) || Boolean(item.reviewedAt)),
-      ).sort(
-        (left: GrowthJudgment, right: GrowthJudgment): number =>
-          Number(Boolean(right.isFocused)) -
-            Number(Boolean(left.isFocused)) ||
-          new Date(right.createdAt).getTime() -
-            new Date(left.createdAt).getTime(),
-      ),
+      (dashboard?.judgments || [])
+        .filter(
+          (item: GrowthJudgment): boolean =>
+            !item.skillCandidateDeletedAt &&
+            (Boolean(item.skillRuleCandidate) || Boolean(item.reviewedAt)),
+        )
+        .sort(
+          (left: GrowthJudgment, right: GrowthJudgment): number =>
+            Number(Boolean(right.isFocused)) -
+              Number(Boolean(left.isFocused)) ||
+            new Date(right.createdAt).getTime() -
+              new Date(left.createdAt).getTime(),
+        ),
     [dashboard],
   );
   const completedExperiments: GrowthDecisionCase[] = useMemo(
@@ -78,16 +82,22 @@ const SkillIterationPage: React.FC = () => {
       <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-medium text-violet-700">
-            <Sparkles className="size-4" />SKILL ITERATION
+            <Sparkles className="size-4" />
+            SKILL ITERATION
           </div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
             产品 Skill 迭代
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            人工确认/否决形成判断规则候选，实验的有效与无效结果形成证据；两者共同进入下一版产品 Skill。
+            人工确认/否决形成判断规则候选，实验的有效与无效结果形成证据；两者共同进入下一版产品
+            Skill。
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>
+        <Button
+          variant="outline"
+          onClick={() => void load()}
+          disabled={loading}
+        >
           <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
           刷新证据
         </Button>
@@ -118,7 +128,10 @@ const SkillIterationPage: React.FC = () => {
             productCandidates.length > 0 && productExperiments.length > 0;
 
           return (
-            <Card key={product.id} className="border-slate-200 bg-white shadow-none">
+            <Card
+              key={product.id}
+              className="border-slate-200 bg-white shadow-none"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -133,9 +146,41 @@ const SkillIterationPage: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mb-3"
+                  onClick={() => setRulesProduct(product.id)}
+                >
+                  编辑候选规则 → 历史试跑 → 人工发布
+                </Button>
+                {!!product.knowledge?.length && (
+                  <details className="mb-3 rounded-lg border p-3 text-sm">
+                    <summary>
+                      已审核产品知识（{product.knowledge.length}）
+                    </summary>
+                    <div className="max-h-60 space-y-2 overflow-y-auto">
+                      {product.knowledge.map((k) => (
+                        <article className="border-t pt-2" key={k.id}>
+                          <p>{k.conclusion}</p>
+                          <p className="text-xs text-slate-500">
+                            {k.caution} 来源实验 {k.sourceCaseId} ·{' '}
+                            {new Date(k.approvedAt).toLocaleString('zh-CN')}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  </details>
+                )}
                 <div className="grid grid-cols-3 gap-3">
-                  <SkillFact label="规则候选" value={productCandidates.length} />
-                  <SkillFact label="完成实验" value={productExperiments.length} />
+                  <SkillFact
+                    label="规则候选"
+                    value={productCandidates.length}
+                  />
+                  <SkillFact
+                    label="完成实验"
+                    value={productExperiments.length}
+                  />
                   <SkillFact label="有效实验" value={effective} />
                 </div>
 
@@ -170,7 +215,9 @@ const SkillIterationPage: React.FC = () => {
                         ) : null}
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
-                        {item.skillRuleCandidate || item.reviewReason || item.preliminaryJudgment}
+                        {item.skillRuleCandidate ||
+                          item.reviewReason ||
+                          item.preliminaryJudgment}
                       </p>
                     </article>
                   ))}
@@ -199,6 +246,16 @@ const SkillIterationPage: React.FC = () => {
           <p className="mt-3 text-sm text-slate-600">暂无产品 Skill。</p>
         </div>
       ) : null}
+      {rulesProduct && (
+        <CampaignRulesPanel
+          productId={rulesProduct}
+          open
+          onClose={() => setRulesProduct(null)}
+          onSaved={async () => {
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 };

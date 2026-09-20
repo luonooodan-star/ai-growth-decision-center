@@ -25,6 +25,11 @@ import {
   Settings2,
 } from 'lucide-react';
 import { LABELS, COLORS, metric } from './campaign-board-display';
+import {
+  WORK_QUEUES,
+  inWorkbench,
+  type WorkbenchFilter,
+} from './campaign-workbench-display';
 interface Props {
   board: Board | null;
   busy: boolean;
@@ -35,7 +40,7 @@ interface Props {
   load: () => Promise<void>;
   error: string;
   notice: string;
-  filter: CampaignVerdict | 'actionable' | 'urgent' | 'all' | 'inactive';
+  filter: WorkbenchFilter;
   setFilter: (v: Props['filter']) => void;
   search: string;
   setSearch: (v: string) => void;
@@ -68,7 +73,7 @@ export const CampaignBoardList: React.FC<Props> = ({
     <CardHeader>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <CardTitle className="text-xl">广告系列决策台</CardTitle>
+          <CardTitle className="text-xl">广告系列决策台 · 今日待办</CardTitle>
           <CardDescription className="mt-2">
             先处理影响最大的系列。看结论、确认动作、登记执行，再复查效果。
           </CardDescription>
@@ -124,19 +129,31 @@ export const CampaignBoardList: React.FC<Props> = ({
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
+          variant={filter === 'today' ? 'default' : 'outline'}
+          onClick={() => setFilter('today')}
+        >
+          今日待办
+        </Button>
+        {(['due', 'pending'] as const).map((q) => (
+          <Button
+            key={q}
+            size="sm"
+            variant={filter === q ? 'default' : 'outline'}
+            onClick={() => setFilter(q)}
+          >
+            {WORK_QUEUES[q]}{' '}
+            {board?.items.filter((c) => c.workQueue === q).length || 0}
+          </Button>
+        ))}
+        <Button
+          size="sm"
           variant={filter === 'urgent' ? 'default' : 'outline'}
           onClick={() => setFilter('urgent')}
         >
-          异常优先处理 {board?.items.filter((c) => c.urgent).length || 0}
+          优先处理{' '}
+          {board?.items.filter((c) => c.workQueue === 'urgent').length || 0}
         </Button>
-        <Button
-          size="sm"
-          variant={filter === 'actionable' ? 'default' : 'outline'}
-          onClick={() => setFilter('actionable')}
-        >
-          待处理与机会
-        </Button>
-        {(Object.keys(LABELS) as CampaignVerdict[]).map((v) => (
+        {(['increase', 'observe'] as CampaignVerdict[]).map((v) => (
           <Button
             size="sm"
             variant={filter === v ? 'default' : 'outline'}
@@ -144,26 +161,42 @@ export const CampaignBoardList: React.FC<Props> = ({
             onClick={() => setFilter(v)}
           >
             {LABELS[v]}{' '}
-            {board?.items.filter((c) => !c.noRecentDelivery && c.verdict === v)
-              .length || 0}
+            {board?.items.filter((c) => inWorkbench(c, v)).length || 0}
           </Button>
         ))}
-        <Button
-          size="sm"
-          variant={filter === 'all' ? 'default' : 'outline'}
-          onClick={() => setFilter('all')}
-        >
-          全部
-        </Button>
-        <Button
-          size="sm"
-          variant={filter === 'inactive' ? 'default' : 'outline'}
-          onClick={() => setFilter('inactive')}
-        >
-          无新增投放{' '}
-          {board?.items.filter((c) => c.noRecentDelivery).length || 0}
-        </Button>
       </div>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-slate-500">
+          其他分类 · 正常、数据修复与历史
+        </summary>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(
+            [
+              'normal',
+              'decrease',
+              'adjust_ads',
+              'repair',
+              'inactive',
+              'archive',
+              'all',
+            ] as const
+          ).map((q) => (
+            <Button
+              key={q}
+              size="sm"
+              variant={filter === q ? 'default' : 'outline'}
+              onClick={() => setFilter(q)}
+            >
+              {q === 'all'
+                ? '全部（不含归档）'
+                : q in WORK_QUEUES
+                  ? WORK_QUEUES[q]
+                  : LABELS[q]}{' '}
+              {board?.items.filter((c) => inWorkbench(c, q)).length || 0}
+            </Button>
+          ))}
+        </div>
+      </details>
       <p className="text-xs text-slate-500">
         {board && (
           <>
@@ -174,7 +207,9 @@ export const CampaignBoardList: React.FC<Props> = ({
         判断基于最近已结束数据日，今天数据仅供观察。
       </p>
       <p className="text-xs text-slate-500">
-        一键分析作用于当前筛选列表，同一数据版本的已完成和排队任务会跳过。措施判断条件在“系列判断规则”新增。
+        一键分析作用于当前列表。已排队任务不重复创建；同数据日、决策不变且指标变化均小于
+        10% 时，可复用 24
+        小时内结论。换日、到期、新广告或明显变化会重新分析，也可在详情手动重跑。
       </p>
       <Input
         aria-label="搜索广告系列"
@@ -196,6 +231,11 @@ export const CampaignBoardList: React.FC<Props> = ({
         </p>
       )}
       <div className="max-h-[42rem] space-y-3 overflow-y-auto pr-1">
+        {board && board.items.length > 0 && !items.length && (
+          <p className="rounded-lg bg-emerald-50 p-4 text-sm">
+            当前分类没有待处理系列。数据修复和历史记录可在其他分类查看。
+          </p>
+        )}
         {items.map((card, index) => (
           <article
             key={card.key}
@@ -205,7 +245,11 @@ export const CampaignBoardList: React.FC<Props> = ({
               <span
                 className={`rounded-lg px-3 py-1 text-sm font-semibold ${COLORS[card.verdict]}`}
               >
-                {card.noRecentDelivery ? '无新增投放' : LABELS[card.verdict]}
+                {card.workQueue
+                  ? WORK_QUEUES[card.workQueue]
+                  : card.noRecentDelivery
+                    ? '无新增投放'
+                    : LABELS[card.verdict]}
               </span>
               {card.urgent && <Badge variant="destructive">异常优先处理</Badge>}
               {card.matchedRule && (
@@ -243,6 +287,23 @@ export const CampaignBoardList: React.FC<Props> = ({
               ))}
             </div>
             <p className="text-sm text-slate-800">{card.reason}</p>
+            {card.workQueue === 'repair' && (
+              <p className="mt-2 text-sm text-amber-800">
+                数据待修复，不代表停止投放。请先补齐缺失数据；不会自动送入效果分析。
+              </p>
+            )}
+            {card.previous && (
+              <p className="mt-2 text-xs text-slate-500">
+                较 {card.previous.dataDate}：
+                {(['cpi', 'ctr', 'd0_roas', 'ecpm'] as const)
+                  .map((k) => {
+                    const a = card.snapshot.metrics[k],
+                      b = card.previous!.metrics[k];
+                    return `${k === 'ecpm' ? '买量 CPM' : k.toUpperCase()} ${a !== undefined && b !== undefined && b > 0 ? `${((a / b - 1) * 100).toFixed(1)}%` : '不可比'}`;
+                  })
+                  .join(' · ')}
+              </p>
+            )}
             {card.primaryAction.changePct !== undefined && (
               <p className="mt-2 flex items-center gap-1 text-sm font-semibold text-blue-700">
                 {card.primaryAction.changePct > 0 ? (
@@ -260,16 +321,17 @@ export const CampaignBoardList: React.FC<Props> = ({
                 查看
                 <ChevronRight className="size-4" />
               </Button>
-              {!['observe', 'normal'].includes(card.verdict) && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => openDecision(card, 'accept')}
-                >
-                  接受并生成执行单
-                </Button>
-              )}
+              {!card.blockers.length &&
+                !['observe', 'normal'].includes(card.verdict) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => openDecision(card, 'accept')}
+                  >
+                    接受并生成执行单
+                  </Button>
+                )}
               {card.verdict !== 'normal' && !card.noRecentDelivery && (
                 <Button
                   size="sm"
@@ -293,7 +355,7 @@ export const CampaignBoardList: React.FC<Props> = ({
                 )}
               <Badge variant="outline">
                 {card.analysis
-                  ? `${card.analysis.provider === 'codex' ? 'Codex' : '规则'}分析已返回`
+                  ? `${card.analysis.provider === 'codex' ? 'Codex' : '规则'}分析${card.analysisReused ? '复用（无显著变化）' : '已返回'}`
                   : card.analysisStatus === 'running'
                     ? 'Codex 排队／分析中'
                     : '产品策略初判'}

@@ -24,6 +24,12 @@ import { CampaignBoardOrders } from './CampaignBoardOrders';
 import { CampaignBoardList } from './CampaignBoardList';
 import { CampaignBoardDetail } from './CampaignBoardDetail';
 import { CampaignRulesPanel } from './CampaignRulesPanel';
+import {
+  inWorkbench,
+  type WorkbenchFilter,
+} from './campaign-workbench-display';
+import { OptimizerReviewPanel } from './OptimizerReviewPanel';
+import { BatchObserveButton } from './BatchObserveButton';
 
 interface CampaignDecisionBoardProps {
   productId: string;
@@ -60,9 +66,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState<
-    CampaignVerdict | 'actionable' | 'urgent' | 'all' | 'inactive'
-  >('actionable');
+  const [filter, setFilter] = useState<WorkbenchFilter>('today');
   const [search, setSearch] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
@@ -121,15 +125,7 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   );
   const items: CampaignDecisionCard[] = (board?.items || []).filter(
     (c) =>
-      (filter === 'all' ||
-        (filter === 'inactive'
-          ? c.noRecentDelivery
-          : !c.noRecentDelivery &&
-            (filter === 'actionable'
-              ? c.verdict !== 'normal'
-              : filter === 'urgent'
-                ? Boolean(c.urgent)
-                : c.verdict === filter))) &&
+      inWorkbench(c, filter) &&
       [
         c.snapshot.campaignName,
         c.snapshot.campaignId,
@@ -148,10 +144,23 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
         !o.hideAfterAt ||
         new Date(o.hideAfterAt).getTime() > Date.now(),
     )
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    .sort((a, b) => {
+      const rank = (o: GrowthDecisionCase): number =>
+        o.status === 'completed'
+          ? 0
+          : o.campaignExecution?.reviewDueAt &&
+              Date.parse(o.campaignExecution.reviewDueAt) <= Date.now()
+            ? 3
+            : o.campaignExecution?.state === 'pending'
+              ? 2
+              : 1;
+      return rank(b) - rank(a) || b.createdAt.localeCompare(a.createdAt);
+    });
   const pendingCount = items.filter(
     (c) =>
-      !c.noRecentDelivery && (!c.analysisId || c.analysisStatus === 'failed'),
+      !c.noRecentDelivery &&
+      c.workQueue !== 'repair' &&
+      (!c.analysisId || c.analysisStatus === 'failed'),
   ).length;
   const analyzeVisible = async (): Promise<void> => {
     setBusy(true);
@@ -161,7 +170,9 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     let skipped = 0;
     const failures: string[] = [];
     try {
-      const candidates = items.filter((c) => !c.noRecentDelivery);
+      const candidates = items.filter(
+        (c) => !c.noRecentDelivery && c.workQueue !== 'repair',
+      );
       for (let start = 0; start < candidates.length; start += 20) {
         const chunk = candidates.slice(start, start + 20);
         try {
@@ -212,6 +223,14 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
 
   return (
     <section className="mb-6 space-y-4" data-ai-section-type="card-list">
+      <BatchObserveButton
+        productId={productId}
+        cards={items}
+        onChanged={async () => {
+          await load();
+          await onChanged();
+        }}
+      />
       <CampaignBoardList
         board={board}
         busy={busy}
@@ -227,7 +246,16 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
         search={search}
         setSearch={setSearch}
         items={items}
-        setDetail={setDetail}
+        setDetail={(key) => {
+          setDetail(key);
+          const card = board?.items.find((c) => c.key === key);
+          if (card)
+            void api
+              .recordCampaignView(productId, key, card.revision)
+              .catch((e) =>
+                setNotice(`详情已打开，耗时记录失败：${errorText(e)}`),
+              );
+        }}
         openDecision={openDecision}
       />
       <CampaignBoardOrders
@@ -237,6 +265,10 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
         setReason={setReason}
         run={run}
         setHistoryOrder={setHistoryOrder}
+      />
+      <OptimizerReviewPanel
+        productId={productId}
+        refreshedAt={board?.generatedAt}
       />
       <CampaignBoardDetail
         detail={detail}

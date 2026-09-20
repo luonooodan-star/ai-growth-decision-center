@@ -267,6 +267,8 @@ export class GrowthMavisAnalysisService {
         confidenceRange: [0, 100],
         observationHoursRange: [1, 168],
         requiredAnalysis: [
+          '先区分异常现象、可能根因和可执行措施。只有 CTR 或 D0 下跌而无其他证据时，不直接建议减预算。标出主导问题广告的消耗占比及对系列指标的贡献；缺少分母时不得估计贡献。',
+          '读取 product.knowledge 中的人工审核历史结论，注明引用来源实验；只作为候选证据，不能当作当前因果或覆盖现行规则。建议给出一个首选行动、对象、前后参数、复查时间与升级条件。',
           '若 judgment.campaignReview 存在，本任务是整个广告系列的综合决策；先读取 card.trend、card.blockers、card.primaryAction 及 recentOrders，合并系列内的所有指标信号，优秀系列也需要评估。',
           '输出一个首选行动及证据。预算方向和幅度受产品策略、样本和数据成熟度约束；不要把日消耗当日预算，不把 campaign D0 当某个广告组 D0。',
           '日累计快照每小时刷新并非小时增量。结合真实执行时点复查，不得把执行前的数据变动归因于措施。买量 ecpm 兼容字段实际是广告 CPM，不是产品变现 ECPM。',

@@ -164,8 +164,7 @@ export function buildCampaignCard(
   const noRecentDelivery =
     age >= 0 &&
     !resumedToday &&
-    (staleHistory ||
-      twoZeroDays ||
+    (twoZeroDays ||
       [...trend, ...sorted.filter((s) => s.dataDate === today)].every(
         hasZeroDelivery,
       )) &&
@@ -275,7 +274,7 @@ export function buildCampaignCard(
     reason = `连续 ${zeroSpendDays.length} 个已结束数据日无消耗，归入无新增投放`;
   if (noRecentDelivery && staleHistory)
     reason =
-      '历史数据已过期，移入无新增投放；当前投放状态待确认，不代表实际消耗为零';
+      '已返回历史窗口存在零投放证据，归入无新增投放；数据已过期，当前状态仍待确认';
   if (!blockers.length) {
     if (bad) {
       verdict = 'decrease';
@@ -399,7 +398,7 @@ export function buildCampaignCard(
   };
   return {
     noRecentDelivery,
-    staleHistory: noRecentDelivery && staleHistory,
+    staleHistory,
     noDeliveryHideAfter,
     key: snapshot.key,
     revision: campaignHash([

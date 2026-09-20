@@ -47,20 +47,35 @@ export const CampaignBoardOrders: React.FC<Props> = ({
                 {order.campaignName}
               </p>
               <Badge variant="outline">
-                {order.status === 'completed'
-                  ? '已结束'
-                  : order.campaignExecution?.state === 'pending'
-                    ? '待执行'
-                    : order.campaignExecution?.state === 'executed'
-                      ? '已执行／复查中'
-                      : order.campaignExecution?.state === 'rejected'
-                        ? '未接受'
-                        : '观察中'}
+                {order.status !== 'completed' &&
+                order.campaignExecution?.reviewDueAt &&
+                Date.parse(order.campaignExecution.reviewDueAt) <= Date.now()
+                  ? '已到期，请复查'
+                  : order.status === 'completed'
+                    ? '已结束'
+                    : order.campaignExecution?.state === 'pending'
+                      ? '待执行'
+                      : order.campaignExecution?.state === 'executed'
+                        ? '已执行／复查中'
+                        : order.campaignExecution?.state === 'rejected'
+                          ? '未接受'
+                          : '观察中'}
               </Badge>
             </div>
             <p className="mt-2 text-sm">
               {order.campaignExecution?.proposal.rationale}
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              账户 {order.adAccountId || '未定位'} ·{' '}
+              {order.campaignExecution?.proposal.targetLevel}{' '}
+              {order.campaignExecution?.proposal.targetName ||
+                order.campaignExecution?.proposal.targetId}
+            </p>
+            {order.recoveryReadyAt && order.status !== 'completed' && (
+              <p className="mt-2 text-sm text-emerald-700">
+                指标已持续恢复，待人工核对后结束；不自动认定措施有效。
+              </p>
+            )}
             {order.campaignExecution?.beforeBudget !== undefined && (
               <p className="mt-1 text-sm font-medium text-blue-700">
                 日预算 ${order.campaignExecution.beforeBudget} → $

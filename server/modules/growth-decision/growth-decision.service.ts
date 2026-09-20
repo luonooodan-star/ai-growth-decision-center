@@ -524,7 +524,10 @@ export class GrowthDecisionService {
     actor: string,
   ): Promise<GrowthDecisionCase> {
     const current: GrowthDecisionCase = this.getCase(id);
-    if (request.action === 'accepted' && current.campaignExecution?.state === 'pending') {
+    if (
+      request.action === 'accepted' &&
+      current.campaignExecution?.state === 'pending'
+    ) {
       throw new BadRequestException('请在系列执行单登记已实际执行后开始观测');
     }
     const now: string = new Date().toISOString();
@@ -534,9 +537,11 @@ export class GrowthDecisionService {
     const updated: GrowthDecisionCase = {
       ...current,
       status: request.action,
-      campaignExecution: current.campaignExecution?.state === 'pending' && request.action === 'rejected'
-        ? { ...current.campaignExecution, state: 'rejected' }
-        : current.campaignExecution,
+      campaignExecution:
+        current.campaignExecution?.state === 'pending' &&
+        request.action === 'rejected'
+          ? { ...current.campaignExecution, state: 'rejected' }
+          : current.campaignExecution,
       decisionReason: request.reason,
       decidedBy: actor,
       decidedAt: now,
@@ -573,9 +578,23 @@ export class GrowthDecisionService {
     actor: string,
   ): Promise<GrowthDecisionCase> {
     const current: GrowthDecisionCase = this.getCase(id);
-    if (current.campaignExecution && current.campaignExecution.state !== 'executed') {
+    if (
+      current.campaignExecution &&
+      current.campaignExecution.state !== 'executed'
+    ) {
       throw new BadRequestException('尚未登记实际执行，不能记录措施实验结果');
     }
+    if (
+      !request ||
+      !['expected', 'partial', 'neutral', 'negative'].includes(
+        request.classification,
+      ) ||
+      !Number.isFinite(request.actualChangePct) ||
+      typeof request.actualResult !== 'string' ||
+      !request.actualResult.trim() ||
+      request.actualResult.length > 5000
+    )
+      throw new BadRequestException('请填写有效的结果分类、变化幅度及数据证据');
     const completedAt: string = new Date().toISOString();
     const updated: GrowthDecisionCase = {
       ...current,
@@ -653,7 +672,9 @@ export class GrowthDecisionService {
       return left.adsetName === right.adsetName;
     }
     return Boolean(
-      left.campaignId && right.campaignId && left.campaignId === right.campaignId,
+      left.campaignId &&
+      right.campaignId &&
+      left.campaignId === right.campaignId,
     );
   }
 

@@ -26,6 +26,12 @@ import { GrowthDecisionService } from './growth-decision.service';
 import { GrowthMavisAnalysisService } from './growth-mavis-analysis.service';
 import { reconcileCampaignHistory } from './campaign-history';
 import {
+  canReuseAnalysis,
+  workQueue,
+  activeOrder,
+  reviewDeadline,
+} from './campaign-workbench';
+import {
   buildCampaignCard,
   campaignMetric,
   DEFAULT_CAMPAIGN_POLICY,
@@ -50,9 +56,19 @@ export class CampaignDecisionService {
     const snapshots: CampaignDailySnapshot[] =
       this.database.listCampaignSnapshots(productId);
     const records: DecisionRecord[] = this.database.listDecisionRecords(10000);
-    const orders: GrowthDecisionCase[] = records.filter(
-      (r): r is GrowthDecisionCase => !('preliminaryJudgment' in r),
-    );
+    const orders: GrowthDecisionCase[] = records
+      .filter((r): r is GrowthDecisionCase => !('preliminaryJudgment' in r))
+      .map((o) =>
+        o.campaignExecution
+          ? {
+              ...o,
+              campaignExecution: {
+                ...o.campaignExecution,
+                reviewDueAt: reviewDeadline(o),
+              },
+            }
+          : o,
+      );
     const items: CampaignDecisionCard[] = reconcileCampaignHistory(snapshots)
       .map(({ snapshots: history, relatedKeys }) => {
         const card: CampaignDecisionCard = buildCampaignCard(
@@ -67,22 +83,42 @@ export class CampaignDecisionService {
             '已使用账户定位后的完整快照；旧未定位卡片不再重复展示，历史措施仍保留关联',
           );
         }
+        card.workQueue = workQueue(card);
+        const dueAt = Math.max(
+          0,
+          ...card.recentOrders
+            .filter(activeOrder)
+            .map(
+              (o) => Date.parse(o.campaignExecution?.reviewDueAt || '') || 0,
+            ),
+        );
         const review: GrowthJudgment | undefined = records.find(
           (r): r is GrowthJudgment =>
             'preliminaryJudgment' in r &&
             !r.deletedAt &&
             r.campaignReview?.key === card.key &&
-            r.campaignReview.revision === card.revision,
+            (r.aiAnalysisStatus === 'running' ||
+              ((card.workQueue !== 'due' || Date.parse(r.createdAt) >= dueAt) &&
+                (r.campaignReview.revision === card.revision ||
+                  (r.aiAnalysisStatus === 'completed' &&
+                    Date.now() - Date.parse(r.createdAt) < 86400000 &&
+                    canReuseAnalysis(r.campaignReview.card, card))))),
         );
         if (review) {
           card.analysisId = review.id;
           card.analysisStatus = review.aiAnalysisStatus;
-          card.analysis = review.aiAnalysis;
+          card.analysis =
+            review.aiAnalysisStatus === 'running'
+              ? undefined
+              : review.aiAnalysis;
+          card.analysisReused =
+            review.campaignReview?.revision !== card.revision;
           const proposal: GrowthActionProposal | undefined =
-            review.aiAnalysis?.recommendedActions?.[0];
+            card.analysis?.recommendedActions?.[0];
           // 模型必须沿用经过证据和策略门槛验证的方向，不能从观察直接变成加预算。
           if (
             !card.blockers.length &&
+            !card.analysisReused &&
             proposal &&
             proposal.actionType === card.primaryAction.actionType &&
             proposal.targetLevel === card.primaryAction.targetLevel &&
@@ -99,13 +135,9 @@ export class CampaignDecisionService {
             };
           }
         }
+        card.workQueue = workQueue(card);
         return card;
       })
-      .filter(
-        (card) =>
-          !card.noDeliveryHideAfter ||
-          Date.parse(card.noDeliveryHideAfter) > Date.now(),
-      )
       .sort(
         (a, b) =>
           Number(Boolean(b.urgent)) - Number(Boolean(a.urgent)) ||
@@ -182,6 +214,7 @@ export class CampaignDecisionService {
     key: string,
     revision: string,
     prepareOnly = false,
+    force = false,
   ): Promise<GrowthJudgment> {
     const card: CampaignDecisionCard = this.currentCard(
       productId,
@@ -189,18 +222,28 @@ export class CampaignDecisionService {
       revision,
     );
     const product: GrowthProduct = this.product(productId);
-    if (card.analysisId && card.analysisStatus !== 'failed') {
+    if (
+      card.analysisId &&
+      card.analysisStatus !== 'failed' &&
+      (!force || card.analysisStatus === 'running')
+    ) {
       return this.database.getDecisionRecord(card.analysisId) as GrowthJudgment;
     }
-    if (card.noRecentDelivery)
+    if (
+      card.noRecentDelivery ||
+      card.workQueue === 'repair' ||
+      card.staleHistory ||
+      card.snapshot.qualityIssues.length ||
+      card.snapshot.metrics.spend === undefined
+    )
       throw new BadRequestException(
-        '已返回窗口无新增投放，无需提交效果分析；恢复投放后会自动重新判断',
+        '无新增投放或数据待修复，先补齐数据再提交效果分析',
       );
     // 强制通过现有 Codex bridge；未配置时明确失败，不能冒充模型输出。
     if (!this.analysis.getStatus(productId).mcpConfigured)
       throw new BadRequestException('请先配置 Codex 任务桥');
     const review: GrowthJudgment = {
-      id: card.analysisId || randomUUID(),
+      id: force ? randomUUID() : card.analysisId || randomUUID(),
       productId,
       productName: product.name,
       status: 'judgment_pending',
@@ -255,6 +298,12 @@ export class CampaignDecisionService {
             (request.decision === 'reject' ? 'rejected' : 'observing')),
     );
     if (existing) return existing;
+    if (request.decision === 'observe') {
+      const active = card.recentOrders.find(
+        (o) => activeOrder(o) && o.campaignExecution?.state === 'observing',
+      );
+      if (active) return active;
+    }
     if (
       request.decision === 'accept' &&
       (card.blockers.length || ['observe', 'normal'].includes(card.verdict))
@@ -361,10 +410,56 @@ export class CampaignDecisionService {
         beforeBudget,
         afterBudget,
         acceptedAt: now,
+        reviewDueAt:
+          request.decision === 'observe'
+            ? new Date(
+                Date.now() + proposal.observationHours * 3600000,
+              ).toISOString()
+            : undefined,
+        observationPlan:
+          request.decision === 'observe'
+            ? {
+                minSpend: (product.decisionPolicy || DEFAULT_CAMPAIGN_POLICY)
+                  .minSpend,
+                minInstalls: (product.decisionPolicy || DEFAULT_CAMPAIGN_POLICY)
+                  .minInstalls,
+                escalation:
+                  '到期、主目标恶化或出现新的高消耗问题广告时人工复查，不自动调整预算',
+                endCondition:
+                  '完整数据达到产品正常范围后由人工结束；缺失数据不视为恢复',
+              }
+            : undefined,
         baseline: card.snapshot,
       },
     };
     this.database.saveDecisionRecord(order);
+    const opened = this.database
+      .listActivities(productId, 10000)
+      .find(
+        (a) =>
+          a.action === 'optimizer_viewed' &&
+          a.metadata.key === card.key &&
+          a.metadata.revision === card.revision,
+      );
+    this.database.appendActivity({
+      caseId: productId,
+      action: 'optimizer_decision',
+      actor: 'growth',
+      detail: '记录人工决策耗时（从首次查看该版本到确认，包含离开页面时间）',
+      metadata: {
+        key: card.key,
+        revision: card.revision,
+        orderId: order.id,
+        minutes: opened
+          ? String(
+              Math.max(
+                0,
+                (Date.parse(now) - Date.parse(opened.createdAt)) / 60000,
+              ),
+            )
+          : '',
+      },
+    });
     this.database.appendActivity({
       caseId: order.id,
       action: `campaign_${request.decision}`,

@@ -220,18 +220,17 @@ describe('zero delivery is not a missing target anomaly', () => {
       ).noRecentDelivery,
     ).toBe(true);
   });
-  it('archives stale positive-spend history without claiming zero and restores fresh spend', () => {
+  it('keeps stale positive-spend history in data repair, never falsely declares no delivery', () => {
     const source = {
       ...snapshot(),
       fetchedAt: '2026-09-06T01:00:00Z',
       metrics: { ...snapshot().metrics, spend: 50 },
     };
     const card = buildCampaignCard(product, [source], [], now);
-    expect(card.noRecentDelivery).toBe(true);
+    expect(card.noRecentDelivery).toBe(false);
     expect(card.staleHistory).toBe(true);
-    expect(card.reason).toContain('不代表实际消耗为零');
     expect(card.blockers).toContain('数据已过期，需要重新抓取');
-    expect(card.noDeliveryHideAfter).toBe('2026-09-13T04:00:00.000Z');
+    expect(card.noDeliveryHideAfter).toBeUndefined();
     expect(
       buildCampaignCard(
         product,

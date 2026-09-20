@@ -16,6 +16,7 @@ import { DecisionHistoryDrawer } from './DecisionHistoryDrawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { reviewObservation } from '@/api/campaign-decision';
 
 interface CampaignExecutionHistoryProps {
   order: GrowthDecisionCase | null;
@@ -95,6 +96,54 @@ export const CampaignExecutionHistory: React.FC<
               小时后检查成熟主目标、消耗和安装规模。
             </p>
             <p>回滚条件：{execution.proposal.rollbackCondition}</p>
+            {execution.observationPlan && (
+              <div className="rounded-lg bg-blue-50 p-3">
+                <p>
+                  样本门槛：消耗 ≥ ${execution.observationPlan.minSpend}，安装 ≥{' '}
+                  {execution.observationPlan.minInstalls}
+                </p>
+                <p>{execution.observationPlan.escalation}</p>
+                <p>{execution.observationPlan.endCondition}</p>
+              </div>
+            )}
+            {execution.state === 'observing' &&
+              !execution.reviewCompletedAt && (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="font-semibold">人工观察复查</p>
+                  <Textarea
+                    aria-label="观察复查原因"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="填写数据日期、恢复/恶化证据或延期原因"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {(['extend', 'finish'] as const).map((action) => (
+                      <Button
+                        key={action}
+                        disabled={saving || !note.trim()}
+                        variant={action === 'finish' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setSaving(true);
+                          void reviewObservation(order.id, action, note)
+                            .then(async () => {
+                              await onChanged();
+                              onClose();
+                            })
+                            .catch((e) => setError(e.message || '复查失败'))
+                            .finally(() => setSaving(false));
+                        }}
+                      >
+                        {action === 'finish'
+                          ? '确认结束观察（留档）'
+                          : `确认延期 ${execution.proposal.observationHours} 小时`}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    结束观察不计入投放措施改善率。
+                  </p>
+                </div>
+              )}
             {error && (
               <p role="alert" className="text-red-700">
                 {error}

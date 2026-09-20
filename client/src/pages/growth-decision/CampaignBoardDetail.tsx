@@ -11,6 +11,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { LABELS, COLORS, metric } from './campaign-board-display';
+import { WORK_QUEUES } from './campaign-workbench-display';
 interface Props {
   detail: string | null;
   setDetail: (value: string | null) => void;
@@ -45,8 +46,8 @@ export const CampaignBoardDetail: React.FC<Props> = ({
           <p
             className={`rounded-lg p-3 font-semibold ${COLORS[selected.verdict]}`}
           >
-            {selected.noRecentDelivery
-              ? '无新增投放'
+            {selected.workQueue
+              ? WORK_QUEUES[selected.workQueue]
               : LABELS[selected.verdict]}{' '}
             · {selected.reason}
           </p>
@@ -127,6 +128,11 @@ export const CampaignBoardDetail: React.FC<Props> = ({
               ))}
           </div>
           <h3 className="font-semibold">首选行动</h3>
+          {selected.analysisReused && (
+            <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+              当前沿用本日已有分析：决策条件未变，指标变化未达到重新分析门槛。历史分析中的数值不是最新快照，请以本页趋势为准；需要重新诊断可手动重跑。
+            </p>
+          )}
           <p className="text-sm">{selected.primaryAction.rationale}</p>
           <p className="text-xs text-slate-500">
             对象：{selected.primaryAction.targetName} ·{' '}
@@ -144,9 +150,9 @@ export const CampaignBoardDetail: React.FC<Props> = ({
           <Button
             disabled={
               selected.noRecentDelivery ||
+              selected.workQueue === 'repair' ||
               busy ||
-              selected.analysisStatus === 'running' ||
-              Boolean(selected.analysis)
+              selected.analysisStatus === 'running'
             }
             onClick={() =>
               void run(
@@ -155,14 +161,15 @@ export const CampaignBoardDetail: React.FC<Props> = ({
                     productId,
                     selected.key,
                     selected.revision,
+                    Boolean(selected.analysis),
                   ),
-                '系列综合任务已提交给 Codex，同一数据版本会复用已有分析。',
+                '系列任务已提交；已有运行中的任务不会重复创建。',
               )
             }
           >
             <BrainCircuit className="size-4" />
             {selected.analysis
-              ? '当前数据已分析'
+              ? '手动重新分析（创建新任务）'
               : selected.analysisStatus === 'running'
                 ? '等待 Codex 返回'
                 : 'Codex 综合分析'}

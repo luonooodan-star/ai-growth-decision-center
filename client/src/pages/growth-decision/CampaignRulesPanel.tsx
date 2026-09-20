@@ -6,8 +6,16 @@ import type {
   CampaignDecisionBoard,
   CampaignRulesConfig,
   CampaignVerdict,
+  CampaignRulesPreview,
+  CampaignRuleVersion,
 } from '@shared/api.interface';
-import { getCampaignRules, saveCampaignRules } from '@/api/campaign-decision';
+import {
+  getCampaignRules,
+  saveCampaignRules,
+  previewCampaignRules,
+  getCampaignRuleVersions,
+} from '@/api/campaign-decision';
+import { CampaignRulePreview } from './CampaignRulePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -88,6 +96,12 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [discard, setDiscard] = useState(false);
+  const [preview, setPreview] = useState<CampaignRulesPreview | null>(null);
+  const [versions, setVersions] = useState<CampaignRuleVersion[]>([]);
+  const [publish, setPublish] = useState(false);
+  useEffect(() => {
+    setPreview(null);
+  }, [config]);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -96,6 +110,14 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
     setNotice('');
     setSelectedId('');
     setDirty(false);
+    setVersions([]);
+    void getCampaignRuleVersions(productId)
+      .then((v) => {
+        if (!cancelled) setVersions(v);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorText(e));
+      });
     void getCampaignRules(productId)
       .then((data) => {
         if (!cancelled) setConfig(data);
@@ -152,7 +174,7 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
     setDirty(true);
     setNotice('');
   };
-  const save = async (): Promise<void> => {
+  const save = async (confirmed = false): Promise<void> => {
     if (!config || saving) return;
     setSaving(true);
     setError('');
@@ -175,9 +197,19 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
           );
         }
       }
-      const saved = await saveCampaignRules(productId, config);
+      if (!confirmed) {
+        setPreview(await previewCampaignRules(productId, config));
+        return;
+      }
+      if (!preview) throw new Error('请先试跑当前规则');
+      const saved = await saveCampaignRules(productId, {
+        ...config,
+        previewToken: preview.token,
+      });
       setConfig({ rules: saved.rules, revision: saved.revision });
       setDirty(false);
+      setPublish(false);
+      setVersions(await getCampaignRuleVersions(productId));
       if (!saved.board)
         throw new Error(
           '规则已保存，但服务未返回重算结果，请更新公司服务后刷新。',
@@ -447,12 +479,49 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
                 {notice}
               </p>
             )}
+            {preview && <CampaignRulePreview preview={preview} />}
             <Button
               disabled={!config || saving || !dirty}
               onClick={() => void save()}
             >
-              {saving ? '保存中' : '保存规则并重新判断'}
+              {saving ? '处理中' : '试跑规则（不修改线上）'}
             </Button>
+            <Button
+              disabled={!preview || saving || !dirty}
+              onClick={() => setPublish(true)}
+            >
+              核对后发布并重新判断
+            </Button>
+            {!!versions.length && (
+              <details className="rounded-lg border p-3 text-sm">
+                <summary>历史版本恢复（保留审计）</summary>
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {versions.map((v) => (
+                    <div
+                      key={v.id}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <span>
+                        {new Date(v.createdAt).toLocaleString('zh-CN')} 修改前 ·{' '}
+                        {v.rules.length} 条
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={saving}
+                        onClick={() => {
+                          if (config) setConfig({ ...config, rules: v.rules });
+                          setDirty(true);
+                          setNotice('历史版本已载入草稿，请试跑后发布');
+                        }}
+                      >
+                        载入草稿
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -483,6 +552,24 @@ export const CampaignRulesPanel: React.FC<CampaignRulesPanelProps> = ({
             >
               确认删除
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={publish} onOpenChange={setPublish}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认发布规则？</AlertDialogTitle>
+            <AlertDialogDescription>
+              历史试跑 {preview?.changed || 0}{' '}
+              个系列日改判。发布将立即重算当前决策台，不自动修改广告或触发 AI
+              分析。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>返回核对</AlertDialogCancel>
+            <Button disabled={saving} onClick={() => void save(true)}>
+              确认发布
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

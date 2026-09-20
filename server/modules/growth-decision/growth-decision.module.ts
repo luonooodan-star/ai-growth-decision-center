@@ -10,6 +10,8 @@ import { GrowthMavisMcpController } from './growth-mavis-mcp.controller';
 import { CampaignDecisionController } from './campaign-decision.controller';
 import { CampaignDecisionService } from './campaign-decision.service';
 import { CampaignBoardManagementService } from './campaign-board-management.service';
+import { OptimizerWorkflowService } from './optimizer-workflow.service';
+import { OptimizerWeeklyService } from './optimizer-weekly.service';
 
 @Module({
   controllers: [
@@ -19,6 +21,8 @@ import { CampaignBoardManagementService } from './campaign-board-management.serv
     GrowthMavisMcpController,
   ],
   providers: [
+    OptimizerWorkflowService,
+    OptimizerWeeklyService,
     CampaignBoardManagementService,
     CampaignDecisionService,
     LocalDatabaseService,
