@@ -7,6 +7,11 @@ import { timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 
 import { StandaloneAppModule } from './standalone-app.module';
+import { loadMetaWorkspaceSettings } from './common/utils/meta-workspace-settings';
+import {
+  readOptionalHttps,
+  startOptionalHttps,
+} from './common/utils/optional-https';
 
 const BASIC_AUTH_USER = 'growth';
 
@@ -38,6 +43,8 @@ function readBasicCredentials(
 }
 
 async function bootstrap(): Promise<void> {
+  loadMetaWorkspaceSettings(process.env);
+  const httpsConfig = readOptionalHttps(process.env);
   const app: NestExpressApplication =
     await NestFactory.create<NestExpressApplication>(StandaloneAppModule);
   const logger: Logger = new Logger('StandaloneBootstrap');
@@ -94,6 +101,20 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.listen(port, host);
+  try {
+    const secureServer = await startOptionalHttps(
+      httpsConfig,
+      host,
+      app.getHttpAdapter().getInstance(),
+    );
+    if (secureServer && httpsConfig) {
+      app.getHttpServer().once('close', () => secureServer.close());
+      logger.log(`安全入口已启动: https://${host}:${httpsConfig.port}`);
+    }
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
   logger.log(`AI 增长决策中心已启动: http://${host}:${port}`);
 }
 

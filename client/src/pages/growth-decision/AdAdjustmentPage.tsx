@@ -21,6 +21,7 @@ import {
   emptyAdjustmentMetrics,
 } from '@shared/ad-adjustment';
 import { useAdjustmentData } from './useAdjustmentData';
+import { MetaExecutionWorkspace } from './MetaExecutionWorkspace';
 import {
   AdAdjustmentTable,
   adjustmentCount,
@@ -220,6 +221,7 @@ export default function AdAdjustmentPage() {
           </p>
         </div>
       </header>
+      <MetaExecutionWorkspace />
       <section
         className={`${panel} flex flex-wrap items-end justify-between gap-4 p-4`}
       >

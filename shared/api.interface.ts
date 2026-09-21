@@ -2,6 +2,11 @@ import type { MetaOperation } from './meta-operations';
 export type * from './ad-adjustment.interface';
 export type * from './meta-operations';
 export type * from './skill-review';
+export interface MetaWorkspaceConfig {
+  workspaceOrigin: string | null;
+  secureCenterOrigin: string | null;
+  error: string | null;
+}
 
 export interface CampaignDecisionPolicy {
   minSpend: number;

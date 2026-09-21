@@ -18,9 +18,11 @@ import { AdAdjustmentService } from './ad-adjustment.service';
 import { MetaOperationsService } from './meta-operations.service';
 import { MetaOperationsController } from './meta-operations.controller';
 import { SkillReviewService } from './skill-review.service';
+import { MetaWorkspaceController } from './meta-workspace.controller';
 
 @Module({
   controllers: [
+    MetaWorkspaceController,
     MetaOperationsController,
     PaidGrowthController,
     CampaignDecisionController,
