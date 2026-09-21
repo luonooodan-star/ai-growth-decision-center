@@ -20,14 +20,8 @@ export function CampaignMetaFilters({
 }) {
   return (
     <div className="space-y-2 rounded-xl border bg-white p-4">
-      <p className="text-sm font-medium">按 Meta 投放目标／事件筛选</p>
-      {(
-        [
-          ['metaObjectives', '系列目标'],
-          ['metaOptimizationGoals', '优化目标'],
-          ['metaConversionEvents', '转化事件'],
-        ] as const
-      ).map(([key, label]) => {
+      <p className="text-sm font-medium">按广告组事件目标筛选</p>
+      {([['metaConversionEvents', '事件目标']] as const).map(([key, label]) => {
         const options = [...new Set(items.flatMap((c) => c[key] || []))];
         return (
           <div className="flex flex-wrap items-center gap-2" key={key}>
@@ -66,8 +60,8 @@ export function CampaignMetaFilters({
         </Button>
       )}
       <p className="text-xs text-slate-500">
-        使用已同步 Meta
-        配置，不从名称推断。多个优化目标分别显示；未返回不代表未配置。可与现有队列筛选叠加。
+        使用广告组实际配置：install、purchase
+        或具体自定义事件名。系列含多个事件时可分别命中；筛选系列不改变系列汇总数值。未返回不代表未配置，不从名称猜测。
       </p>
     </div>
   );

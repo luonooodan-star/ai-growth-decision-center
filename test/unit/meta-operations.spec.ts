@@ -83,7 +83,7 @@ describe('Meta read-only operation lifecycle', () => {
     const operation = service.linkedOperations()[0];
     expect(operation.objective).toBeUndefined();
     expect(operation.currentTargets?.objectives).toEqual(['OUTCOME_SALES']);
-    expect(operation.currentTargets?.conversionEvents).toEqual(['PURCHASE']);
+    expect(operation.currentTargets?.conversionEvents).toEqual(['purchase']);
     const adset = db.listMetaEntities().find(e => e.level === 'adset')!;
     db.saveMetaEntity({ ...adset, optimizationGoal: undefined, conversionEvent: undefined, fetchedAt: '2026-09-20T02:00:00Z' });
     expect(db.listMetaEntities().find(e => e.level === 'adset')?.conversionEvent).toBe('PURCHASE');

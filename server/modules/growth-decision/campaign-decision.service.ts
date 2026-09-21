@@ -122,13 +122,7 @@ export class CampaignDecisionService {
               .filter((v): v is string => !!v),
           ),
         ];
-        card.metaConversionEvents = [
-          ...new Set(
-            entities
-              .map((o) => o.conversionEvent)
-              .filter((v): v is string => !!v),
-          ),
-        ];
+        card.metaConversionEvents = metaTargets(entities).conversionEvents;
         if (card.metaOperations.length || entities.length)
           card.revision = campaignHash({
             revision: card.revision,

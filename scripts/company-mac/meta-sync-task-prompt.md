@@ -18,7 +18,8 @@
 - adset：id、name、campaign_id、optimization_goal、promoted_object；按 campaign_id IN 精确过滤，再使用清单 adsetIds 对漏项定点查询。
 - ad：id、name、campaign_id、adset_id；只查清单 adIds 或日志涉及广告，保留父广告组 ID。
 - account：timezone_name，用于操作时间；不得猜北京时间。
-- promoted_object.custom_event_type 是实际事件；billing_event 不是转化事件。不从系列名称、优化目标或效果指标猜事件。
+- 以广告组为粒度保留 promoted_object 的 custom_event_str（具体自定义事件名，例如 Arppu_middle）、custom_event_type 和 custom_conversion_id。不得只保存 OTHER 而丢弃实际名称。只请求已通过字段验证的 promoted_object；不要臆造顶层 custom_event_str 参数。若接口省略子字段，明确报告“自定义事件名未返回”，不要从系列名称猜测。
+- optimization_goal 明确为 APP_INSTALLS 时归类 install；其他广告组优先具体 custom_event_str，其次 custom_conversion_id（只显示 ID，不能编造名称），再标准 custom_event_type（如 PURCHASE）。billing_event 不是转化事件；VALUE/OFFSITE_CONVERSIONS 不能作为具体事件名。
 - promoted_object 明确为 null/空对象表示本次未配置具体事件；字段缺席不是未配置。若工具字段验证不支持，报告接口能力缺口，不无限重试。
 - 单次接口可能截断。按已知 campaign ID 拆分请求，达到 limit 时再按已知 adset ID 查询。不得发明 offset/cursor 参数；未知余量明确报告不完整。实体导入成功不等于全账户覆盖完成。
 - 对 lastFetchedAt 已超过 24 小时的清单重新读取；缺字段仍应补查，不要仅靠更新时间跳过。

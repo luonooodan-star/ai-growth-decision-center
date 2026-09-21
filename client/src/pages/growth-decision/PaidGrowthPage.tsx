@@ -10,6 +10,8 @@ import {
 import { format, subDays } from 'date-fns';
 import axios from 'axios';
 import { biRows } from '@shared/paid-growth';
+import { metaTargets } from '@shared/meta-targets';
+import { BiCampaignDetail } from './BiCampaignDetail';
 import {
   biMetricSignal,
   type MetricStandardProduct,
@@ -161,15 +163,20 @@ export default function PaidGrowthPage() {
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
   useEffect(() => {
-    const refresh = () => { void getMetaEntities()
-      .then(setMetaEntities)
-      .catch((e) => setError(errorText(e))); };
+    const refresh = () => {
+      void getMetaEntities()
+        .then(setMetaEntities)
+        .catch((e) => setError(errorText(e)));
+    };
     refresh();
     window.addEventListener('focus', refresh);
     const timer = window.setInterval(refresh, 60_000);
-    return () => { window.removeEventListener('focus', refresh); window.clearInterval(timer); };
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.clearInterval(timer);
+    };
   }, []);
-  const [page, setPage] = useState(0);
+  const [selectedCampaign, setSelectedCampaign] = useState<BiRow | null>(null);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
   const controller = useRef<AbortController | null>(null);
@@ -183,7 +190,9 @@ export default function PaidGrowthPage() {
 
   const load = async (refresh = false, requestedLevel: BiLevel = level) => {
     void refreshStandards();
-    void getMetaEntities().then(setMetaEntities).catch(e => setError(errorText(e)));
+    void getMetaEntities()
+      .then(setMetaEntities)
+      .catch((e) => setError(errorText(e)));
     const dayCount =
       Math.round(
         (Date.parse(format(end, 'yyyy-MM-dd')) -
@@ -202,7 +211,7 @@ export default function PaidGrowthPage() {
     setNotice('');
     setWarming('');
     setDays([]);
-    setPage(0);
+    setSelectedCampaign(null);
     setLoadedScope(
       `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
     );
@@ -300,7 +309,9 @@ export default function PaidGrowthPage() {
     const result = new Map<string, MetaFilterItem>();
     for (const row of rows) {
       const entities = metaEntities.filter(
-        (e) => e.campaignId === row.campaignId,
+        (e) =>
+          row.media.toLowerCase() === 'facebook' &&
+          e.campaignId === row.campaignId,
       );
       // BI lacks account dimension: never combine metadata if ownership is ambiguous.
       const unique =
@@ -316,13 +327,7 @@ export default function PaidGrowthPage() {
             ),
           ),
         ],
-        metaConversionEvents: [
-          ...new Set(
-            unique.flatMap((e) =>
-              e.conversionEvent ? [e.conversionEvent] : [],
-            ),
-          ),
-        ],
+        metaConversionEvents: metaTargets(unique).conversionEvents,
       });
     }
     return result;
@@ -555,7 +560,6 @@ export default function PaidGrowthPage() {
           value={metaFilter}
           onChange={(value) => {
             setMetaFilter(value);
-            setPage(0);
           }}
         />
       )}
@@ -692,7 +696,6 @@ export default function PaidGrowthPage() {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                setPage(0);
               }}
             />
             <Button
@@ -711,7 +714,6 @@ export default function PaidGrowthPage() {
             size="sm"
             onClick={() => {
               setBadFirst(!badFirst);
-              setPage(0);
             }}
           >
             不达标优先
@@ -721,7 +723,6 @@ export default function PaidGrowthPage() {
             size="sm"
             onClick={() => {
               setBadOnly(!badOnly);
-              setPage(0);
             }}
           >
             仅看不达标（{rows.filter(hasBad).length}）
@@ -733,11 +734,16 @@ export default function PaidGrowthPage() {
             为抓取时数据，非成熟结论；筛选仅影响明细。
           </span>
         </div>
-        <div className="max-h-[560px] overflow-auto">
-          <Table>
-            <TableHeader className="sticky top-0 z-10 bg-slate-50">
+        <div>
+          <Table
+            containerClassName="max-h-[65vh] overflow-auto"
+            className="border-separate border-spacing-0"
+          >
+            <TableHeader className="sticky top-0 z-30 bg-slate-50">
               <TableRow>
-                <TableHead className="min-w-72">对象 / 产品 / 渠道</TableHead>
+                <TableHead className="sticky left-0 z-20 min-w-72 bg-slate-50">
+                  对象 / 产品 / 渠道
+                </TableHead>
                 {columns.map((c) => (
                   <TableHead
                     key={c.key}
@@ -753,7 +759,7 @@ export default function PaidGrowthPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.slice(page * 50, page * 50 + 50).map((row) => {
+              {filtered.map((row) => {
                 const product = products.find(
                   (p) => p.appId === row.appId && p.channel === row.media,
                 );
@@ -762,17 +768,31 @@ export default function PaidGrowthPage() {
                     key={row.key}
                     className={hasBad(row) ? 'bg-red-50/40' : ''}
                   >
-                    <TableCell>
-                      <p className="max-w-96 break-words font-medium">
-                        {row.label}
-                      </p>
+                    <TableCell
+                      className={`sticky left-0 z-10 min-w-72 max-w-96 border-r ${hasBad(row) ? 'bg-red-50' : 'bg-white'}`}
+                    >
+                      {row.campaignId && days[0]?.level === 'campaigns' ? (
+                        <button
+                          className="max-w-96 whitespace-normal break-words text-left font-medium text-blue-700 hover:underline"
+                          onClick={() => setSelectedCampaign(row)}
+                        >
+                          {row.label}
+                        </button>
+                      ) : (
+                        <p className="max-w-96 whitespace-normal break-words font-medium">
+                          {row.label}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-slate-500">
                         {row.appName} · {row.media}
                       </p>
                       {row.campaignName && row.campaignName !== row.label && (
-                        <p className="max-w-96 break-words text-xs text-slate-400">
+                        <button
+                          onClick={() => setSelectedCampaign(row)}
+                          className="block max-w-96 whitespace-normal break-words text-left text-xs text-blue-600 hover:underline"
+                        >
                           {row.campaignName}
-                        </p>
+                        </button>
                       )}
                       {row.missingDays > 0 && (
                         <Badge
@@ -810,7 +830,7 @@ export default function PaidGrowthPage() {
                           className="inline-flex items-center gap-1 whitespace-nowrap text-blue-600"
                           to={`/products/${product.productId}${row.campaignId ? `?campaignId=${encodeURIComponent(row.campaignId)}` : ''}`}
                         >
-                          查看决策
+                          进入决策中心
                           <ArrowRight className="size-3" />
                         </Link>
                       ) : (
@@ -841,29 +861,27 @@ export default function PaidGrowthPage() {
         </div>
         <div className="flex items-center justify-between border-t p-3 text-xs text-slate-500">
           <span>
-            第 {page + 1} / {Math.max(1, Math.ceil(filtered.length / 50))} 页 ·
-            每页 50 条，非 Doris 截断
+            全部 {filtered.length} 条 · 无需翻页 · 表头与首列固定 ·
+            点击广告系列查看归属和趋势
           </span>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!page}
-              onClick={() => setPage(page - 1)}
-            >
-              上一页
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={(page + 1) * 50 >= filtered.length}
-              onClick={() => setPage(page + 1)}
-            >
-              下一页
-            </Button>
-          </div>
         </div>
       </section>
+      {selectedCampaign && (
+        <BiCampaignDetail
+          key={`${selectedCampaign.appId}:${selectedCampaign.media}:${selectedCampaign.campaignId}`}
+          row={selectedCampaign}
+          entities={metaEntities}
+          endDate={days.at(-1)?.date || format(end, 'yyyy-MM-dd')}
+          productId={
+            products.find(
+              (p) =>
+                p.appId === selectedCampaign.appId &&
+                p.channel === selectedCampaign.media,
+            )?.productId
+          }
+          onClose={() => setSelectedCampaign(null)}
+        />
+      )}
       <details className="rounded-xl border bg-white p-4 text-sm text-slate-600">
         <summary className="cursor-pointer font-medium">
           指标口径与决策页的关系

@@ -87,11 +87,28 @@ export function normalizeMetaLogs(
       objective: e.objective,
       optimizationGoal: e.optimization_goal,
       // Only explicit event fields, never billing_event or a name-based inference.
-      conversionEvent: e.promoted_object?.custom_event_type,
-      conversionEventStatus: e.promoted_object?.custom_event_type ? 'returned'
-        : Object.hasOwn(e, 'promoted_object') &&
-          (e.promoted_object === null || Object.keys(e.promoted_object || {}).length === 0)
-          ? 'not_configured' : undefined,
+      conversionEvent:
+        level !== 'adset'
+          ? undefined
+          : e.optimization_goal === 'APP_INSTALLS'
+            ? 'install'
+            : e.promoted_object?.custom_event_str ||
+              (e.promoted_object?.custom_conversion_id
+                ? `custom_conversion:${id(e.promoted_object.custom_conversion_id)}`
+                : undefined) ||
+              e.promoted_object?.custom_event_type,
+      conversionEventStatus:
+        e.optimization_goal === 'APP_INSTALLS' ||
+        e.promoted_object?.custom_event_str ||
+        e.promoted_object?.custom_conversion_id ||
+        (e.promoted_object?.custom_event_type &&
+          e.promoted_object.custom_event_type !== 'OTHER')
+          ? 'returned'
+          : Object.hasOwn(e, 'promoted_object') &&
+              (e.promoted_object === null ||
+                Object.keys(e.promoted_object || {}).length === 0)
+            ? 'not_configured'
+            : undefined,
       fetchedAt,
     })),
   );
@@ -184,25 +201,39 @@ if (
     JSON.parse(await readFile(logsPath, 'utf8')),
     JSON.parse(await readFile(entitiesPath, 'utf8')),
   );
-  if (!/^\/private\/tmp\/codex-growth-[a-zA-Z0-9_-]+\.json$/.test(outputPath)) throw new Error('输出必须位于 /private/tmp/codex-growth-*.json');
+  if (!/^\/private\/tmp\/codex-growth-[a-zA-Z0-9_-]+\.json$/.test(outputPath))
+    throw new Error('输出必须位于 /private/tmp/codex-growth-*.json');
   const batches = [];
   let batch = { operations: [], entities: [] };
   for (const key of ['entities', 'operations']) {
     for (const item of payload[key]) {
       const candidate = { ...batch, [key]: [...batch[key], item] };
-      if (candidate[key].length > 500 || Buffer.byteLength(JSON.stringify(candidate)) > 80000) {
-        if (!batch.operations.length && !batch.entities.length) throw new Error('单条 Meta 记录过大，未截断，请核对');
-        batches.push(batch); batch = { operations: [], entities: [] };
+      if (
+        candidate[key].length > 500 ||
+        Buffer.byteLength(JSON.stringify(candidate)) > 80000
+      ) {
+        if (!batch.operations.length && !batch.entities.length)
+          throw new Error('单条 Meta 记录过大，未截断，请核对');
+        batches.push(batch);
+        batch = { operations: [], entities: [] };
       }
       batch[key].push(item);
-      if (Buffer.byteLength(JSON.stringify(batch)) > 80000) throw new Error('单条 Meta 记录过大，未截断，请核对');
+      if (Buffer.byteLength(JSON.stringify(batch)) > 80000)
+        throw new Error('单条 Meta 记录过大，未截断，请核对');
     }
   }
   if (batch.operations.length || batch.entities.length) batches.push(batch);
   const files = [];
   for (let i = 0; i < batches.length; i++) {
     const path = outputPath.replace(/\.json$/, `-${i}.json`);
-    await writeFile(path, JSON.stringify(batches[i]), { mode: 0o600 }); files.push(path);
+    await writeFile(path, JSON.stringify(batches[i]), { mode: 0o600 });
+    files.push(path);
   }
-  process.stdout.write(JSON.stringify({ operations: payload.operations.length, entities: payload.entities.length, files }) + '\n');
+  process.stdout.write(
+    JSON.stringify({
+      operations: payload.operations.length,
+      entities: payload.entities.length,
+      files,
+    }) + '\n',
+  );
 }
