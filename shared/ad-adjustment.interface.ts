@@ -6,12 +6,15 @@ export interface AdjustmentQuery {
   appId?: string;
   media?: string;
   refresh?: string;
+  /** Omitted: light campaign summary; present: hierarchy for one campaign. */
+  campaignId?: string;
 }
 export interface AdjustmentDay {
   date: string;
   daily: BiPart;
   revenue: BiPart;
   accounts: BiPart;
+  granularity?: 'campaign' | 'detail';
 }
 export interface AdjustmentFilters {
   search: string;

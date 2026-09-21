@@ -19,6 +19,7 @@ import type {
 } from '@shared/api.interface';
 import { inspectAdjustment, adjustmentError } from '@/api/meta-adjustments';
 import { AdjustmentRowEditor, type AdjustmentDrafts } from './AdjustmentEditor';
+import type { AdjustmentDetail } from './useAdjustmentData';
 
 export const adjustmentMoney = (v: number | null | undefined) =>
   v == null
@@ -34,6 +35,8 @@ const colors = {
   unknown: 'text-slate-400',
 };
 interface Props {
+  details: Record<string, AdjustmentDetail>;
+  loadDetail: (campaignId: string) => Promise<void>;
   drafts: AdjustmentDrafts;
   updateDraft: (
     snapshot: MetaAdjustmentSnapshot,
@@ -51,6 +54,8 @@ export function AdAdjustmentTable({
   standards,
   drafts,
   updateDraft,
+  details,
+  loadDetail,
 }: Props) {
   const [editors, setEditors] = useState<
     Record<string, MetaAdjustmentSnapshot[]>
@@ -129,12 +134,21 @@ export function AdAdjustmentTable({
                 <div style={{ paddingLeft: depth * 18 }}>
                   <button
                     type="button"
-                    disabled={!node.children.length}
-                    onClick={() => toggle(node.key)}
-                    aria-expanded={node.children.length ? open : undefined}
+                    disabled={
+                      !node.children.length &&
+                      !(depth === 0 && /^\d+$/.test(node.campaignId))
+                    }
+                    onClick={() => {
+                      toggle(node.key);
+                      if (!open && depth === 0)
+                        void loadDetail(node.campaignId);
+                    }}
+                    aria-expanded={
+                      depth === 0 || node.children.length ? open : undefined
+                    }
                     className="flex w-full items-start gap-2 text-left font-semibold text-slate-800 hover:text-blue-600 disabled:hover:text-slate-800"
                   >
-                    {node.children.length ? (
+                    {depth === 0 || node.children.length ? (
                       open ? (
                         <ChevronDown className="mt-0.5 size-4 shrink-0" />
                       ) : (
@@ -242,7 +256,40 @@ export function AdAdjustmentTable({
               })}
             </TableRow>
           }
-          childrenRows={open ? rows(node.children, depth + 1) : null}
+          childrenRows={
+            open ? (
+              <>
+                {depth === 0 &&
+                  (details[node.campaignId]?.loading ||
+                    details[node.campaignId]?.error ||
+                    !node.children.length) && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={12}
+                        className="bg-slate-50 p-3 text-sm text-slate-500"
+                      >
+                        {details[node.campaignId]?.loading
+                          ? '该系列明细加载中（先今天，再历史）…'
+                          : details[node.campaignId]?.error ||
+                            (details[node.campaignId]
+                              ? '该系列当前筛选下无可用明细'
+                              : '明细未加载或缓存已释放')}
+                        {!details[node.campaignId]?.loading && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void loadDetail(node.campaignId)}
+                          >
+                            重新加载明细
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                {rows(node.children, depth + 1)}
+              </>
+            ) : null
+          }
         />
       );
     });

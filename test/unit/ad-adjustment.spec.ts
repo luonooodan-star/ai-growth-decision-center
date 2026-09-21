@@ -5,6 +5,7 @@ import {
   adjustmentSignal,
   adjustmentTotal,
   adjustmentReportedTotal,
+  withAdjustmentDetails,
 } from '@shared/ad-adjustment';
 import type {
   AdjustmentDay,
@@ -227,7 +228,7 @@ describe('advertising adjustment workbench', () => {
     ).toHaveLength(0);
     expect(adjustmentSignal(root, d.date, []).label).toContain('过期');
   });
-  test('service uses joint dimensions, four-hour cache, no maturity restriction, forwards manual refresh', async () => {
+  test('service defaults to light summary, preserves AND dimensions and caches history', async () => {
     const bi = {
       part: jest.fn().mockResolvedValue({ rows: [], state: 'fresh' }),
     };
@@ -246,17 +247,14 @@ describe('advertising adjustment workbench', () => {
       expect(call.slice(1)).toEqual([
         true,
         ADJUSTMENT_REFRESH_MS,
-        'adjustment-v1:',
+        'adjustment-v2:',
       ]);
     const args = bi.part.mock.calls[1][0];
     expect(args.dimensions).toEqual(
-      expect.arrayContaining([
-        'adgroup_id',
-        'creative_id',
-        'buyer_alias',
-        'country_code',
-      ]),
+      expect.arrayContaining(['buyer_alias', 'country_code']),
     );
+    expect(args.dimensions).not.toContain('creative_id');
+    expect(args.dimensions).not.toContain('adgroup_id');
     expect(JSON.parse(args.filters_json)).toEqual({
       app_id: 11,
       media_source: 'facebook',
@@ -265,5 +263,82 @@ describe('advertising adjustment workbench', () => {
       metric_id: 'revenue',
     });
     await expect(service.day({ date: '2000-01-01' })).rejects.toThrow('前两天');
+    bi.part.mockClear();
+    await service.day({
+      date: adjustmentDates(today)[0],
+      appId: '11',
+      media: 'facebook',
+      refresh: '1',
+    });
+    expect(bi.part.mock.calls.every((call) => call[1] === false)).toBe(true);
+    bi.part.mockClear();
+    await service.day({
+      date: today,
+      appId: '11',
+      media: 'facebook',
+      campaignId: '123',
+      refresh: '1',
+    });
+    expect(bi.part.mock.calls[0][0].dimensions).toContain('creative_id');
+    expect(JSON.parse(bi.part.mock.calls[0][0].filters_json).campaign_id).toBe(
+      '123',
+    );
+    expect(bi.part.mock.calls[2][1]).toBe(false); // reuse account map
+    await expect(
+      service.day({
+        date: today,
+        appId: '11',
+        media: 'facebook',
+        campaignId: 'x',
+      }),
+    ).rejects.toThrow('ID');
+  });
+  test('lazy children never double count summary totals and preserve AND filters', () => {
+    const d = day();
+    const summary = { ...d, granularity: 'campaign' as const };
+    const roots = adjustmentTree([summary], filters, d.date);
+    expect(roots[0].children).toHaveLength(0);
+    const attached = withAdjustmentDetails(roots, { c1: [d] }, filters, d.date);
+    expect(attached[0].days[d.date].spend).toBe(10);
+    expect(attached[0].days[d.date].revenue).toBe(15);
+    expect(attached[0].children[0].children[0].days[d.date].spend).toBe(10);
+    expect(
+      withAdjustmentDetails(
+        roots,
+        { c1: [d] },
+        { ...filters, country: 'PK' },
+        d.date,
+      )[0].children,
+    ).toHaveLength(0);
+  });
+  test('limits concurrent parts to three and coalesces identical inflight requests', async () => {
+    let active = 0,
+      peak = 0;
+    const bi = {
+      part: jest.fn(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active--;
+        return { rows: [], state: 'fresh' };
+      }),
+    };
+    const service = new AdAdjustmentService(bi as unknown as PaidGrowthService);
+    const q = {
+      date: new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Shanghai',
+      }),
+      appId: '11',
+      media: 'facebook',
+    };
+    await Promise.all([service.day(q), service.day(q)]);
+    expect(bi.part).toHaveBeenCalledTimes(3);
+    await Promise.all(
+      ['1', '2', '3', '4'].map((campaignId) =>
+        service.day({ ...q, campaignId }),
+      ),
+    );
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(active).toBe(0);
   });
 });

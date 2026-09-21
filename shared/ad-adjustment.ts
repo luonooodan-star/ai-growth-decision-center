@@ -140,6 +140,7 @@ export function adjustmentTree(
           ['adgroup', 'adgroup'],
           ['creative', 'creative'],
         ] as const) {
+          if (day.granularity === 'campaign' && level !== 'campaign') break;
           const id = text(r[`${prefix}_id`]);
           const name = text(r[`${prefix}_name`]);
           base.push(id || `name:${name || '未定位'}`);
@@ -244,4 +245,21 @@ export function adjustmentSignal(
     standard,
     label: `${good ? '达标' : '未达标'} · 标准 ${standard}%`,
   };
+}
+
+/** Attach lazily loaded children without adding their facts to summary totals. */
+export function withAdjustmentDetails(
+  roots: AdjustmentNode[],
+  details: Record<string, AdjustmentDay[]>,
+  filters: AdjustmentFilters,
+  today: string,
+): AdjustmentNode[] {
+  const children = new Map<string, AdjustmentNode[]>();
+  for (const days of Object.values(details))
+    for (const root of adjustmentTree(days, filters, today))
+      children.set(root.key, root.children);
+  return roots.map((root) => ({
+    ...root,
+    children: children.get(root.key) || [],
+  }));
 }

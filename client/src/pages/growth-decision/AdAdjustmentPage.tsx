@@ -18,6 +18,7 @@ import {
   adjustmentSignal,
   adjustmentReportedTotal,
   adjustmentTree,
+  withAdjustmentDetails,
   emptyAdjustmentMetrics,
 } from '@shared/ad-adjustment';
 import { useAdjustmentData } from './useAdjustmentData';
@@ -78,8 +79,17 @@ export default function AdAdjustmentPage() {
   const [optimizer, setOptimizer] = useState(''),
     [country, setCountry] = useState('');
   const [status, setStatus] = useState('all');
-  const { days, today, loading, error, progress, refresh, cancel } =
-    useAdjustmentData(appId, media);
+  const {
+    days,
+    today,
+    loading,
+    error,
+    progress,
+    refresh,
+    cancel,
+    details,
+    loadDetail,
+  } = useAdjustmentData(appId, media);
   useEffect(() => {
     let live = true;
     setSetupError('');
@@ -123,8 +133,16 @@ export default function AdAdjustmentPage() {
     };
   }, [days, current]);
   const tree = useMemo(
-    () => adjustmentTree(days, { search, account, optimizer, country }, today),
-    [days, search, account, optimizer, country, today],
+    () =>
+      withAdjustmentDetails(
+        adjustmentTree(days, { search, account, optimizer, country }, today),
+        Object.fromEntries(
+          Object.entries(details).map(([id, detail]) => [id, detail.days]),
+        ),
+        { search, account, optimizer, country },
+        today,
+      ),
+    [days, details, search, account, optimizer, country, today],
   );
   const nodes = tree.filter(
     (n) =>
@@ -260,7 +278,7 @@ export default function AdAdjustmentPage() {
           <RefreshCw
             className={`mr-2 size-4 ${loading ? 'animate-spin' : ''}`}
           />
-          {loading ? '抓取中' : '抓取数据'}
+          {loading ? (current ? '补充历史中' : '抓取今日中') : '抓取数据'}
         </Button>
       </section>
       {(!appId || !media) && (
@@ -306,9 +324,7 @@ export default function AdAdjustmentPage() {
         </div>
       )}
       <div aria-live="polite" className="text-xs text-slate-500">
-        {loading
-          ? progress
-          : '仅展示今天的经营数据；前天、昨天仅用于 D0 ROAS 对照。今日数据仍在回传。'}
+        {progress || '仅展示今天的经营数据；前天、昨天仅用于 D0 ROAS 对照。今日数据仍在回传。'}
       </div>
       <section>
         <h2 className="mb-3 text-lg font-semibold">
@@ -405,6 +421,8 @@ export default function AdAdjustmentPage() {
             D0 与指标库标准判断；未返回或未配置标准仅列在“全部”。
           </p>
           <AdAdjustmentTable
+            details={details}
+            loadDetail={loadDetail}
             drafts={draftState.drafts}
             updateDraft={draftState.update}
             nodes={nodes}
