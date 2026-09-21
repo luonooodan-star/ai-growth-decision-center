@@ -40,6 +40,7 @@ export interface AdjustmentNode {
   appName: string;
   media: string;
   campaignId: string;
+  adsetId?: string;
   account: string;
   level: 'campaign' | 'adgroup' | 'creative';
   days: Record<string, AdjustmentMetrics>;

@@ -21,7 +21,7 @@ import {
   emptyAdjustmentMetrics,
 } from '@shared/ad-adjustment';
 import { useAdjustmentData } from './useAdjustmentData';
-import { MetaExecutionWorkspace } from './MetaExecutionWorkspace';
+import { AdjustmentSubmitPanel, useAdjustmentDrafts } from './AdjustmentEditor';
 import {
   AdAdjustmentTable,
   adjustmentCount,
@@ -66,6 +66,7 @@ function FilterSelect({
   );
 }
 export default function AdAdjustmentPage() {
+  const draftState = useAdjustmentDrafts();
   const [products, setProducts] = useState<BiProduct[]>([]);
   const [standards, setStandards] = useState<MetricStandardProduct[]>([]);
   const [setupError, setSetupError] = useState('');
@@ -77,7 +78,7 @@ export default function AdAdjustmentPage() {
   const [optimizer, setOptimizer] = useState(''),
     [country, setCountry] = useState('');
   const [status, setStatus] = useState('all');
-  const { days, today, loading, error, progress, nextAt, refresh } =
+  const { days, today, loading, error, progress, refresh, cancel } =
     useAdjustmentData(appId, media);
   useEffect(() => {
     let live = true;
@@ -215,13 +216,9 @@ export default function AdAdjustmentPage() {
               ? `数据最早抓取于 ${formatTime([...timestamps].sort()[0])}`
               : '等待读取数据'}
           </p>
-          <p className="mt-1">
-            页面开启时每 4 小时自动刷新
-            {nextAt ? ` · 下次 ${formatTime(nextAt)}` : ''}
-          </p>
+          <p className="mt-1">选定产品和渠道后手动抓取，不自动刷新</p>
         </div>
       </header>
-      <MetaExecutionWorkspace />
       <section
         className={`${panel} flex flex-wrap items-end justify-between gap-4 p-4`}
       >
@@ -248,20 +245,42 @@ export default function AdAdjustmentPage() {
             />
           </div>
         </div>
+        {loading && (
+          <Button variant="ghost" onClick={cancel}>
+            停止等待
+          </Button>
+        )}
         <Button
           variant="outline"
-          disabled={loading}
+          disabled={loading || !appId || !media}
           onClick={() => {
-            setMetadataRevision((v) => v + 1);
             void refresh();
           }}
         >
           <RefreshCw
             className={`mr-2 size-4 ${loading ? 'animate-spin' : ''}`}
           />
-          {loading ? '刷新中' : '刷新数据'}
+          {loading ? '抓取中' : '抓取数据'}
         </Button>
       </section>
+      {(!appId || !media) && (
+        <p className="text-sm text-slate-500">
+          请先选择一个产品和渠道，再点击“抓取数据”。
+        </p>
+      )}
+      {setupError && (
+        <Button
+          variant="outline"
+          onClick={() => setMetadataRevision((v) => v + 1)}
+        >
+          重试加载产品与渠道
+        </Button>
+      )}
+      {draftState.error && (
+        <p role="alert" className="text-red-700">
+          {draftState.error}
+        </p>
+      )}
       {(error || setupError || issues.length > 0) && (
         <div
           role="alert"
@@ -386,6 +405,8 @@ export default function AdAdjustmentPage() {
             D0 与指标库标准判断；未返回或未配置标准仅列在“全部”。
           </p>
           <AdAdjustmentTable
+            drafts={draftState.drafts}
+            updateDraft={draftState.update}
             nodes={nodes}
             dates={dates}
             today={today}
@@ -393,6 +414,10 @@ export default function AdAdjustmentPage() {
           />
         </div>
       </section>
+      <AdjustmentSubmitPanel
+        drafts={draftState.drafts}
+        update={draftState.update}
+      />
     </div>
   );
 }

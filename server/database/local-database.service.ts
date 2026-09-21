@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import type {
+  MetaAdjustmentJob,
   CampaignDailySnapshot,
   GrowthDecisionCase,
   GrowthDecisionActivity,
@@ -123,6 +124,16 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.database.close();
+  }
+
+  saveAdjustmentJob(job: MetaAdjustmentJob): void {
+    this.database.prepare('INSERT INTO growth_adjustment_job (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload')
+      .run(job.id, JSON.stringify(job));
+  }
+
+  listAdjustmentJobs(): MetaAdjustmentJob[] {
+    return this.database.prepare('SELECT payload FROM growth_adjustment_job ORDER BY rowid DESC').all()
+      .map(row => this.parsePayload<MetaAdjustmentJob>(row.payload));
   }
 
   saveMetaOperation(item: MetaOperation): boolean {
@@ -692,6 +703,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_adjustment_job (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_operation_evidence (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_campaign_recommendation (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_skill_report (id TEXT PRIMARY KEY, payload TEXT NOT NULL);

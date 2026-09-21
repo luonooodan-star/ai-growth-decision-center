@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAdjustmentDay } from '@/api/paid-growth';
-import {
-  ADJUSTMENT_REFRESH_MS,
-  type AdjustmentDay,
-} from '@shared/ad-adjustment.interface';
+import type { AdjustmentDay } from '@shared/ad-adjustment.interface';
 import { adjustmentDates, adjustmentToday } from '@shared/ad-adjustment';
 
 export function useAdjustmentData(appId: string, media: string) {
@@ -12,19 +9,17 @@ export function useAdjustmentData(appId: string, media: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
-  const [nextAt, setNextAt] = useState<number | null>(null);
   const active = useRef<AbortController | null>(null);
-  const due = useRef(0);
   const load = useCallback(
     async (refresh = false) => {
-      active.current?.abort();
+      if (active.current || !appId || !media) return;
       const controller = new AbortController();
       active.current = controller;
       const date = adjustmentToday();
       setToday(date);
       setLoading(true);
       setError('');
-      due.current = Date.now() + ADJUSTMENT_REFRESH_MS;
+      setDays([]);
       try {
         // Current day first. Sequential queries bound Doris concurrency and memory.
         const results: AdjustmentDay[] = [];
@@ -43,25 +38,9 @@ export function useAdjustmentData(appId: string, media: string) {
           results.push(value);
           setDays([...results]);
         }
-        const stamps = results
-          .flatMap((d) => [d.daily, d.revenue])
-          .map((p) => Date.parse(p.updatedAt || ''))
-          .filter(Number.isFinite);
-        // Failed/stale fragments wait for the next 4h cycle (or an explicit refresh), no retry storm.
-        const failed = results.some((d) =>
-          [d.daily, d.revenue].some((p) =>
-            ['stale', 'missing'].includes(p.state),
-          ),
-        );
-        due.current =
-          failed || !stamps.length
-            ? Date.now() + ADJUSTMENT_REFRESH_MS
-            : Math.min(...stamps) + ADJUSTMENT_REFRESH_MS;
-        setNextAt(due.current);
       } catch (e) {
         if (!controller.signal.aborted) {
           setError(e instanceof Error ? e.message : '读取失败，请手动刷新');
-          setNextAt(due.current);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -75,25 +54,29 @@ export function useAdjustmentData(appId: string, media: string) {
   );
   useEffect(() => {
     setDays([]);
-    setNextAt(null);
-    void load();
-    return () => active.current?.abort();
+    setLoading(false);
+    setError('');
+    setProgress('');
+    return () => {
+      active.current?.abort();
+      active.current = null;
+    };
   }, [load]);
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (active.current) return;
-      // Shanghai midnight always advances the view, even before the 4h cache expires.
-      if (adjustmentToday() !== today || Date.now() >= due.current) void load();
-    }, 30000);
-    return () => window.clearInterval(timer);
-  }, [load, today]);
   return {
     days,
     today,
     loading,
     error,
     progress,
-    nextAt,
+    cancel: () => {
+      active.current?.abort();
+      active.current = null;
+      setLoading(false);
+      setProgress('');
+      setError(
+        '已停止等待。服务器已发出的查询可能仍在完成，不会自动重新抓取。',
+      );
+    },
     refresh: () => load(true),
   };
 }

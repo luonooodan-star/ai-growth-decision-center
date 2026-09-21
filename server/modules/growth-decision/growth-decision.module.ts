@@ -19,9 +19,12 @@ import { MetaOperationsService } from './meta-operations.service';
 import { MetaOperationsController } from './meta-operations.controller';
 import { SkillReviewService } from './skill-review.service';
 import { MetaWorkspaceController } from './meta-workspace.controller';
+import { MetaAdjustmentController } from './meta-adjustment.controller';
+import { MetaAdjustmentService } from './meta-adjustment.service';
 
 @Module({
   controllers: [
+    MetaAdjustmentController,
     MetaWorkspaceController,
     MetaOperationsController,
     PaidGrowthController,
@@ -31,6 +34,7 @@ import { MetaWorkspaceController } from './meta-workspace.controller';
     GrowthMavisMcpController,
   ],
   providers: [
+    MetaAdjustmentService,
     SkillReviewService,
     MetaOperationsService,
     PaidGrowthService,

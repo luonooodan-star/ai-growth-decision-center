@@ -13,6 +13,12 @@ import {
 import type { AdjustmentNode } from '@shared/ad-adjustment.interface';
 import { adjustmentSignal } from '@shared/ad-adjustment';
 import type { MetricStandardProduct } from '@shared/metric-signals';
+import type {
+  MetaAdjustmentChange,
+  MetaAdjustmentSnapshot,
+} from '@shared/api.interface';
+import { inspectAdjustment, adjustmentError } from '@/api/meta-adjustments';
+import { AdjustmentRowEditor, type AdjustmentDrafts } from './AdjustmentEditor';
 
 export const adjustmentMoney = (v: number | null | undefined) =>
   v == null
@@ -28,12 +34,63 @@ const colors = {
   unknown: 'text-slate-400',
 };
 interface Props {
+  drafts: AdjustmentDrafts;
+  updateDraft: (
+    snapshot: MetaAdjustmentSnapshot,
+    patch: Partial<MetaAdjustmentChange> | null,
+  ) => void;
   nodes: AdjustmentNode[];
   dates: string[];
   today: string;
   standards: MetricStandardProduct[];
 }
-export function AdAdjustmentTable({ nodes, dates, today, standards }: Props) {
+export function AdAdjustmentTable({
+  nodes,
+  dates,
+  today,
+  standards,
+  drafts,
+  updateDraft,
+}: Props) {
+  const [editors, setEditors] = useState<
+    Record<string, MetaAdjustmentSnapshot[]>
+  >({});
+  const [inspectError, setInspectError] = useState<Record<string, string>>({});
+  const [inspecting, setInspecting] = useState<string | null>(null);
+  const inspect = async (node: AdjustmentNode) => {
+    setInspecting(node.key);
+    setInspectError((old) => ({ ...old, [node.key]: '' }));
+    try {
+      const snapshots = await inspectAdjustment(
+        {
+          id: node.id,
+          accountId: node.account.replace(/^act_/, ''),
+          campaignId: node.campaignId,
+          adsetId: node.adsetId,
+          level:
+            node.level === 'campaign'
+              ? 'campaign'
+              : node.level === 'adgroup'
+                ? 'adset'
+                : 'ad',
+        },
+        node.level === 'creative',
+      );
+      setEditors((old) => ({ ...old, [node.key]: snapshots }));
+      if (!snapshots.length)
+        setInspectError((old) => ({
+          ...old,
+          [node.key]: '素材未映射到真实广告，不能执行启停',
+        }));
+    } catch (error) {
+      setInspectError((old) => ({
+        ...old,
+        [node.key]: adjustmentError(error),
+      }));
+    } finally {
+      setInspecting(null);
+    }
+  };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
     setExpanded(new Set());
@@ -107,6 +164,38 @@ export function AdAdjustmentTable({ nodes, dates, today, standards }: Props) {
                       >
                         进入决策中心 →
                       </Link>
+                    )}
+                  </div>
+                  <div className="ml-6 mt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        !!inspecting ||
+                        node.media.toLowerCase() !== 'facebook' ||
+                        !/^\d+$/.test(node.account.replace(/^act_/, '')) ||
+                        !/^\d+$/.test(node.id)
+                      }
+                      onClick={() => void inspect(node)}
+                    >
+                      {inspecting === node.key
+                        ? '读取 Meta 状态'
+                        : '启停 / 预算调整'}
+                    </Button>
+                    {inspectError[node.key] && (
+                      <p
+                        role="alert"
+                        className="mt-2 whitespace-normal text-red-600"
+                      >
+                        {inspectError[node.key]}
+                      </p>
+                    )}
+                    {editors[node.key] && (
+                      <AdjustmentRowEditor
+                        snapshots={editors[node.key]}
+                        drafts={drafts}
+                        update={updateDraft}
+                      />
                     )}
                   </div>
                 </div>

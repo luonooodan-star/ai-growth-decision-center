@@ -156,6 +156,7 @@ export function adjustmentTree(
               appName: text(r.app_name),
               media: text(r.media_source),
               campaignId: text(r.campaign_id),
+              adsetId: text(r.adgroup_id),
               days: {},
               children: [],
             };

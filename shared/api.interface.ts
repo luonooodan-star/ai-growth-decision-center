@@ -1,4 +1,5 @@
 import type { MetaOperation } from './meta-operations';
+export type * from './meta-adjustment';
 export type * from './ad-adjustment.interface';
 export type * from './meta-operations';
 export type * from './skill-review';
