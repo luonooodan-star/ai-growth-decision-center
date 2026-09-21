@@ -22,6 +22,7 @@ import {
   emptyAdjustmentMetrics,
 } from '@shared/ad-adjustment';
 import { useAdjustmentData } from './useAdjustmentData';
+import { verifiedNoSpend } from '@shared/campaign-visibility';
 import { AdjustmentSubmitPanel, useAdjustmentDrafts } from './AdjustmentEditor';
 import {
   AdAdjustmentTable,
@@ -162,11 +163,25 @@ export default function AdAdjustmentPage() {
       ),
     [days, details, search, account, optimizer, country, today],
   );
-  const nodes = tree.filter(
-    (n) =>
-      status === 'all' ||
-      adjustmentSignal(n, today, standards).state === status,
+  const noSpend = useMemo(
+    () =>
+      verifiedNoSpend(
+        days.filter(
+          (d) =>
+            d.scope?.optimizer === optimizer && d.scope?.country === country,
+        ),
+        [today],
+      ),
+    [days, today, optimizer, country],
   );
+  const hiddenCount = tree.filter(noSpend).length;
+  const nodes = tree
+    .filter((n) => !noSpend(n))
+    .filter(
+      (n) =>
+        status === 'all' ||
+        adjustmentSignal(n, today, standards).state === status,
+    );
   const total = tree.length
     ? adjustmentReportedTotal(tree.map((n) => n.days[today]))
     : emptyAdjustmentMetrics();
@@ -451,6 +466,8 @@ export default function AdAdjustmentPage() {
             </Button>
           </div>
           <p className="px-4 pb-3 text-xs text-slate-500">
+            {hiddenCount > 0 &&
+              `已隐藏 ${hiddenCount} 个经校验今日无消耗的系列。`}
             搜索、账户、优化师、国家同时满足（AND）。国家/人员筛选会重算当前切片指标。达标按今天
             D0 与指标库标准判断；未返回或未配置标准仅列在“全部”。
           </p>

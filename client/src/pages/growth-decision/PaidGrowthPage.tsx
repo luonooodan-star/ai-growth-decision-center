@@ -10,6 +10,7 @@ import {
 import { format, subDays } from 'date-fns';
 import axios from 'axios';
 import { biRows } from '@shared/paid-growth';
+import { verifiedNoSpend } from '@shared/campaign-visibility';
 import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import {
@@ -126,6 +127,7 @@ function DateFilter({
 }
 
 export default function PaidGrowthPage() {
+  const [expectedDates, setExpectedDates] = useState<string[]>([]);
   const [params, setParams] = useSearchParams();
   const [products, setProducts] = useState<BiProduct[]>([]);
   const [standards, setStandards] = useState<MetricStandardProduct[]>([]);
@@ -211,6 +213,11 @@ export default function PaidGrowthPage() {
     setNotice('');
     setWarming('');
     setDays([]);
+    setExpectedDates(
+      Array.from({ length: dayCount }, (_, i) =>
+        format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd'),
+      ),
+    );
     setSelectedCampaign(null);
     setLoadedScope(
       `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
@@ -303,6 +310,14 @@ export default function PaidGrowthPage() {
       setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
   };
   const rows = useMemo(() => biRows(days), [days]);
+  const noSpend = useMemo(
+    () =>
+      days[0]?.level === 'campaigns'
+        ? verifiedNoSpend(days, expectedDates)
+        : () => false,
+    [days, expectedDates],
+  );
+  const hiddenCount = rows.filter(noSpend).length;
   const hasBad = (row: BiRow) =>
     columns.some((c) => biMetricSignal(row, c.key, standards).state === 'bad');
   const rowMeta = useMemo(() => {
@@ -335,6 +350,7 @@ export default function PaidGrowthPage() {
   const filtered = useMemo(
     () =>
       rows
+        .filter((r) => !noSpend(r))
         .filter((r) => !badOnly || hasBad(r))
         .filter(
           (r) =>
@@ -357,6 +373,7 @@ export default function PaidGrowthPage() {
             Number(b[sort] ?? -1) - Number(a[sort] ?? -1),
         ),
     [
+      noSpend,
       rows,
       search,
       sort,
@@ -686,6 +703,8 @@ export default function PaidGrowthPage() {
               {days[0]?.date || '尚未查询'}{' '}
               {days.length > 1 ? `～ ${days.at(-1)?.date}` : ''} ·{' '}
               {filtered.length} 条 · 横向滚动查看全部指标
+              {hiddenCount > 0 &&
+                ` · 已隐藏 ${hiddenCount} 个经校验无消耗的系列`}
             </p>
           </div>
           <div className="flex gap-2">
