@@ -1,5 +1,24 @@
 import axios from 'axios';
 import type { BiDay, BiProduct, BiQuery } from '@shared/paid-growth.interface';
+import type { AdjustmentDay, AdjustmentQuery } from '@shared/api.interface';
+import type { MetricStandardProduct } from '@shared/metric-signals';
+export const getAdjustmentDay = async (
+  query: AdjustmentQuery,
+  signal?: AbortSignal,
+): Promise<AdjustmentDay> =>
+  (
+    await axios.get<AdjustmentDay>('/api/growth-decision/bi/adjustment-day', {
+      params: query,
+      signal,
+      timeout: 420000,
+    })
+  ).data;
+export const getBiStandards = async (): Promise<MetricStandardProduct[]> =>
+  (
+    await axios.get<MetricStandardProduct[]>(
+      '/api/growth-decision/bi/standards',
+    )
+  ).data;
 export const getBiDay = async (
   query: BiQuery,
   signal?: AbortSignal,

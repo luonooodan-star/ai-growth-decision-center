@@ -4,6 +4,7 @@ import {
   FlaskConical,
   Gauge,
   Sparkles,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
@@ -38,6 +39,10 @@ const Layout = () => {
             <NavLink to="/" className={navClass} end>
               <Activity className="size-3.5" />
               产品中心
+            </NavLink>
+            <NavLink to="/adjustments" className={navClass}>
+              <SlidersHorizontal className="size-3.5" />
+              广告调整
             </NavLink>
             <NavLink to="/operations" className={navClass}>
               <Activity className="size-3.5" />

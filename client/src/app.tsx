@@ -9,6 +9,7 @@ import MetricLibraryPage from './pages/growth-decision/MetricLibraryPage';
 import SkillIterationPage from './pages/growth-decision/SkillIterationPage';
 import PaidGrowthPage from './pages/growth-decision/PaidGrowthPage';
 import MetaOperationsPage from './pages/growth-decision/MetaOperationsPage';
+import AdAdjustmentPage from './pages/growth-decision/AdAdjustmentPage';
 
 const RoutesComponent = () => {
   return (
@@ -16,6 +17,7 @@ const RoutesComponent = () => {
       <Route element={<Layout />}>
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" element={<PaidGrowthPage />} />
+        <Route path="adjustments" element={<AdAdjustmentPage />} />
         <Route path="operations" element={<MetaOperationsPage />} />
         <Route path="products/:productId" element={<GrowthDecisionPage />} />
         <Route path="metrics" element={<MetricLibraryPage />} />

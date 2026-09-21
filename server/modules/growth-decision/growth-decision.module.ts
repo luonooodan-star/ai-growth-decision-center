@@ -14,6 +14,7 @@ import { OptimizerWorkflowService } from './optimizer-workflow.service';
 import { OptimizerWeeklyService } from './optimizer-weekly.service';
 import { PaidGrowthController } from './paid-growth.controller';
 import { PaidGrowthService } from './paid-growth.service';
+import { AdAdjustmentService } from './ad-adjustment.service';
 import { MetaOperationsService } from './meta-operations.service';
 import { MetaOperationsController } from './meta-operations.controller';
 import { SkillReviewService } from './skill-review.service';
@@ -31,6 +32,7 @@ import { SkillReviewService } from './skill-review.service';
     SkillReviewService,
     MetaOperationsService,
     PaidGrowthService,
+    AdAdjustmentService,
     OptimizerWorkflowService,
     OptimizerWeeklyService,
     CampaignBoardManagementService,

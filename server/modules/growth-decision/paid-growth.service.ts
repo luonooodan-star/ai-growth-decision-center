@@ -108,11 +108,13 @@ export class PaidGrowthService {
     return { date: q.date, level: q.level, daily, revenue, events };
   }
 
-  private part(
+  part(
     args: Record<string, unknown>,
     refresh: boolean,
+    ttl = 300000,
+    namespace = '',
   ): Promise<BiPart> {
-    const key = JSON.stringify(args);
+    const key = namespace + JSON.stringify(args);
     const existing = this.pending.get(key);
     if (existing) return existing;
     const raw = this.database.getBiCache(key);
@@ -120,7 +122,7 @@ export class PaidGrowthService {
     if (
       !refresh &&
       cache?.updatedAt &&
-      Date.now() - Date.parse(cache.updatedAt) < 300000
+      Date.now() - Date.parse(cache.updatedAt) < ttl
     )
       return Promise.resolve({ ...cache, state: 'cached' });
     const promise = (async (): Promise<BiPart> => {
