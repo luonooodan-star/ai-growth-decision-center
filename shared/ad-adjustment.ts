@@ -132,7 +132,20 @@ export function adjustmentTree(
     ] as const) {
       for (const r of part.rows) {
         const account = resolveAccount(r);
-        if (!adjustmentMatches(r, filters, account)) continue;
+        if (
+          day.scope &&
+          (day.scope.optimizer !== filters.optimizer ||
+            day.scope.country !== filters.country)
+        )
+          continue;
+        if (
+          !adjustmentMatches(
+            r,
+            day.scope ? { ...filters, optimizer: '', country: '' } : filters,
+            account,
+          )
+        )
+          continue;
         const base = [text(r.app_id), text(r.media_source), account];
         let parent: AdjustmentNode | undefined;
         for (const [level, prefix] of [

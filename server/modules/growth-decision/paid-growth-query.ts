@@ -35,16 +35,35 @@ export async function completeBiQuery(
         manifest.rows.some((r) => r[field] == null)
       )
         continue;
-      const rows: DorisRow[] = [];
-      for (const group of manifest.rows) {
-        const part = await read({
-          ...q,
-          filters_json: JSON.stringify({ ...filters, [field]: group[field] }),
-        });
-        reconcile(part, group, q.metrics as string[]);
-        rows.push(...part);
-      }
-      return rows;
+      const groups = manifest.rows;
+      const results: DorisRow[][] = new Array(groups.length);
+      let cursor = 0;
+      let failed = false;
+      const worker = async () => {
+        while (!failed && cursor < groups.length) {
+          const index = cursor++;
+          const group = groups[index];
+          try {
+            const part = await read({
+              ...q,
+              filters_json: JSON.stringify({
+                ...filters,
+                [field]: group[field],
+              }),
+            });
+            reconcile(part, group, q.metrics as string[]);
+            results[index] = part;
+          } catch (error) {
+            failed = true;
+            throw error;
+          }
+        }
+      };
+      // Await both workers even on failure; never publish partial shards.
+      const finished = await Promise.allSettled([worker(), worker()]);
+      const error = finished.find((r) => r.status === 'rejected');
+      if (error?.status === 'rejected') throw error.reason;
+      return results.flat();
     }
     throw new Error(
       '明细达到 1000 行且无法安全分片；未发布截断数据，请缩小范围',

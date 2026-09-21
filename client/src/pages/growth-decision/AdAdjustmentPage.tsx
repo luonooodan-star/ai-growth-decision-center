@@ -89,7 +89,9 @@ export default function AdAdjustmentPage() {
     cancel,
     details,
     loadDetail,
-  } = useAdjustmentData(appId, media);
+    options: filterData,
+    accountsReady,
+  } = useAdjustmentData(appId, media, optimizer, country);
   useEffect(() => {
     let live = true;
     setSetupError('');
@@ -128,10 +130,26 @@ export default function AdAdjustmentPage() {
         .map((value) => ({ value, label: value }));
     return {
       accounts: values(resolve),
-      optimizers: values((r) => String(r.buyer_alias || '未返回')),
-      countries: values((r) => String(r.country_code || '未返回')),
+      optimizers: [
+        ...new Set(
+          (filterData?.rows || [])
+            .map((r) => String(r.buyer_alias || ''))
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .map((value) => ({ value, label: value })),
+      countries: [
+        ...new Set(
+          (filterData?.rows || [])
+            .map((r) => String(r.country_code || ''))
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .map((value) => ({ value, label: value })),
     };
-  }, [days, current]);
+  }, [days, current, filterData]);
   const tree = useMemo(
     () =>
       withAdjustmentDetails(
@@ -278,7 +296,7 @@ export default function AdAdjustmentPage() {
           <RefreshCw
             className={`mr-2 size-4 ${loading ? 'animate-spin' : ''}`}
           />
-          {loading ? (current ? '补充历史中' : '抓取今日中') : '抓取数据'}
+          {loading ? '后台更新中（保留已显示数据）' : '抓取数据'}
         </Button>
       </section>
       {(!appId || !media) && (
@@ -324,8 +342,24 @@ export default function AdAdjustmentPage() {
         </div>
       )}
       <div aria-live="polite" className="text-xs text-slate-500">
-        {progress || '仅展示今天的经营数据；前天、昨天仅用于 D0 ROAS 对照。今日数据仍在回传。'}
+        {progress ||
+          '仅展示今天的经营数据；前天、昨天仅用于 D0 ROAS 对照。今日数据仍在回传。'}
       </div>
+      {current && (
+        <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          {(['daily', 'revenue', 'accounts'] as const).map((part, i) => (
+            <span key={part}>
+              {['今日消耗', '今日 D0', '账户归属'][i]}：{current[part].state}
+              {current[part].updatedAt
+                ? ` · ${formatTime(current[part].updatedAt!)}`
+                : ' · 等待返回'}
+              {current.timings?.[part] != null
+                ? ` · 本次 ${(current.timings[part] / 1000).toFixed(1)} 秒`
+                : ''}
+            </span>
+          ))}
+        </div>
+      )}
       <section>
         <h2 className="mb-3 text-lg font-semibold">
           {appOptions.find((o) => o.value === appId)?.label || '全部产品'} ·{' '}
@@ -421,6 +455,7 @@ export default function AdAdjustmentPage() {
             D0 与指标库标准判断；未返回或未配置标准仅列在“全部”。
           </p>
           <AdAdjustmentTable
+            accountsReady={accountsReady}
             details={details}
             loadDetail={loadDetail}
             drafts={draftState.drafts}
@@ -433,6 +468,9 @@ export default function AdAdjustmentPage() {
         </div>
       </section>
       <AdjustmentSubmitPanel
+        blockedReason={
+          accountsReady ? '' : '账户归属尚未完成本次核验，暂不可提交广告修改'
+        }
         drafts={draftState.drafts}
         update={draftState.update}
       />

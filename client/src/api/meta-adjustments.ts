@@ -39,6 +39,8 @@ export function adjustmentError(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
     if (typeof message === 'string') return message;
+    if (!error.response)
+      return '未收到决策中心响应，请检查服务或本机 Meta 桥连接；若已提交，请先查任务记录核对结果，勿重复操作';
   }
   return error instanceof Error ? error.message : '操作失败';
 }

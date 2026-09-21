@@ -17,8 +17,8 @@ import type {
   MetaAdjustmentChange,
   MetaAdjustmentSnapshot,
 } from '@shared/api.interface';
-import { inspectAdjustment, adjustmentError } from '@/api/meta-adjustments';
-import { AdjustmentRowEditor, type AdjustmentDrafts } from './AdjustmentEditor';
+import { type AdjustmentDrafts } from './AdjustmentEditor';
+import { AdjustmentControls } from './AdjustmentControls';
 import type { AdjustmentDetail } from './useAdjustmentData';
 
 export const adjustmentMoney = (v: number | null | undefined) =>
@@ -35,6 +35,7 @@ const colors = {
   unknown: 'text-slate-400',
 };
 interface Props {
+  accountsReady: boolean;
   details: Record<string, AdjustmentDetail>;
   loadDetail: (campaignId: string) => Promise<void>;
   drafts: AdjustmentDrafts;
@@ -56,46 +57,8 @@ export function AdAdjustmentTable({
   updateDraft,
   details,
   loadDetail,
+  accountsReady,
 }: Props) {
-  const [editors, setEditors] = useState<
-    Record<string, MetaAdjustmentSnapshot[]>
-  >({});
-  const [inspectError, setInspectError] = useState<Record<string, string>>({});
-  const [inspecting, setInspecting] = useState<string | null>(null);
-  const inspect = async (node: AdjustmentNode) => {
-    setInspecting(node.key);
-    setInspectError((old) => ({ ...old, [node.key]: '' }));
-    try {
-      const snapshots = await inspectAdjustment(
-        {
-          id: node.id,
-          accountId: node.account.replace(/^act_/, ''),
-          campaignId: node.campaignId,
-          adsetId: node.adsetId,
-          level:
-            node.level === 'campaign'
-              ? 'campaign'
-              : node.level === 'adgroup'
-                ? 'adset'
-                : 'ad',
-        },
-        node.level === 'creative',
-      );
-      setEditors((old) => ({ ...old, [node.key]: snapshots }));
-      if (!snapshots.length)
-        setInspectError((old) => ({
-          ...old,
-          [node.key]: '素材未映射到真实广告，不能执行启停',
-        }));
-    } catch (error) {
-      setInspectError((old) => ({
-        ...old,
-        [node.key]: adjustmentError(error),
-      }));
-    } finally {
-      setInspecting(null);
-    }
-  };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
     setExpanded(new Set());
@@ -128,8 +91,16 @@ export function AdAdjustmentTable({
           key={node.key}
           row={
             <TableRow className={background}>
+              <TableCell className={`sticky left-0 z-10 ${background}`}>
+                <AdjustmentControls
+                  node={node}
+                  enabled={accountsReady}
+                  drafts={drafts}
+                  update={updateDraft}
+                />
+              </TableCell>
               <TableCell
-                className={`sticky left-0 z-10 min-w-80 max-w-[420px] border-r border-slate-100 ${depth ? 'bg-slate-50' : 'bg-white'}`}
+                className={`min-w-80 max-w-[420px] border-r border-slate-100 ${depth ? 'bg-slate-50' : 'bg-white'}`}
               >
                 <div style={{ paddingLeft: depth * 18 }}>
                   <button
@@ -178,38 +149,6 @@ export function AdAdjustmentTable({
                       >
                         进入决策中心 →
                       </Link>
-                    )}
-                  </div>
-                  <div className="ml-6 mt-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={
-                        !!inspecting ||
-                        node.media.toLowerCase() !== 'facebook' ||
-                        !/^\d+$/.test(node.account.replace(/^act_/, '')) ||
-                        !/^\d+$/.test(node.id)
-                      }
-                      onClick={() => void inspect(node)}
-                    >
-                      {inspecting === node.key
-                        ? '读取 Meta 状态'
-                        : '启停 / 预算调整'}
-                    </Button>
-                    {inspectError[node.key] && (
-                      <p
-                        role="alert"
-                        className="mt-2 whitespace-normal text-red-600"
-                      >
-                        {inspectError[node.key]}
-                      </p>
-                    )}
-                    {editors[node.key] && (
-                      <AdjustmentRowEditor
-                        snapshots={editors[node.key]}
-                        drafts={drafts}
-                        update={updateDraft}
-                      />
                     )}
                   </div>
                 </div>
@@ -265,7 +204,7 @@ export function AdAdjustmentTable({
                     !node.children.length) && (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
+                        colSpan={13}
                         className="bg-slate-50 p-3 text-sm text-slate-500"
                       >
                         {details[node.campaignId]?.loading
@@ -311,8 +250,9 @@ export function AdAdjustmentTable({
         <TableHeader className="sticky top-0 z-30 bg-slate-100">
           <TableRow>
             <TableHead className="sticky left-0 z-20 bg-slate-100">
-              系列 / 广告组 / 素材
+              开关 / 新日预算（留空不改）
             </TableHead>
+            <TableHead>系列 / 广告组 / 素材</TableHead>
             {[
               '消耗 ↓',
               '媒体安装',
@@ -340,7 +280,7 @@ export function AdAdjustmentTable({
           {!nodes.length && (
             <TableRow>
               <TableCell
-                colSpan={12}
+                colSpan={13}
                 className="py-12 text-center text-slate-500"
               >
                 暂无符合条件的当天数据；可清除筛选或刷新重试。

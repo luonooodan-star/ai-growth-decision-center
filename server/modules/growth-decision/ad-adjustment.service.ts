@@ -32,7 +32,11 @@ export class AdAdjustmentService {
   private read(
     args: Record<string, unknown>,
     refresh: boolean,
+    cacheOnly = false,
   ): Promise<BiPart> {
+    // Cache peeks never wait for active Doris work. Same query shares BI cache.
+    if (cacheOnly)
+      return this.bi.part(args, false, ADJUSTMENT_REFRESH_MS, '', true);
     const key = JSON.stringify([args, refresh]);
     const pending = this.pending.get(key);
     if (pending) return pending;
@@ -43,12 +47,7 @@ export class AdAdjustmentService {
         await new Promise<void>((resolve) => this.waiting.push(resolve));
       else this.running++;
       try {
-        return await this.bi.part(
-          args,
-          refresh,
-          ADJUSTMENT_REFRESH_MS,
-          'adjustment-v2:',
-        );
+        return await this.bi.part(args, refresh, ADJUSTMENT_REFRESH_MS, '');
       } finally {
         const next = this.waiting.shift();
         if (next) next();
@@ -73,31 +72,62 @@ export class AdAdjustmentService {
       throw new BadRequestException('请先选择产品和渠道');
     if (q.campaignId !== undefined && !/^\d{1,40}$/.test(q.campaignId))
       throw new BadRequestException('广告系列 ID 无效');
+    if (q.part && !['daily', 'revenue', 'accounts', 'options'].includes(q.part))
+      throw new BadRequestException('数据类型无效');
+    for (const value of [q.optimizer, q.country])
+      if (
+        value !== undefined &&
+        (typeof value !== 'string' || value.length > 100)
+      )
+        throw new BadRequestException('筛选条件无效');
     const filters = {
       ...(q.appId ? { app_id: Number(q.appId) } : {}),
       ...(q.media ? { media_source: q.media } : {}),
       ...(q.campaignId ? { campaign_id: q.campaignId } : {}),
+      ...(q.optimizer ? { buyer_alias: q.optimizer } : {}),
+      ...(q.country ? { country_code: q.country } : {}),
     };
     const base = {
       start_date: q.date,
       end_date: q.date,
-      // Keep country × optimizer intersections for AND filters; defer hierarchy.
       dimensions: q.campaignId
         ? ADJUSTMENT_DIMENSIONS
         : ADJUSTMENT_DIMENSIONS.filter(
             (field) =>
-              !field.startsWith('adgroup_') && !field.startsWith('creative_'),
+              !field.startsWith('adgroup_') &&
+              !field.startsWith('creative_') &&
+              field !== 'buyer_alias' &&
+              field !== 'country_code',
           ),
     };
-    const read = (args: Record<string, unknown>) =>
-      this.read(args, q.date === today && q.refresh === '1');
-    const dailyTask = read({
+    const timings: Record<string, number> = {};
+    const read = async (
+      part: string,
+      args: Record<string, unknown>,
+      force = q.date === today && q.refresh === '1',
+    ) => {
+      if (q.part && q.part !== part)
+        return { rows: [], state: 'missing' as const, message: '等待加载' };
+      const started = Date.now();
+      try {
+        return await this.read(args, force, q.cacheOnly === '1');
+      } finally {
+        timings[part] = Date.now() - started;
+      }
+    };
+    const dailyTask = read('daily', {
       ...base,
       dataset: 'bi_ads.ads_paid_acquisition_daily',
-      metrics: ['spend', 'impressions', 'media_clicks', 'media_installs'],
+      metrics: [
+        'spend',
+        'impressions',
+        'media_clicks',
+        'media_installs',
+        'adjust_installs',
+      ],
       filters_json: JSON.stringify(filters),
     });
-    const revenueTask = read({
+    const revenueTask = read('revenue', {
       ...base,
       dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
       metrics: ['metric_value'],
@@ -110,7 +140,8 @@ export class AdAdjustmentService {
     });
     const accountsTask =
       !q.media || q.media === 'facebook'
-        ? this.read(
+        ? read(
+            'accounts',
             {
               dataset: 'bi_dwd.dwd_facebook_campaign_daily',
               start_date: q.date,
@@ -129,10 +160,29 @@ export class AdAdjustmentService {
             !q.campaignId && q.date === today && q.refresh === '1',
           )
         : Promise.resolve({ rows: [], state: 'unsupported' as const });
-    const [daily, revenue, accounts] = await Promise.all([
+    const optionsTask =
+      q.part === 'options'
+        ? read(
+            'options',
+            {
+              dataset: 'bi_ads.ads_paid_acquisition_daily',
+              start_date: q.date,
+              end_date: q.date,
+              dimensions: ['buyer_alias', 'country_code'],
+              metrics: ['spend'],
+              filters_json: JSON.stringify({
+                app_id: Number(q.appId),
+                media_source: q.media,
+              }),
+            },
+            false,
+          )
+        : Promise.resolve(undefined);
+    const [daily, revenue, accounts, options] = await Promise.all([
       dailyTask,
       revenueTask,
       accountsTask,
+      optionsTask,
     ]);
     return {
       date: q.date,
@@ -147,6 +197,9 @@ export class AdAdjustmentService {
           }
         : accounts,
       granularity: q.campaignId ? 'detail' : 'campaign',
+      scope: { optimizer: q.optimizer || '', country: q.country || '' },
+      options,
+      timings,
     };
   }
 }

@@ -1,14 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -74,6 +66,10 @@ export function useAdjustmentDrafts() {
           ...patch,
           before: old[key]?.before || snapshot,
         };
+      if (next[key] && next[key].status === next[key].before.status)
+        delete next[key].status;
+      if (next[key] && !next[key].status && !next[key].dailyBudget)
+        delete next[key];
       return next;
     });
   return { drafts, update, error, ready };
@@ -82,67 +78,54 @@ export function AdjustmentRowEditor({
   snapshots,
   drafts,
   update,
+  disabled = false,
 }: {
   snapshots: MetaAdjustmentSnapshot[];
   drafts: AdjustmentDrafts;
+  disabled?: boolean;
   update: (
     snapshot: MetaAdjustmentSnapshot,
     patch: Partial<MetaAdjustmentChange> | null,
   ) => void;
 }) {
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+    <div className="space-y-2">
       {snapshots.map((snapshot) => {
         const draft = drafts[draftKey(snapshot)];
         const editable = ['ACTIVE', 'PAUSED'].includes(snapshot.status);
         return (
-          <div key={draftKey(snapshot)} className="space-y-2 whitespace-normal">
-            <label className="flex items-center gap-2">
-              <Checkbox
-                checked={!!draft}
-                disabled={!editable}
-                onCheckedChange={(checked) =>
-                  update(snapshot, checked ? {} : null)
+          <div key={draftKey(snapshot)} className="whitespace-normal">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-label={`${snapshot.name}启停`}
+                aria-checked={(draft?.status || snapshot.status) === 'ACTIVE'}
+                disabled={disabled || !editable}
+                title={`当前 ${snapshot.status} · 实际 ${snapshot.effectiveStatus}；切换仅保存草稿，统一提交后生效`}
+                onClick={() =>
+                  update(snapshot, {
+                    status:
+                      (draft?.status || snapshot.status) === 'ACTIVE'
+                        ? 'PAUSED'
+                        : 'ACTIVE',
+                  })
                 }
-              />
-              <span>
-                {snapshot.name} · ID {snapshot.id}
-              </span>
-            </label>
-            <p className="text-slate-500">
-              当前 {snapshot.status} · 实际 {snapshot.effectiveStatus} · 日预算{' '}
-              {snapshot.dailyBudget && snapshot.currency === 'USD'
-                ? `${Number(snapshot.dailyBudget) / 100} USD`
-                : '不适用/未开放'}
-            </p>
-            {draft && (
-              <div className="space-y-2">
-                <Select
-                  value={draft.status || 'unchanged'}
-                  onValueChange={(value) =>
-                    update(snapshot, {
-                      status:
-                        value === 'unchanged'
-                          ? undefined
-                          : (value as 'ACTIVE' | 'PAUSED'),
-                    })
-                  }
-                >
-                  <SelectTrigger aria-label={`${snapshot.name}启停`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unchanged">状态不修改</SelectItem>
-                    <SelectItem value="ACTIVE">开启</SelectItem>
-                    <SelectItem value="PAUSED">暂停</SelectItem>
-                  </SelectContent>
-                </Select>
-                {snapshot.budgetEditable ? (
+                className={`relative h-6 w-11 shrink-0 rounded-full disabled:opacity-40 ${(draft?.status || snapshot.status) === 'ACTIVE' ? 'bg-blue-600' : 'bg-slate-300'}`}
+              >
+                <span
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-all ${(draft?.status || snapshot.status) === 'ACTIVE' ? 'left-6' : 'left-1'}`}
+                />
+              </button>
+              {snapshot.level !== 'ad' &&
+                (snapshot.budgetEditable ? (
                   <Input
+                    disabled={disabled}
+                    className="h-8 w-36 text-xs"
                     aria-label={`${snapshot.name}新日预算 USD`}
                     inputMode="decimal"
                     placeholder="新日预算 USD（留空不修改）"
-                    value={draft.dailyBudget ?? ''}
+                    value={draft?.dailyBudget ?? ''}
                     onChange={(event) =>
                       update(snapshot, {
                         dailyBudget: event.target.value || undefined,
@@ -150,10 +133,26 @@ export function AdjustmentRowEditor({
                     }
                   />
                 ) : (
-                  <p className="text-slate-500">{snapshot.budgetReason}</p>
-                )}
-              </div>
-            )}
+                  <span className="max-w-36 text-[10px] text-slate-400">
+                    {snapshot.budgetReason || '预算不可编辑'}
+                  </span>
+                ))}
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">
+              {draft ? '待提交 · ' : ''}
+              {(draft?.status || snapshot.status) === 'ACTIVE'
+                ? '开启'
+                : '暂停'}
+              {snapshot.level !== 'ad' &&
+              snapshot.dailyBudget &&
+              snapshot.currency === 'USD'
+                ? ` · 当前 $${Number(snapshot.dailyBudget) / 100}/天`
+                : ''}
+              {snapshot.effectiveStatus !== snapshot.status
+                ? ` · 实际 ${snapshot.effectiveStatus}`
+                : ''}
+              {snapshots.length > 1 ? ` · 广告 ${snapshot.id}` : ''}
+            </p>
           </div>
         );
       })}
@@ -163,8 +162,10 @@ export function AdjustmentRowEditor({
 export function AdjustmentSubmitPanel({
   drafts,
   update,
+  blockedReason = '',
 }: {
   drafts: AdjustmentDrafts;
+  blockedReason?: string;
   update: (
     snapshot: MetaAdjustmentSnapshot,
     patch: Partial<MetaAdjustmentChange> | null,
@@ -198,6 +199,7 @@ export function AdjustmentSubmitPanel({
     };
   }, [tracking, jobs]);
   const prepare = async () => {
+    if (blockedReason) return;
     setBusy(true);
     setError('');
     try {
@@ -210,7 +212,7 @@ export function AdjustmentSubmitPanel({
     }
   };
   const submit = async () => {
-    if (!preview) return;
+    if (!preview || blockedReason) return;
     setBusy(true);
     setError('');
     try {
@@ -248,13 +250,16 @@ export function AdjustmentSubmitPanel({
             读取任务记录
           </Button>
           <Button
-            disabled={busy || !changes.length || tracking}
+            disabled={busy || !changes.length || tracking || !!blockedReason}
             onClick={() => void prepare()}
           >
             {busy ? '正在校验/提交' : '预检并提交'}
           </Button>
         </div>
       </div>
+      {blockedReason && (
+        <p className="text-xs text-amber-700">{blockedReason}</p>
+      )}
       {error && (
         <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-700">
           {error}
@@ -370,7 +375,10 @@ export function AdjustmentSubmitPanel({
             </div>
           ))}
           {error && <p className="text-sm text-red-700">{error}</p>}
-          <Button disabled={busy} onClick={() => void submit()}>
+          <Button
+            disabled={busy || !!blockedReason}
+            onClick={() => void submit()}
+          >
             {busy ? '提交中' : '确认提交给 Meta API'}
           </Button>
         </DialogContent>

@@ -24,6 +24,44 @@ const snapshot: MetaAdjustmentSnapshot = {
   budgetReason: '',
 };
 describe('Meta adjustment guards', () => {
+  test('existing campaign daily budget and adset-owned daily budget are editable', async () => {
+    const campaignGraph: MetaGraphCall = async (id) =>
+      id === '111'
+        ? { id, account_id: '222', daily_budget: '6000', status: 'ACTIVE' }
+        : { currency: 'USD' };
+    expect(
+      (await readAdjustmentSnapshot(target, campaignGraph)).budgetEditable,
+    ).toBe(true);
+    const adsetGraph: MetaGraphCall = async (id) =>
+      id === '333'
+        ? {
+            id,
+            account_id: '222',
+            campaign_id: '111',
+            daily_budget: '2000',
+            status: 'PAUSED',
+          }
+        : id === '111'
+          ? { daily_budget: '0', lifetime_budget: '0' }
+          : { currency: 'USD' };
+    expect(
+      (
+        await readAdjustmentSnapshot(
+          { ...target, id: '333', level: 'adset' },
+          adsetGraph,
+        )
+      ).budgetEditable,
+    ).toBe(true);
+  });
+  test('lifetime budgets cannot accidentally be converted to daily budgets', async () => {
+    const graph: MetaGraphCall = async (id) =>
+      id === '111'
+        ? { id, account_id: '222', lifetime_budget: '6000', status: 'ACTIVE' }
+        : { currency: 'USD' };
+    const result = await readAdjustmentSnapshot(target, graph);
+    expect(result.budgetEditable).toBe(false);
+    expect(result.budgetReason).toContain('总预算');
+  });
   test('budget conversion is exact and rejects unsafe inputs', () => {
     expect(adjustmentBudgetUnits('10.29')).toBe('1029');
     for (const value of [

@@ -33,6 +33,20 @@ export function validateBiQuery(q: BiQuery): void {
 export class PaidGrowthService {
   private readonly pending = new Map<string, Promise<BiPart>>();
   private syncPending?: Promise<BiProduct[]>;
+  private queryRunning = 0;
+  private queryWaiting: (() => void)[] = [];
+  private async query(args: Record<string, unknown>) {
+    if (this.queryRunning >= 4)
+      await new Promise<void>((resolve) => this.queryWaiting.push(resolve));
+    else this.queryRunning++;
+    try {
+      return await this.fetcher.queryMetric(args);
+    } finally {
+      const next = this.queryWaiting.shift();
+      if (next) next();
+      else this.queryRunning--;
+    }
+  }
   constructor(
     private readonly database: LocalDatabaseService,
     private readonly fetcher: GrowthDataFetchService,
@@ -113,12 +127,26 @@ export class PaidGrowthService {
     refresh: boolean,
     ttl = 300000,
     namespace = '',
+    cacheOnly = false,
   ): Promise<BiPart> {
     const key = namespace + JSON.stringify(args);
-    const existing = this.pending.get(key);
-    if (existing) return existing;
     const raw = this.database.getBiCache(key);
     const cache: BiPart | undefined = raw ? JSON.parse(raw) : undefined;
+    if (cacheOnly)
+      return Promise.resolve(
+        cache
+          ? {
+              ...cache,
+              state:
+                cache.updatedAt &&
+                Date.now() - Date.parse(cache.updatedAt) < ttl
+                  ? 'cached'
+                  : 'stale',
+            }
+          : { rows: [], state: 'missing', message: '暂无缓存，等待抓取' },
+      );
+    const existing = this.pending.get(key);
+    if (existing) return existing;
     if (
       !refresh &&
       cache?.updatedAt &&
@@ -127,10 +155,7 @@ export class PaidGrowthService {
       return Promise.resolve({ ...cache, state: 'cached' });
     const promise = (async (): Promise<BiPart> => {
       try {
-        const rows = await completeBiQuery(
-          (args) => this.fetcher.queryMetric(args),
-          args,
-        );
+        const rows = await completeBiQuery((args) => this.query(args), args);
         const part: BiPart = {
           rows,
           state: 'fresh',

@@ -8,6 +8,10 @@ export interface AdjustmentQuery {
   refresh?: string;
   /** Omitted: light campaign summary; present: hierarchy for one campaign. */
   campaignId?: string;
+  part?: 'daily' | 'revenue' | 'accounts' | 'options';
+  cacheOnly?: string;
+  optimizer?: string;
+  country?: string;
 }
 export interface AdjustmentDay {
   date: string;
@@ -15,6 +19,9 @@ export interface AdjustmentDay {
   revenue: BiPart;
   accounts: BiPart;
   granularity?: 'campaign' | 'detail';
+  scope?: { optimizer: string; country: string };
+  options?: BiPart;
+  timings?: Record<string, number>;
 }
 export interface AdjustmentFilters {
   search: string;

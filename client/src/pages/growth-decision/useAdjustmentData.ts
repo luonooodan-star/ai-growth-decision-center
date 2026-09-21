@@ -16,13 +16,21 @@ const incomplete = (d: AdjustmentDay) =>
     .map((p) => p.message || '数据不完整，未用于达标判断')
     .join('；');
 
-export function useAdjustmentData(appId: string, media: string) {
+export function useAdjustmentData(
+  appId: string,
+  media: string,
+  optimizer = '',
+  country = '',
+) {
   const [days, setDays] = useState<AdjustmentDay[]>([]);
   const [today, setToday] = useState(adjustmentToday);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
   const [details, setDetails] = useState<Record<string, AdjustmentDetail>>({});
+  const [options, setOptions] = useState<AdjustmentDay['options']>();
+  const [accountsReady, setAccountsReady] = useState(false);
+  const activated = useRef(false);
   const detailCache = useRef<Record<string, AdjustmentDetail>>({});
   const active = useRef<AbortController | null>(null);
   const children = useRef(new Map<string, AbortController>());
@@ -46,42 +54,116 @@ export function useAdjustmentData(appId: string, media: string) {
     setToday(date);
     setLoading(true);
     setError('');
-    setDays([]);
-    setProgress('正在抓取今日广告系列汇总…');
+    setAccountsReady(false);
+    activated.current = true;
+    setProgress('先读取缓存 · 今日数据后台更新…');
     const live = () =>
       epoch === generation.current && !controller.signal.aborted;
     try {
-      const current = await getAdjustmentDay(
-        { date, appId, media, refresh: '1' },
-        controller.signal,
+      const failures: string[] = [];
+      const done = new Set<string>();
+      const labels = { daily: '消耗', revenue: 'D0', accounts: '账户归属' };
+      const merge = (
+        value: AdjustmentDay,
+        part: 'daily' | 'revenue' | 'accounts',
+        cache = false,
+      ) => {
+        if (!live()) return;
+        if (cache && !value[part].updatedAt) return;
+        setDays((old) => {
+          const previous = old.find(
+            (d) =>
+              d.date === value.date &&
+              d.scope?.optimizer === optimizer &&
+              d.scope?.country === country,
+          );
+          const next = {
+            ...(previous || value),
+            [part]: value[part],
+            timings: { ...previous?.timings, ...value.timings },
+          };
+          return [...old.filter((d) => d.date !== value.date), next];
+        });
+      };
+      const fetchPart = async (
+        d: string,
+        part: 'daily' | 'revenue' | 'accounts',
+      ) => {
+        const query = { date: d, appId, media, optimizer, country, part };
+        try {
+          const cached = await getAdjustmentDay(
+            { ...query, cacheOnly: '1' },
+            controller.signal,
+          );
+          merge(cached, part, true);
+        } catch {
+          /* A cache failure must not block a fresh read. */
+        }
+        if (!live()) return;
+        try {
+          const value = await getAdjustmentDay(
+            { ...query, refresh: d === date ? '1' : undefined },
+            controller.signal,
+          );
+          merge(value, part);
+          if (!live()) return;
+          const p = value[part];
+          if (p.state === 'missing' || p.state === 'stale')
+            failures.push(`${d} ${labels[part]}：${p.message || '未完成'}`);
+          if (d === date) {
+            done.add(part);
+            if (part === 'accounts')
+              setAccountsReady(
+                p.state === 'fresh' ||
+                  p.state === 'cached' ||
+                  media !== 'facebook',
+              );
+            setProgress(
+              `今日：${Object.entries(labels)
+                .map(
+                  ([k, label]) =>
+                    `${label}${done.has(k) ? '已返回' : '更新中'}`,
+                )
+                .join(' / ')} · 历史后台补齐`,
+            );
+          }
+        } catch (e) {
+          if (live()) failures.push(`${d} ${labels[part]}：${message(e)}`);
+        }
+      };
+      // Sources return independently; slow account ownership cannot hold up spend.
+      const todayWork = ['daily', 'revenue', 'accounts'].map((p) =>
+        fetchPart(date, p as keyof typeof labels),
       );
+      const optionsWork = (async () => {
+        try {
+          const value = await getAdjustmentDay(
+            { date, appId, media, part: 'options' },
+            controller.signal,
+          );
+          if (live()) setOptions(value.options);
+          if (
+            value.options?.state === 'missing' ||
+            value.options?.state === 'stale'
+          )
+            failures.push(`筛选项：${value.options.message || '未完成'}`);
+        } catch (e) {
+          if (live()) failures.push(`筛选项：${message(e)}`);
+        }
+      })();
+      await Promise.all(todayWork);
       if (!live()) return;
-      setDays([current]);
-      const warning = incomplete(current);
-      setProgress(
-        warning
-          ? '今日汇总部分返回 · 历史 D0 补充中…'
-          : '今日已加载 · 历史 D0 补充中…',
-      );
-      const failures: string[] = warning ? [`今天：${warning}`] : [];
+      // Histories do not compete with today's first paint.
       await Promise.all(
         adjustmentDates(date)
           .slice(0, 2)
-          .map(async (d) => {
-            try {
-              const value = await getAdjustmentDay(
-                { date: d, appId, media },
-                controller.signal,
-              );
-              if (!live()) return;
-              setDays((old) => [...old.filter((v) => v.date !== d), value]);
-              const issue = incomplete(value);
-              if (issue) failures.push(`${d}：${issue}`);
-            } catch (e) {
-              if (live()) failures.push(`${d}：${message(e)}`);
-            }
-          }),
+          .flatMap((d) =>
+            ['daily', 'revenue', 'accounts'].map((p) =>
+              fetchPart(d, p as keyof typeof labels),
+            ),
+          ),
       );
+      await optionsWork;
       if (live()) {
         setError(failures.join('；'));
         setProgress(
@@ -101,7 +183,7 @@ export function useAdjustmentData(appId: string, media: string) {
         active.current = null;
       }
     }
-  }, [appId, media, reset]);
+  }, [appId, media, optimizer, country, reset]);
 
   const loadDetail = useCallback(
     async (campaignId: string) => {
@@ -169,6 +251,8 @@ export function useAdjustmentData(appId: string, media: string) {
                 appId,
                 media,
                 campaignId,
+                optimizer,
+                country,
                 refresh: date === today ? '1' : undefined,
               },
               controller.signal,
@@ -193,7 +277,7 @@ export function useAdjustmentData(appId: string, media: string) {
         }
       }
     },
-    [appId, media, today],
+    [appId, media, today, optimizer, country],
   );
   useEffect(() => {
     reset();
@@ -201,8 +285,18 @@ export function useAdjustmentData(appId: string, media: string) {
     setLoading(false);
     setError('');
     setProgress('');
+    setOptions(undefined);
+    setAccountsReady(false);
+    activated.current = false;
     return reset;
   }, [appId, media, reset]);
+  useEffect(() => {
+    // Selecting a server-side slice cancels obsolete work, never relabels old rows.
+    if (!activated.current) return;
+    reset();
+    void load();
+    return reset;
+  }, [optimizer, country, load, reset]);
   return {
     days,
     today,
@@ -211,6 +305,8 @@ export function useAdjustmentData(appId: string, media: string) {
     progress,
     details,
     loadDetail,
+    options,
+    accountsReady,
     cancel: () => {
       reset();
       setLoading(false);

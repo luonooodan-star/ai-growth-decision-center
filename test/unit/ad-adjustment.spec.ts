@@ -56,6 +56,159 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
   },
 });
 describe('advertising adjustment workbench', () => {
+  test('parts are independent; summary filters are pushed down, options have independent scope', async () => {
+    const bi = {
+      part: jest.fn().mockResolvedValue({ rows: [], state: 'fresh' }),
+    };
+    const service = new AdAdjustmentService(bi as never);
+    const q = {
+      date: new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Shanghai',
+      }),
+      appId: '11',
+      media: 'facebook',
+    };
+    const value = await service.day({
+      ...q,
+      part: 'daily',
+      optimizer: 'Alice',
+      country: 'IN',
+    });
+    expect(bi.part).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(bi.part.mock.calls[0][0].filters_json)).toEqual({
+      app_id: 11,
+      media_source: 'facebook',
+      buyer_alias: 'Alice',
+      country_code: 'IN',
+    });
+    expect(value.revenue.state).toBe('missing');
+    expect(value.timings?.daily).toBeGreaterThanOrEqual(0);
+    bi.part.mockClear();
+    await service.day({
+      ...q,
+      part: 'options',
+      optimizer: 'Alice',
+      country: 'IN',
+    });
+    expect(bi.part).toHaveBeenCalledTimes(1);
+    expect(bi.part.mock.calls[0][0].dimensions).toEqual([
+      'buyer_alias',
+      'country_code',
+    ]);
+    expect(JSON.parse(bi.part.mock.calls[0][0].filters_json)).toEqual({
+      app_id: 11,
+      media_source: 'facebook',
+    });
+    bi.part.mockClear();
+    await service.day({ ...q, part: 'daily', cacheOnly: '1' });
+    expect(bi.part.mock.calls[0].slice(1)).toEqual([
+      false,
+      ADJUSTMENT_REFRESH_MS,
+      '',
+      true,
+    ]);
+  });
+  test('cache-only returns immediately while fresh work is running, without querying Doris', async () => {
+    let release!: (v: never) => void;
+    const db = {
+      getBiCache: jest
+        .fn()
+        .mockReturnValue(
+          JSON.stringify({
+            rows: [{ spend: 5 }],
+            updatedAt: new Date().toISOString(),
+          }),
+        ),
+      saveBiCache: jest.fn(),
+    };
+    const fetcher = {
+      queryMetric: jest.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      ),
+    };
+    const service = new PaidGrowthService(
+      db as never,
+      fetcher as never,
+      {} as never,
+    );
+    const fresh = service.part({ dimensions: [], metrics: ['spend'] }, true);
+    const cached = await service.part(
+      { dimensions: [], metrics: ['spend'] },
+      false,
+      ADJUSTMENT_REFRESH_MS,
+      '',
+      true,
+    );
+    expect(cached.rows).toEqual([{ spend: 5 }]);
+    expect(fetcher.queryMetric).toHaveBeenCalledTimes(1);
+    release({ rows: [], truncated: true } as never);
+    await fresh;
+  });
+  test('Doris concurrency is capped at four across independent BI callers', async () => {
+    let active = 0,
+      peak = 0;
+    const fetcher = {
+      queryMetric: jest.fn(async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        active--;
+        return { rows: [] };
+      }),
+    };
+    const service = new PaidGrowthService(
+      { getBiCache: () => undefined, saveBiCache: () => undefined } as never,
+      fetcher as never,
+      {} as never,
+    );
+    await Promise.all(
+      Array.from({ length: 10 }, (_, n) =>
+        service.part(
+          {
+            dimensions: ['campaign_id'],
+            metrics: ['spend'],
+            filters_json: JSON.stringify({ campaign_id: String(n) }),
+          },
+          true,
+        ),
+      ),
+    );
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+  });
+  test('BI campaign queries and adjustment campaign queries have identical cache inputs', async () => {
+    const part = jest.fn().mockResolvedValue({ rows: [], state: 'fresh' });
+    const bi = new PaidGrowthService({} as never, {} as never, {} as never);
+    bi.part = part;
+    const q = {
+      date: new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Shanghai',
+      }),
+      appId: '11',
+      media: 'facebook',
+    };
+    await bi.day({ ...q, level: 'campaigns' });
+    const inputs = part.mock.calls.map((c) => JSON.stringify(c[0]));
+    part.mockClear();
+    await new AdAdjustmentService(bi).day(q);
+    expect(JSON.stringify(part.mock.calls[0][0])).toBe(inputs[0]);
+    expect(JSON.stringify(part.mock.calls[1][0])).toBe(inputs[1]);
+  });
+  test('server-scoped summaries remain visible but obsolete filter responses cannot leak into a new slice', () => {
+    const d = day();
+    d.scope = { optimizer: 'alice', country: 'IN' };
+    d.granularity = 'campaign';
+    delete d.daily.rows[0].buyer_alias;
+    delete d.daily.rows[0].country_code;
+    const f = { ...filters, optimizer: 'alice', country: 'IN' };
+    expect(adjustmentTree([d], f, d.date)).toHaveLength(1);
+    expect(adjustmentTree([d], { ...f, country: 'PK' }, d.date)).toHaveLength(
+      0,
+    );
+  });
   test('overview totals returned revenue without replacing missing entity values', () => {
     const d = day();
     const m = adjustmentTree([d], filters, d.date)[0].days[d.date];
@@ -228,7 +381,7 @@ describe('advertising adjustment workbench', () => {
     ).toHaveLength(0);
     expect(adjustmentSignal(root, d.date, []).label).toContain('过期');
   });
-  test('service defaults to light summary, preserves AND dimensions and caches history', async () => {
+  test('service defaults to campaign-only summary and shares BI cache; history is reused', async () => {
     const bi = {
       part: jest.fn().mockResolvedValue({ rows: [], state: 'fresh' }),
     };
@@ -244,15 +397,10 @@ describe('advertising adjustment workbench', () => {
     });
     expect(bi.part).toHaveBeenCalledTimes(3);
     for (const call of bi.part.mock.calls)
-      expect(call.slice(1)).toEqual([
-        true,
-        ADJUSTMENT_REFRESH_MS,
-        'adjustment-v2:',
-      ]);
+      expect(call.slice(1)).toEqual([true, ADJUSTMENT_REFRESH_MS, '']);
     const args = bi.part.mock.calls[1][0];
-    expect(args.dimensions).toEqual(
-      expect.arrayContaining(['buyer_alias', 'country_code']),
-    );
+    expect(args.dimensions).not.toContain('buyer_alias');
+    expect(args.dimensions).not.toContain('country_code');
     expect(args.dimensions).not.toContain('creative_id');
     expect(args.dimensions).not.toContain('adgroup_id');
     expect(JSON.parse(args.filters_json)).toEqual({
