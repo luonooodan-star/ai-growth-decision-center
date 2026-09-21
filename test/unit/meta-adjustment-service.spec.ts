@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { MetaAdjustmentService } from '@server/modules/growth-decision/meta-adjustment.service';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import type { MetaAdjustmentSnapshot } from '@shared/meta-adjustment';
+import * as bridge from '@server/modules/growth-decision/meta-local-bridge';
 
 const before: MetaAdjustmentSnapshot = {
   id: '111',
@@ -46,6 +47,28 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
     jest.restoreAllMocks();
   });
   const cookie = 'meta_session=test-session; ignored=secret';
+  test('local bridge uses private auth without browser cookie and rechecks identity', async () => {
+    jest
+      .spyOn(bridge, 'readMetaLocalBridge')
+      .mockReturnValue({
+        origin: 'http://127.0.0.1:18761',
+        secret: 'a'.repeat(64),
+      });
+    const job = await service.preview('', [{ before, status: 'PAUSED' }]);
+    expect(job.ownerId).toBe('123');
+    expect(applied).toBe(0);
+    const options = jest.mocked(axios.post).mock.calls[0][2];
+    expect(options?.headers?.Cookie).toBeUndefined();
+    expect(options?.headers?.Authorization).toBe(`Bearer ${'a'.repeat(64)}`);
+    expect(options?.proxy).toBe(false);
+    jest.mocked(axios.post).mockClear();
+    await service.identity('');
+    await service.identity('');
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(db.listAdjustmentJobs())).not.toContain(
+      'a'.repeat(64),
+    );
+  });
   test('preview never writes Meta; explicit submit is idempotent and audited', async () => {
     const preview = await service.preview(cookie, [
       { before, status: 'PAUSED' },

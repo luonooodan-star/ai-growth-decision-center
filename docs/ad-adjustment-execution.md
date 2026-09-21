@@ -12,6 +12,8 @@
 
 ## 部署（两端都需要）
 
+**公司 Mac 推荐使用新的 [本机桥方案](meta-local-bridge.md)**：决策中心保留 8081，不需要下方的 HTTPS/跨端口 Cookie 配置。下方为旧 HTTPS 模式，保留兼容。
+
 不再嵌入上传工具页面，但仍使用它已有的 Meta 会话及 Graph 客户端。新适配路由单独安装，不改动原 `lib/meta.ts`、上传 API、任务队列、OAuth 回调或 key。
 
 在公司 Mac 决策中心仓库执行：

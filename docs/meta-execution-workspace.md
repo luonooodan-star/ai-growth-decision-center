@@ -1,5 +1,7 @@
 # 广告操作工作区接入
 
+> 公司 Mac 现可使用 [本机桥](meta-local-bridge.md)，无需为决策中心配置 8443 或证书。本文是保留兼容的旧 HTTPS 方案。
+
 > 行内调整已替代下述 iframe 入口。最新使用及适配接口安装流程见 [行内广告调整](ad-adjustment-execution.md)。本文 HTTPS 持久化配置仍适用；原工具的登录与 key 不变。
 
 ## 边界

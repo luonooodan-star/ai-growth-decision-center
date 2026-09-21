@@ -8,6 +8,7 @@ import axios from 'axios';
 import { createHash, randomUUID } from 'node:crypto';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { metaWorkspaceOrigin } from '@shared/meta-workspace';
+import { readMetaLocalBridge } from './meta-local-bridge';
 import {
   validateAdjustmentChange,
   validateAdjustmentTarget,
@@ -52,15 +53,22 @@ export class MetaAdjustmentService {
     return session;
   }
   private async relay<T>(cookie: string, body: object): Promise<T> {
-    const origin = metaWorkspaceOrigin(
-      process.env.GROWTH_META_WORKSPACE_ORIGIN,
-    );
+    const local = readMetaLocalBridge();
+    const origin =
+      local?.origin ||
+      metaWorkspaceOrigin(process.env.GROWTH_META_WORKSPACE_ORIGIN);
     if (!origin)
       throw new BadRequestException('未配置原广告服务地址，无法执行调整');
     try {
       return (
         await axios.post<T>(`${origin}/api/meta/growth-adjustments`, body, {
-          headers: { Cookie: this.cookie(cookie), Origin: origin },
+          headers: local
+            ? {
+                Authorization: `Bearer ${local.secret}`,
+                'Content-Type': 'application/json',
+              }
+            : { Cookie: this.cookie(cookie), Origin: origin },
+          proxy: false,
           timeout: 45000,
           maxRedirects: 0,
           maxContentLength: 2 * 1024 * 1024,
@@ -69,7 +77,11 @@ export class MetaAdjustmentService {
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401)
-          throw new UnauthorizedException('Meta 登录已失效，请重新登录');
+          throw new UnauthorizedException(
+            local
+              ? '本机授权缺失或登录失效，请在原广告工具打开 /growth-center-link 重新授权'
+              : 'Meta 登录已失效，请重新登录',
+          );
         const data = error.response?.data;
         const uncertain = !error.response || data?.uncertain === true;
         const message =
@@ -84,6 +96,15 @@ export class MetaAdjustmentService {
     }
   }
   async identity(cookie: string): Promise<string> {
+    if (readMetaLocalBridge()) {
+      // Shared local authorization can be rebound/revoked: never cache its identity.
+      const result = await this.relay<{ ownerId: string }>(cookie, {
+        action: 'identity',
+      });
+      if (!result.ownerId)
+        throw new UnauthorizedException('无法识别本机授权的 Meta 用户');
+      return result.ownerId;
+    }
     const key = createHash('sha256').update(this.cookie(cookie)).digest('hex');
     const cached = this.identities.get(key);
     if (cached && cached.until > Date.now()) return cached.ownerId;
