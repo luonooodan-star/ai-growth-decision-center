@@ -13,10 +13,127 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { EventEmitter, once } from 'node:events';
-import { install } from '../integrations/meta-uploader/growth-local-bridge.mjs';
+import {
+  install,
+  requestAuthority,
+} from '../integrations/meta-uploader/growth-local-bridge.mjs';
+import {
+  createServer as createHttp2Server,
+  connect as connectHttp2,
+} from 'node:http2';
 import { spawnSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+test('authority supports HTTP/2 without trusting forwarding headers or conflicting Host', () => {
+  assert.equal(
+    requestAuthority({ ':authority': '192.168.3.173:3001' }),
+    '192.168.3.173:3001',
+  );
+  assert.equal(
+    requestAuthority({ host: '192.168.3.173:3001' }),
+    '192.168.3.173:3001',
+  );
+  assert.equal(
+    requestAuthority({ host: 'evil.test', ':authority': '192.168.3.173:3001' }),
+    null,
+  );
+  assert.equal(
+    requestAuthority({ 'x-forwarded-host': '192.168.3.173:3001' }),
+    null,
+  );
+  assert.equal(
+    requestAuthority({ ':authority': ['192.168.3.173:3001'] }),
+    null,
+  );
+});
+
+test('HTTP/2 authorization page accepts :authority and still rejects wrong origin', async () => {
+  let consent;
+  const browser = createHttp2Server((req, res) =>
+    consent(req, res, () => res.end()),
+  );
+  browser.listen(0, '127.0.0.1');
+  await once(browser, 'listening');
+  const port = browser.address().port;
+  const reserve = createServer();
+  reserve.listen(0, '127.0.0.1');
+  await once(reserve, 'listening');
+  const bridgePort = reserve.address().port;
+  await new Promise((r) => reserve.close(r));
+  const dir = mkdtempSync(join(tmpdir(), 'growth-h2-'));
+  const file = join(dir, 'config.json');
+  writeFileSync(
+    file,
+    JSON.stringify({
+      origin: `http://127.0.0.1:${bridgePort}`,
+      workspaceOrigin: `https://127.0.0.1:${port}`,
+      secret: 'c'.repeat(64),
+    }),
+    { mode: 0o600 },
+  );
+  const middlewares = () => {};
+  middlewares.use = (fn) => {
+    consent = fn;
+  };
+  const bridge = install(
+    {
+      middlewares,
+      httpServer: new EventEmitter(),
+      config: { logger: { error() {} } },
+    },
+    file,
+  );
+  await once(bridge, 'listening');
+  const client = connectHttp2(`http://127.0.0.1:${port}`);
+  const request = (headers, body) =>
+    new Promise((resolve, reject) => {
+      const req = client.request({
+        ':path': '/growth-center-link',
+        ...headers,
+      });
+      let status,
+        text = '';
+      req.on('response', (h) => {
+        status = h[':status'];
+      });
+      req.on('data', (chunk) => {
+        text += chunk;
+      });
+      req.on('end', () => resolve({ status, text }));
+      req.on('error', reject);
+      req.end(body);
+    });
+  try {
+    const page = await request({ ':method': 'GET' });
+    assert.equal(page.status, 200);
+    assert.match(page.text, /授权当前登录/);
+    assert.equal(
+      (await request({ ':method': 'GET', ':authority': 'evil.test' })).status,
+      403,
+    );
+    const nonce = page.text.match(/name="nonce" value="([a-f0-9]+)"/)[1];
+    const body = new URLSearchParams({ nonce, action: 'bind' }).toString();
+    const headers = {
+      ':method': 'POST',
+      'content-type': 'application/x-www-form-urlencoded',
+      cookie: 'meta_session=h2-test',
+    };
+    assert.equal(
+      (await request({ ...headers, origin: 'https://evil.test' }, body)).status,
+      403,
+    );
+    assert.equal(
+      (await request({ ...headers, origin: `https://127.0.0.1:${port}` }, body))
+        .status,
+      200,
+    );
+  } finally {
+    client.close();
+    await new Promise((r) => browser.close(r));
+    await new Promise((r) => bridge.close(r));
+  }
+});
 
 test('installer is repeatable and preserves original credential implementation', () => {
   const base = mkdtempSync(join(tmpdir(), 'growth-bridge-install-'));

@@ -14,6 +14,20 @@ const equal = (a, b) => {
     y = Buffer.from(b || '');
   return x.length === y.length && timingSafeEqual(x, y);
 };
+// HTTPS Vite can negotiate HTTP/2. Its authority is not necessarily duplicated
+// into Host; never substitute client-supplied forwarding headers for either.
+export function requestAuthority(headers) {
+  const host = headers.host;
+  const authority = headers[':authority'];
+  if (
+    (host !== undefined && typeof host !== 'string') ||
+    (authority !== undefined && typeof authority !== 'string')
+  )
+    return null;
+  if (host !== undefined && authority !== undefined && host !== authority)
+    return null;
+  return authority ?? host ?? null;
+}
 export function growthLocalBridge(configFile) {
   return {
     name: 'growth-local-bridge',
@@ -55,7 +69,7 @@ export function install(server, configFile) {
   // Explicit browser consent, served only by the existing HTTPS uploader.
   server.middlewares.use((req, res, next) => {
     if (req.url?.split('?')[0] !== '/growth-center-link') return next();
-    if (req.headers.host !== workspace.host)
+    if (requestAuthority(req.headers) !== workspace.host)
       return reply(res, 403, { error: '请使用原工具配置地址打开授权页' });
     if (req.method === 'GET') {
       res.writeHead(200, {

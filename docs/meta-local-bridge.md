@@ -41,4 +41,5 @@ node scripts/company-mac/setup-meta-local-bridge.mjs /Users/toufanga/Downloads/w
 
 - 单元测试覆盖配置的回环限制、文件权限。
 - `node --test test/meta-local-bridge.test.mjs` 使用临时本机模拟服务验证鉴权、明确授权、撤销和请求转交。
+- 授权页兼容 HTTP/1.1 `Host` 和 HTTP/2 `:authority`；两者冲突时拒绝，不能使用 `X-Forwarded-Host` 绕过校验。回归测试覆盖真实本机 HTTP/2 请求、错误地址、跨站 POST。
 - 原工具临时副本的 Vite/Workers 联调已验证：模拟加密会话由本机桥送达实际适配 API，并被原 `getMetaToken` 拒绝为 401；未使用真实会话、未调用 Meta、未修改真实广告。生产 Meta 登录和实际权限需安装后验收。
