@@ -1,6 +1,7 @@
 # 每周优化师实操与产品 Skill 复盘
 
 本任务只读取证据并提交候选，禁止操作广告、修改正式规则或直接发布产品知识。
+操作主来源为广告调整页面成功执行的任务，服务端直接投影为 operations，不需要调用 Meta MCP。operations 中 source=adjustment_page 时，capturedEvidence 是提交前冻结的 Doris 系列累计快照及系统建议；必须核对 fetchedAt、dataDate、qualityIssues，不能把过期/缺失快照当实时依据。actorId 是授权 Meta 身份，不一定能区分共用身份的优化师。历史导入记录仅作补充；不知道的后台操作不能声称已覆盖。失败/结果不确定的调整不作为已执行措施证据。
 先执行项目 scripts/company-mac/codex-worker.mjs check；仅当 tools 包含 claim_weekly_skill_review 且本机凭据桥支持 claim-weekly 时继续，否则报告待部署，不改原分析任务。
 
 执行 node scripts/company-mac/codex-worker.mjs claim-weekly。job=null 时结束，无任何结果变化则保持安静。一次只领取一个产品周报；完成或标记失败后再领取下一个，每次最多处理 10 份，有剩余时报告待续。服务按上海时间上一完整自然周去重，同周同产品不重复创建。

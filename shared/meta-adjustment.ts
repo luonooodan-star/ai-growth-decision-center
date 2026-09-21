@@ -20,6 +20,14 @@ export interface MetaAdjustmentChange {
   dailyBudget?: string;
 }
 export interface MetaAdjustmentItem extends MetaAdjustmentChange {
+  /** Frozen server-side immediately before apply; never reconstructed from later data. */
+  evidence?: {
+    capturedAt: string;
+    productId?: string;
+    baseline?: import('./api.interface').CampaignDailySnapshot;
+    recommendation?: import('./skill-review').SavedCampaignRecommendation;
+    note: string;
+  };
   startedAt?: string;
   completedAt?: string;
   state: 'pending' | 'running' | 'succeeded' | 'failed' | 'uncertain';

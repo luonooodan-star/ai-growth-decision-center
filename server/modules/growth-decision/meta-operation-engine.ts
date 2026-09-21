@@ -135,6 +135,9 @@ export function normalizeMetaOperation(value: unknown): MetaOperation {
     category = 'adjust';
   return {
     ...input,
+    source: 'meta_import',
+    adjustmentJobId: undefined,
+    capturedEvidence: undefined,
     id,
     occurredAt,
     importedAt: new Date().toISOString(),
@@ -222,7 +225,10 @@ export function reviewMetaOperation(
     before,
     after,
     intervening,
-    summary,
+    summary:
+      (operation.source === 'adjustment_page'
+        ? `${operation.capturedEvidence?.note || '历史调整未留存提交时 Doris 快照，不倒填操作前证据。'} `
+        : '') + summary,
     dataTimezone: 'Asia/Shanghai',
     comparisonScope: 'campaign',
   };

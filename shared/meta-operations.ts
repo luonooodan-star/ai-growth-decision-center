@@ -38,6 +38,9 @@ export interface MetaOperationInput {
   raw: string;
 }
 export interface MetaOperation extends MetaOperationInput {
+  source?: 'adjustment_page' | 'meta_import';
+  adjustmentJobId?: string;
+  capturedEvidence?: import('./meta-adjustment').MetaAdjustmentItem['evidence'];
   /** Current entity settings; never interpreted as settings at occurredAt. */
   currentTargets?: MetaTargetSummary;
   id: string;

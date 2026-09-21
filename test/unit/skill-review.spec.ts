@@ -94,6 +94,48 @@ describe('weekly operation learning', () => {
       end: '2026-01-11',
     });
   });
+  it('builds a weekly review from successful local adjustments without MCP import', () => {
+    const p = db.listProducts()[0];
+    const before = {
+      id: '22',
+      campaignId: '22',
+      accountId: '11',
+      level: 'campaign' as const,
+      name: 'local',
+      status: 'ACTIVE',
+      effectiveStatus: 'ACTIVE',
+      currency: 'USD',
+      dailyBudget: '10000',
+      budgetEditable: true,
+      budgetReason: '',
+    };
+    db.saveAdjustmentJob({
+      id: 'local-job',
+      ownerId: '33',
+      createdAt: '2026-01-08T01:00:00Z',
+      state: 'completed',
+      items: [
+        {
+          before,
+          after: { ...before, dailyBudget: '15000' },
+          dailyBudget: '150',
+          state: 'succeeded',
+          completedAt: '2026-01-08T01:01:00Z',
+          evidence: {
+            capturedAt: '2026-01-08T01:00:00Z',
+            productId: p.id,
+            note: 'no baseline',
+          },
+        },
+      ],
+    });
+    expect(db.listMetaOperations()).toEqual([]);
+    expect(meta.overview().items[0].operation.source).toBe('adjustment_page');
+    const report = service.claim(now).job!;
+    expect(report.evidence.operations).toHaveLength(1);
+    expect(report.evidence.operations[0].decision.state).toBe('unknown');
+    expect(report.evidence.operations[0].operation.id).toContain('local-job');
+  });
   it('records a real pre-operation conflict once and preserves optional human rationale', () => {
     seed();
     const review = meta.overview().items[0];

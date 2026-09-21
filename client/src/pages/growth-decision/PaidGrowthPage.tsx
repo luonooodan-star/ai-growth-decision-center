@@ -13,6 +13,8 @@ import { biRows } from '@shared/paid-growth';
 import { verifiedNoSpend } from '@shared/campaign-visibility';
 import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
+import { BiTrend } from './BiTrend';
+import { biSummary } from '@shared/bi-summary';
 import {
   biMetricSignal,
   type MetricStandardProduct,
@@ -127,6 +129,8 @@ function DateFilter({
 }
 
 export default function PaidGrowthPage() {
+  const [trendScope, setTrendScope] =
+    useState<Parameters<typeof BiTrend>[0]['scope']>(null);
   const [expectedDates, setExpectedDates] = useState<string[]>([]);
   const [params, setParams] = useSearchParams();
   const [products, setProducts] = useState<BiProduct[]>([]);
@@ -213,6 +217,24 @@ export default function PaidGrowthPage() {
     setNotice('');
     setWarming('');
     setDays([]);
+    setTrendScope((previous) => {
+      const next = {
+        start: format(start, 'yyyy-MM-dd'),
+        end: format(end, 'yyyy-MM-dd'),
+        appId: appId === 'all' ? undefined : appId,
+        media: media === 'all' ? undefined : media,
+        refresh,
+        revision: Date.now(),
+      };
+      return !refresh &&
+        previous &&
+        previous.start === next.start &&
+        previous.end === next.end &&
+        previous.appId === next.appId &&
+        previous.media === next.media
+        ? previous
+        : next;
+    });
     setExpectedDates(
       Array.from({ length: dayCount }, (_, i) =>
         format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd'),
@@ -310,6 +332,18 @@ export default function PaidGrowthPage() {
       setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
   };
   const rows = useMemo(() => biRows(days), [days]);
+  const summary = useMemo(() => biSummary(days), [days]);
+  const trendStandards = standards.filter(
+    (p) =>
+      String(p.dorisAppId) === trendScope?.appId &&
+      (!trendScope?.media ||
+        p.channel.toLowerCase() === trendScope.media.toLowerCase()),
+  );
+  const trendTarget =
+    trendStandards.length === 1
+      ? trendStandards[0].metrics.find((m) => m.key === 'd0_roas')
+          ?.standardValue
+      : undefined;
   const noSpend = useMemo(
     () =>
       days[0]?.level === 'campaigns'
@@ -590,11 +624,12 @@ export default function PaidGrowthPage() {
           筛选条件已变化，下方仍是上一次查询，请点击查询数据。
         </p>
       )}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ['消耗 ($)', total('spend')],
           ['Adjust 安装', total('installs')],
           ['当前 D0 收入 ($)', total('revenue')],
+          ['当前 D0 ROAS (%)', summary.d0Roas],
         ].map(([label, value]) => (
           <section
             key={String(label)}
@@ -612,6 +647,15 @@ export default function PaidGrowthPage() {
           </section>
         ))}
       </div>
+      <BiTrend
+        scope={trendScope}
+        target={trendTarget === undefined ? null : trendTarget * 100}
+        wings={products.some(
+          (p) =>
+            String(p.appId) === trendScope?.appId &&
+            /wings\s*lite/i.test(p.name),
+        )}
+      />
       {issues.length > 0 && (
         <details className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <summary className="cursor-pointer font-medium">

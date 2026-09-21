@@ -27,7 +27,11 @@ describe('fetch publication and restart recovery', () => {
     directory = mkdtempSync(join(tmpdir(), 'fetch-publication-'));
     process.env.GROWTH_DATABASE_PATH = join(directory, 'test.sqlite');
     db = new LocalDatabaseService();
-    service = new GrowthDataFetchService(db, new GrowthDecisionService(db), new MetaOperationsService(db));
+    service = new GrowthDataFetchService(
+      db,
+      new GrowthDecisionService(db),
+      new MetaOperationsService(db),
+    );
   });
   afterEach(() => {
     service.onModuleDestroy();
@@ -98,7 +102,7 @@ describe('fetch publication and restart recovery', () => {
     });
   }
   it.each(['cohort', 'ad'] as const)(
-    'does not overwrite an older complete snapshot when %s fails',
+    'isolates %s failures without discarding validated campaign metrics',
     async (broken) => {
       const product = db.listProducts()[0];
       const key = campaignHash([product.id, 'account-1', 'campaign-1']);
@@ -122,9 +126,17 @@ describe('fetch publication and restart recovery', () => {
       const retained = db
         .listCampaignSnapshots(product.id)
         .find((s) => s.key === key)!;
-      expect(retained.metrics.spend).toBe(42);
-      expect(retained.fetchedAt).toBe('2026-01-01T00:00:00Z');
-      expect(retained.qualityIssues.join('')).toContain('补齐未完成');
+      if (broken === 'cohort') {
+        expect(retained.metrics.spend).toBe(42);
+        expect(retained.fetchedAt).toBe('2026-01-01T00:00:00Z');
+        expect(retained.qualityIssues.join('')).toContain('补齐未完成');
+      } else {
+        expect(retained.metrics.spend).toBe(50);
+        expect(retained.metrics.d0_roas).toBe(0.8);
+        expect(retained.qualityIssues).toEqual([]);
+        expect(retained.accountId).toBe('account-1');
+        expect(db.listCampaignSnapshots(product.id)).toHaveLength(1);
+      }
     },
   );
   it('publishes validated data and clears a previous repair blocker', async () => {
@@ -159,7 +171,11 @@ describe('fetch publication and restart recovery', () => {
     });
     db.onModuleDestroy();
     db = new LocalDatabaseService();
-    service = new GrowthDataFetchService(db, new GrowthDecisionService(db), new MetaOperationsService(db));
+    service = new GrowthDataFetchService(
+      db,
+      new GrowthDecisionService(db),
+      new MetaOperationsService(db),
+    );
     service.onModuleInit();
     expect(db.getFetchCheckpoint('saved-part')?.rows).toEqual([{ a: 1 }]);
     expect(db.listFetchRuns(product.id)[0].status).toBe('partial');

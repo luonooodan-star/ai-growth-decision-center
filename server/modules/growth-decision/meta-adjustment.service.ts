@@ -227,6 +227,50 @@ export class MetaAdjustmentService {
     for (const item of job.items) {
       item.state = 'running';
       item.startedAt = new Date().toISOString();
+      const matches = this.db
+        .listProducts()
+        .filter((p) => p.channel.toLowerCase() === 'facebook')
+        .map((p) => ({
+          product: p,
+          snapshots: this.db
+            .listCampaignSnapshots(p.id)
+            .filter(
+              (s) =>
+                s.accountId === item.before.accountId &&
+                s.campaignId === item.before.campaignId &&
+                Date.parse(s.fetchedAt) <= Date.parse(item.startedAt!),
+            ),
+        }))
+        .filter((p) => p.snapshots.length);
+      const match = matches.length === 1 ? matches[0] : undefined;
+      const baseline = match?.snapshots.sort(
+        (a, b) =>
+          b.fetchedAt.localeCompare(a.fetchedAt) ||
+          b.dataDate.localeCompare(a.dataDate),
+      )[0];
+      const recommendation = match
+        ? this.db
+            .listCampaignRecommendations()
+            .filter(
+              (r) =>
+                r.productId === match.product.id &&
+                r.card.snapshot.accountId === item.before.accountId &&
+                r.card.snapshot.campaignId === item.before.campaignId &&
+                Date.parse(r.createdAt) <= Date.parse(item.startedAt!) &&
+                Date.parse(r.card.snapshot.fetchedAt) <=
+                  Date.parse(item.startedAt!),
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+        : undefined;
+      item.evidence = {
+        capturedAt: item.startedAt,
+        productId: match?.product.id,
+        baseline,
+        recommendation,
+        note: baseline
+          ? '提交时已保存的 Doris 系列累计快照；不是操作时刻的实时增量，需核对数据日、抓取时间和质量。'
+          : '提交时没有唯一匹配的 Doris 系列快照，保留缺口，禁止用未来回填数据冒充操作前快照。',
+      };
       this.db.saveAdjustmentJob(job);
       try {
         const result = await this.relay<{ after: MetaAdjustmentSnapshot }>(

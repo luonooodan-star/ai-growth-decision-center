@@ -48,12 +48,10 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
   });
   const cookie = 'meta_session=test-session; ignored=secret';
   test('local bridge uses private auth without browser cookie and rechecks identity', async () => {
-    jest
-      .spyOn(bridge, 'readMetaLocalBridge')
-      .mockReturnValue({
-        origin: 'http://127.0.0.1:18761',
-        secret: 'a'.repeat(64),
-      });
+    jest.spyOn(bridge, 'readMetaLocalBridge').mockReturnValue({
+      origin: 'http://127.0.0.1:18761',
+      secret: 'a'.repeat(64),
+    });
     const job = await service.preview('', [{ before, status: 'PAUSED' }]);
     expect(job.ownerId).toBe('123');
     expect(applied).toBe(0);
@@ -81,6 +79,9 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
     const saved = db.listAdjustmentJobs()[0];
     expect(saved.state).toBe('completed');
     expect(saved.items[0].after?.status).toBe('PAUSED');
+    expect(saved.items[0].evidence?.capturedAt).toBeDefined();
+    expect(saved.items[0].evidence?.baseline).toBeUndefined();
+    expect(saved.items[0].evidence?.note).toContain('没有唯一匹配');
     expect(JSON.stringify(saved)).not.toContain('test-session');
   });
   test('rejects no-session and duplicate targets before execution', async () => {

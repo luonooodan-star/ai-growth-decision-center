@@ -32,6 +32,7 @@ import { LocalDatabaseService } from '@server/database/local-database.service';
 import { GrowthDecisionService } from './growth-decision.service';
 import { MetaOperationsService } from './meta-operations.service';
 import { buildCampaignSnapshots } from './campaign-snapshots';
+import { campaignFetchQuality } from './campaign-fetch-quality';
 import { DorisCompleteReader } from './doris-complete-reader';
 import { DorisQueryGate } from './doris-query-gate';
 import { campaignMetric } from './campaign-decision-engine';
@@ -447,7 +448,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         Number(cohort.row_count || 0) +
         Number(adDelivery.row_count || 0);
       const rowsFetched = metricRowsFetched + accountRowsFetched;
-      const unsafeDates = new Set((run.gaps || []).map(gap => gap.dataDate));
+      const sourceQuality = campaignFetchQuality(run.gaps || []);
+      const unsafeDates = sourceQuality.primary;
       const deliveryRows: DorisRow[] = (delivery.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'report_date') || ''));
       const cohortRows: DorisRow[] = (cohort.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'install_date') || ''));
       const adDeliveryRows: DorisRow[] = adDelivery.rows || [];
@@ -474,7 +476,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       for (const snapshot of buildCampaignSnapshots(
         product.id, deliveryRows, cohortRows, adDeliveryRows,
         new Date().toISOString(), degradationNotes,
-        { channel: product.channel, entities: this.database.listMetaEntities() },
+        { channel: product.channel, entities: [...this.database.listMetaEntities(), ...this.database.listCampaignSnapshots(product.id)
+          .filter(s => !!s.accountId).map(s => ({accountId:s.accountId!,campaignId:s.campaignId,id:s.campaignId,
+            level:'campaign' as const,name:s.campaignName,fetchedAt:s.fetchedAt}))] },
       )) {
         this.database.saveCampaignSnapshot(snapshot);
       }

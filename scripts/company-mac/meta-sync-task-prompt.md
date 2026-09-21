@@ -1,4 +1,6 @@
-# Meta 操作与目标实体同步（在 Codex 分析任务领取前执行）
+# Meta 目标实体同步（可选，与 Skill 周复盘解耦）
+
+广告调整页成功执行的操作已由服务端自动留档并接入复盘。不要再查询 activity logs，也不要把本步骤作为领取分析或 Skill 周复盘的前置条件。只在需要补齐优化目标/事件等实体属性时执行以下只读同步；历史日志导入接口仅保留兼容。
 
 只读同步本项目产品中心已登记且近 30 天有 Doris 系列快照的 Facebook 账户。
 不再固定为单个试点账户。不得扩展到项目清单之外的广告账户，不修改广告、预算、状态、目标或受众。
@@ -25,9 +27,9 @@
 - 对 lastFetchedAt 已超过 24 小时的清单重新读取；缺字段仍应补查，不要仅靠更新时间跳过。
 - 即便日志查询失败，已成功取得的实体也应通过 operations:[] 独立导入，避免目标字段被日志失败拖住。
 
-## 日志与导入
+## 实体导入（不读取操作日志）
 
-5. 对本页账户读取近 7 天 activity logs，limit=1000。饱和时按时间二分；每账户最多 12 次日志请求，且计入总预算。不能完整读取时报告缺口，不宣称成功。仅保留可定位到本页项目系列的日志；其他账户内对象不扩展任务范围。
+5. 不查询 activity logs。日志文件固定使用空数组；只导入上面读取成功的实体属性。
 6. 日志数组写入 /private/tmp/codex-growth-meta-logs.json；原始实体写入 /private/tmp/codex-growth-meta-entities.json，结构 {"campaign":[],"adset":[],"ad":[]}。每账户独立处理。ID 保持字符串，不从浮点 extra_data 恢复长 ID。
 7. 执行 node scripts/company-mac/normalize-meta-operations.mjs <accountId> <accountTimezone> <日志文件> <实体文件> /private/tmp/codex-growth-meta-batch.json。脚本按条数/大小分批；对返回 files 逐个执行 node scripts/company-mac/codex-worker.mjs import-meta <文件路径>。允许没有日志、只有实体的批次。
 8. 导入完成重新读取 meta-plan，核对目标覆盖；不得只凭 import 的 inserted=0 断言无任务（entities 导入也可能成功）。部分失败保留游标并报告具体缺口。之后继续原有异常分析任务。

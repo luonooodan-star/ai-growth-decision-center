@@ -18,6 +18,10 @@ import { operationDecisionEvidence } from './operation-decision-evidence';
 import { buildCampaignCard } from './campaign-decision-engine';
 import { reconcileCampaignHistory } from './campaign-history';
 import { campaignHash } from './campaign-snapshots';
+import {
+  adjustmentOperations,
+  mergeOperationSources,
+} from './adjustment-operations';
 
 @Injectable()
 export class MetaOperationsService {
@@ -30,32 +34,79 @@ export class MetaOperationsService {
     const entities = this.entities();
     const targets = new Map<string, MetaSyncPlan['targets'][number]>();
     const unresolved = new Set<string>();
-    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    for (const product of this.db.listProducts().filter(p => p.status === 'active' && p.channel.toLowerCase() === 'facebook')) {
+    const cutoff = new Date(Date.now() - 30 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    for (const product of this.db
+      .listProducts()
+      .filter(
+        (p) => p.status === 'active' && p.channel.toLowerCase() === 'facebook',
+      )) {
       for (const s of this.db.listCampaignSnapshots(product.id)) {
         if (s.dataDate < cutoff || !/^\d+$/.test(s.campaignId)) continue;
-        const owners = [...new Set(entities.filter(e => e.campaignId === s.campaignId).map(e => e.accountId))];
-        const accountId = s.accountId || (owners.length === 1 ? owners[0] : undefined);
-        if (!accountId || !/^\d+$/.test(accountId)) { unresolved.add(s.campaignId); continue; }
+        const owners = [
+          ...new Set(
+            entities
+              .filter((e) => e.campaignId === s.campaignId)
+              .map((e) => e.accountId),
+          ),
+        ];
+        const accountId =
+          s.accountId || (owners.length === 1 ? owners[0] : undefined);
+        if (!accountId || !/^\d+$/.test(accountId)) {
+          unresolved.add(s.campaignId);
+          continue;
+        }
         const key = `${accountId}:${s.campaignId}`;
-        const matching = entities.filter(e => e.accountId === accountId && e.campaignId === s.campaignId);
+        const matching = entities.filter(
+          (e) => e.accountId === accountId && e.campaignId === s.campaignId,
+        );
         const summary = metaTargets(matching);
         const item = targets.get(key) || {
-          productId: product.id, accountId, campaignId: s.campaignId,
-          adsetIds: [], adIds: [], lastFetchedAt: matching.map(e => e.fetchedAt).sort()[0],
-          missingFields: [!summary.objectives.length ? 'objective' : '', !summary.optimizationGoals.length ? 'optimization_goal' : '', summary.eventStatus === 'pending' ? 'promoted_object' : ''].filter(Boolean),
+          productId: product.id,
+          accountId,
+          campaignId: s.campaignId,
+          adsetIds: [],
+          adIds: [],
+          lastFetchedAt: matching.map((e) => e.fetchedAt).sort()[0],
+          missingFields: [
+            !summary.objectives.length ? 'objective' : '',
+            !summary.optimizationGoals.length ? 'optimization_goal' : '',
+            summary.eventStatus === 'pending' ? 'promoted_object' : '',
+          ].filter(Boolean),
         };
-        for (const [dimension, field] of [['adset', 'adsetIds'], ['ad', 'adIds']] as const)
-          item[field] = [...new Set([...item[field], ...s.breakdowns.filter(b => b.dimension === dimension && /^\d+$/.test(b.value)).map(b => b.value)])].sort();
+        for (const [dimension, field] of [
+          ['adset', 'adsetIds'],
+          ['ad', 'adIds'],
+        ] as const)
+          item[field] = [
+            ...new Set([
+              ...item[field],
+              ...s.breakdowns
+                .filter(
+                  (b) => b.dimension === dimension && /^\d+$/.test(b.value),
+                )
+                .map((b) => b.value),
+            ]),
+          ].sort();
         targets.set(key, item);
       }
     }
     // Stable ID pagination so importing a page cannot move the next page beneath the cursor.
-    const all = [...targets.values()].sort((a, b) => `${a.accountId}:${a.campaignId}`.localeCompare(`${b.accountId}:${b.campaignId}`));
+    const all = [...targets.values()].sort((a, b) =>
+      `${a.accountId}:${a.campaignId}`.localeCompare(
+        `${b.accountId}:${b.campaignId}`,
+      ),
+    );
     const start = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
-    return { generatedAt: new Date().toISOString(), total: all.length, offset: start,
+    return {
+      generatedAt: new Date().toISOString(),
+      total: all.length,
+      offset: start,
       nextOffset: start + 20 < all.length ? start + 20 : null,
-      targets: all.slice(start, start + 20), unresolvedCampaigns: unresolved.size };
+      targets: all.slice(start, start + 20),
+      unresolvedCampaigns: unresolved.size,
+    };
   }
 
   captureSnapshots(productId: string): void {
@@ -159,9 +210,14 @@ export class MetaOperationsService {
           (k) =>
             value[k] === undefined ||
             (typeof value[k] === 'string' && String(value[k]).length <= 500),
-        )
-        || (value.adsetId !== undefined && (typeof value.adsetId !== 'string' || !/^\d{1,40}$/.test(value.adsetId)))
-        || (value.conversionEventStatus !== undefined && !['returned', 'not_configured', 'unsupported'].includes(String(value.conversionEventStatus)))
+        ) ||
+        (value.adsetId !== undefined &&
+          (typeof value.adsetId !== 'string' ||
+            !/^\d{1,40}$/.test(value.adsetId))) ||
+        (value.conversionEventStatus !== undefined &&
+          !['returned', 'not_configured', 'unsupported'].includes(
+            String(value.conversionEventStatus),
+          ))
       )
         throw new BadRequestException('实体 ID、时间或目标字段无效');
       if (value.level === 'campaign' && value.id !== value.campaignId)
@@ -191,7 +247,10 @@ export class MetaOperationsService {
       id: p.id,
       snapshots: this.db.listCampaignSnapshots(p.id),
     }));
-    return this.db.listMetaOperations().map((original) => {
+    return mergeOperationSources(
+      adjustmentOperations(this.db.listAdjustmentJobs()),
+      this.db.listMetaOperations(),
+    ).map((original) => {
       const entity = entities.find(
         (e) => e.accountId === original.accountId && e.id === original.objectId,
       );
@@ -209,11 +268,23 @@ export class MetaOperationsService {
       );
       return {
         ...o,
-        currentTargets: metaTargets(entities.filter(e => e.accountId === o.accountId && e.campaignId === o.campaignId &&
-          (e.level === 'campaign' || o.objectLevel === 'campaign' || e.id === o.objectId ||
-            (o.objectLevel === 'ad' && e.id === entity?.adsetId)))),
-        linked: matches.length === 1,
-        productId: matches.length === 1 ? matches[0].id : undefined,
+        currentTargets: metaTargets(
+          entities.filter(
+            (e) =>
+              e.accountId === o.accountId &&
+              e.campaignId === o.campaignId &&
+              (e.level === 'campaign' ||
+                o.objectLevel === 'campaign' ||
+                e.id === o.objectId ||
+                (o.objectLevel === 'ad' && e.id === entity?.adsetId)),
+          ),
+        ),
+        linked: original.capturedEvidence?.productId
+          ? true
+          : matches.length === 1,
+        productId:
+          original.capturedEvidence?.productId ||
+          (matches.length === 1 ? matches[0].id : undefined),
       };
     });
   }
@@ -255,8 +326,12 @@ export class MetaOperationsService {
     if (stored) return stored;
     const result = operationDecisionEvidence(
       op,
-      this.db.listDecisionRecords(10000),
-      this.db.listCampaignRecommendations(),
+      op.source === 'adjustment_page' ? [] : this.db.listDecisionRecords(10000),
+      op.source === 'adjustment_page'
+        ? op.capturedEvidence?.recommendation
+          ? [op.capturedEvidence.recommendation]
+          : []
+        : this.db.listCampaignRecommendations(),
     );
     if (op.linked) this.db.saveOperationEvidence(result);
     return result;

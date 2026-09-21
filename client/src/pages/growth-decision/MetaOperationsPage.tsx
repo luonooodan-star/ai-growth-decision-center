@@ -68,7 +68,8 @@ export default function MetaOperationsPage() {
         <div>
           <h1 className="text-2xl font-semibold">操作与效果复盘</h1>
           <p className="mt-2 text-sm text-slate-500">
-            Meta 实际操作 × Doris 日级快照。自动登记，只读跟踪，不修改投放。
+            广告调整页执行记录 × 提交时快照 × Doris 后续结果。自动留档，无需 MCP
+            补录。
           </p>
         </div>
         <Button
@@ -88,8 +89,9 @@ export default function MetaOperationsPage() {
       <p className="rounded-xl border bg-white p-4 text-sm text-slate-600">
         {data?.lastImportAt
           ? `最近接收 ${new Date(data.lastImportAt).toLocaleString('zh-CN')} · 共 ${data.total} 条`
-          : '尚未接收 Meta 操作日志。需在已连接 Meta MCP 的 Codex 同步任务中启用操作导入。'}{' '}
-        刷新只读取已同步记录，不代表已连接 Meta。调整当日不参与前后完整日对照。
+          : '暂无成功执行的调整记录。通过广告调整页提交并成功执行后自动进入复盘。'}{' '}
+        历史导入记录保留；在 Meta
+        后台直接操作的变更不会自动记录。调整当日不参与前后完整日对照。
       </p>
       <div className="flex flex-wrap gap-2">
         <Link
@@ -163,17 +165,61 @@ export default function MetaOperationsPage() {
                   `（${op.changePct > 0 ? '+' : ''}${op.changePct.toFixed(1)}%）`}
               </p>
               <p className="text-xs text-slate-500">
-                原始数值单位以 Meta 日志为准；预算未转换为美元。目标：
+                来源：
+                {op.source === 'adjustment_page'
+                  ? '广告调整页'
+                  : '历史 Meta 导入'}
+                。预算为 Meta 最小货币单位。目标：
                 {op.objective || '未返回'} · 优化：
                 {op.optimizationGoal || '日志未记录'} · 事件：
                 {op.conversionEvent || '日志未记录'}
               </p>
-              {op.currentTargets && <p className="mt-2 text-xs text-slate-500">
-                当前设置（非操作时历史值）：系列目标 {op.currentTargets.objectives.join(' / ') || '待同步'} ·
-                优化目标 {op.currentTargets.optimizationGoals.join(' / ') || '待同步'} ·
-                转化事件 {op.currentTargets.conversionEvents.join(' / ') || metaEventStatusLabel[op.currentTargets.eventStatus]}
-                {op.currentTargets.fetchedAt && ` · 获取于 ${new Date(op.currentTargets.fetchedAt).toLocaleString('zh-CN')}`}
-              </p>}
+              {op.source === 'adjustment_page' && (
+                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+                  <p>
+                    提交时证据：
+                    {op.capturedEvidence?.note ||
+                      '历史任务未保存 Doris 快照，不倒填。'}
+                  </p>
+                  {op.capturedEvidence?.baseline && (
+                    <p className="mt-1">
+                      数据日 {op.capturedEvidence.baseline.dataDate} · 抓取于{' '}
+                      {new Date(
+                        op.capturedEvidence.baseline.fetchedAt,
+                      ).toLocaleString('zh-CN')}{' '}
+                      · 消耗 {op.capturedEvidence.baseline.metrics.spend ?? '—'}{' '}
+                      · D0 ROAS{' '}
+                      {op.capturedEvidence.baseline.metrics.d0_roas ===
+                      undefined
+                        ? '—'
+                        : (
+                            op.capturedEvidence.baseline.metrics.d0_roas * 100
+                          ).toFixed(2) + '%'}
+                      {op.capturedEvidence.baseline.qualityIssues.length
+                        ? ' · ' +
+                          op.capturedEvidence.baseline.qualityIssues.join('；')
+                        : ''}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs">
+                    操作者按授权 Meta
+                    身份留档；多人共用登录时无法区分实际操作人员。
+                  </p>
+                </div>
+              )}
+              {op.currentTargets && (
+                <p className="mt-2 text-xs text-slate-500">
+                  当前设置（非操作时历史值）：系列目标{' '}
+                  {op.currentTargets.objectives.join(' / ') || '待同步'} ·
+                  优化目标{' '}
+                  {op.currentTargets.optimizationGoals.join(' / ') || '待同步'}{' '}
+                  · 转化事件{' '}
+                  {op.currentTargets.conversionEvents.join(' / ') ||
+                    metaEventStatusLabel[op.currentTargets.eventStatus]}
+                  {op.currentTargets.fetchedAt &&
+                    ` · 获取于 ${new Date(op.currentTargets.fetchedAt).toLocaleString('zh-CN')}`}
+                </p>
+              )}
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
                 {review.summary}
               </p>
