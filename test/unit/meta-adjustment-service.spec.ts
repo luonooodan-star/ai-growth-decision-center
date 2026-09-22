@@ -133,6 +133,39 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
       'a'.repeat(64),
     );
   });
+  test('campaign ownership uses the current personal identity without cookie fallback', async () => {
+    const local = jest
+      .spyOn(bridge, 'readMetaLocalBridge')
+      .mockReturnValue(undefined);
+    await expect(service.campaignAccounts(['111'])).rejects.toThrow(
+      '个人 Meta',
+    );
+    expect(axios.post).not.toHaveBeenCalled();
+    local.mockReturnValue({
+      origin: 'http://127.0.0.1:18761',
+      secret: 'a'.repeat(64),
+    });
+    jest.mocked(centerIdentity.getStore).mockReturnValue('fjx');
+    jest
+      .mocked(axios.post)
+      .mockResolvedValueOnce({
+        data: {
+          ownerId: 'fjx-owner',
+          campaigns: [{ campaignId: '111', accountId: '222' }],
+          unavailable: [],
+        },
+        headers: { 'x-growth-identity-version': '2' },
+      });
+    expect((await service.campaignAccounts(['111'])).ownerId).toBe('fjx-owner');
+    const request = jest.mocked(axios.post).mock.calls[0];
+    expect(request[1]).toEqual({
+      action: 'campaign-accounts',
+      campaignIds: ['111'],
+    });
+    expect(request[2]?.headers?.['X-Growth-User']).toBe('fjx');
+    expect(request[2]?.headers?.Cookie).toBeUndefined();
+    expect(db.listAdjustmentJobs()).toEqual([]);
+  });
   test('preview never writes Meta; explicit submit is idempotent and audited', async () => {
     const preview = await service.preview(cookie, [
       { before, status: 'PAUSED' },

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import type { GrowthProduct } from '@shared/api.interface';
 import { growthDecision } from '@/api';
@@ -76,6 +77,12 @@ export default function SkillIterationPage() {
               </div>
             </CardHeader>
             <CardContent>
+              <Link
+                className="mb-4 block text-sm text-blue-600"
+                to={`/operations?productId=${encodeURIComponent(product.id)}`}
+              >
+                查看本产品操作证据库：增量 / 减量 / 关停 / 开启 →
+              </Link>
               <div className="max-h-80 space-y-3 overflow-y-auto">
                 {product.knowledge?.map((k) => (
                   <article key={k.id} className="rounded-xl border p-3 text-sm">

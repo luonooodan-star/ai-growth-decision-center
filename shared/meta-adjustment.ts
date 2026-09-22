@@ -5,6 +5,43 @@ export interface MetaAdjustmentTarget {
   adsetId?: string;
   level: 'campaign' | 'adset' | 'ad';
 }
+export async function resolveCampaignAccounts(
+  ids: string[],
+  graph: MetaGraphCall,
+) {
+  if (
+    !Array.isArray(ids) ||
+    ids.length > 10 ||
+    ids.some((id) => typeof id !== 'string' || !/^\d{1,40}$/.test(id))
+  )
+    throw new Error('广告系列 ID 无效');
+  const campaigns: Array<{ campaignId: string; accountId: string }> = [];
+  const unavailable: string[] = [];
+  const queue = [...new Set(ids)];
+  await Promise.all(
+    Array.from({ length: 2 }, async () => {
+      while (queue.length) {
+        const id = queue.shift()!;
+        try {
+          const entity = await graph(id, { fields: 'id,account_id,objective' });
+          if (
+            String(entity.id) !== id ||
+            !/^\d{1,40}$/.test(String(entity.account_id || '')) ||
+            typeof entity.objective !== 'string'
+          )
+            throw new Error('无法确认系列归属');
+          campaigns.push({
+            campaignId: id,
+            accountId: String(entity.account_id),
+          });
+        } catch {
+          unavailable.push(id);
+        }
+      }
+    }),
+  );
+  return { campaigns, unavailable };
+}
 export interface MetaAdjustmentSnapshot extends MetaAdjustmentTarget {
   name: string;
   status: string;
@@ -27,6 +64,8 @@ export interface MetaAdjustmentItem extends MetaAdjustmentChange {
     baseline?: import('./api.interface').CampaignDailySnapshot;
     recommendation?: import('./skill-review').SavedCampaignRecommendation;
     note: string;
+    skillVersion?: string;
+    strategies?: import('./api.interface').GrowthProduct['knowledge'];
   };
   startedAt?: string;
   completedAt?: string;

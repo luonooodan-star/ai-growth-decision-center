@@ -162,6 +162,24 @@ export class MetaAdjustmentService {
       accountIds: [...new Set(ids)],
     });
   }
+  async campaignAccounts(ids: string[]) {
+    if (!centerIdentity.getStore() || !readMetaLocalBridge())
+      throw new UnauthorizedException('请先连接当前用户的个人 Meta 桥接授权');
+    if (
+      !Array.isArray(ids) ||
+      ids.length > 10 ||
+      ids.some((id) => typeof id !== 'string' || !/^\d{1,40}$/.test(id))
+    )
+      throw new BadRequestException('广告系列 ID 无效');
+    return this.relay<{
+      ownerId: string;
+      campaigns: Array<{ campaignId: string; accountId: string }>;
+      unavailable: string[];
+    }>('', {
+      action: 'campaign-accounts',
+      campaignIds: [...new Set(ids)],
+    });
+  }
   async identity(cookie: string): Promise<string> {
     if (readMetaLocalBridge()) {
       // Shared local authorization can be rebound/revoked: never cache its identity.
@@ -339,6 +357,10 @@ export class MetaAdjustmentService {
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
         : undefined;
       item.evidence = {
+        skillVersion: match?.product.skillVersion,
+        strategies: match?.product.knowledge?.filter(
+          (k) => Date.parse(k.approvedAt) <= Date.parse(item.startedAt!),
+        ),
         capturedAt: item.startedAt,
         productId: match?.product.id,
         baseline,

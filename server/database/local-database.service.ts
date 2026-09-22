@@ -7,6 +7,8 @@ import {
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { OperationObservation } from '@shared/meta-operations';
+import { adjustmentOperations } from '../modules/growth-decision/adjustment-operations';
 
 import type {
   MetaAdjustmentJob,
@@ -182,6 +184,48 @@ export class LocalDatabaseService implements OnModuleDestroy {
         'INSERT INTO growth_adjustment_job (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
       )
       .run(job.id, JSON.stringify(job));
+    for (const op of adjustmentOperations([job])) {
+      if (!op.campaignId) continue;
+      this.saveOperationObservation({
+        id: `${op.id}:adjustment`,
+        operationId: op.id,
+        productId: op.productId,
+        accountId: op.accountId,
+        campaignId: op.campaignId,
+        objectId: op.objectId,
+        observedAt: op.occurredAt,
+        kind: 'adjustment',
+        snapshot: op.capturedEvidence?.baseline,
+        note:
+          op.capturedEvidence?.note ||
+          '操作时缺少 Doris 快照；不以事后数据倒填。',
+      });
+    }
+  }
+
+  saveOperationObservation(point: OperationObservation): void {
+    this.database
+      .prepare(
+        'INSERT OR IGNORE INTO growth_operation_observation (id, account_id, campaign_id, observed_at, payload) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(
+        point.id,
+        point.accountId,
+        point.campaignId,
+        point.observedAt,
+        JSON.stringify(point),
+      );
+  }
+  listOperationObservations(
+    accountId: string,
+    campaignId: string,
+  ): OperationObservation[] {
+    return this.database
+      .prepare(
+        'SELECT payload FROM growth_operation_observation WHERE account_id = ? AND campaign_id = ? ORDER BY observed_at DESC LIMIT 2001',
+      )
+      .all(accountId, campaignId)
+      .map((row) => this.parsePayload<OperationObservation>(row.payload));
   }
 
   listAdjustmentJobs(): MetaAdjustmentJob[] {
@@ -851,6 +895,8 @@ export class LocalDatabaseService implements OnModuleDestroy {
 
   private initializeSchema(): void {
     this.database.exec(`
+      CREATE TABLE IF NOT EXISTS growth_operation_observation (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, campaign_id TEXT NOT NULL, observed_at TEXT NOT NULL, payload TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS growth_operation_observation_campaign ON growth_operation_observation(account_id, campaign_id, observed_at);
       CREATE TABLE IF NOT EXISTS growth_adjustment_job (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_operation_evidence (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS growth_campaign_recommendation (id TEXT PRIMARY KEY, payload TEXT NOT NULL);

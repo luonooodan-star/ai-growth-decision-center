@@ -29,13 +29,20 @@ export const saveOperationReason = async (id: string, reason: string) =>
 
 export async function getMetaOperations(
   page = 1,
+  category = 'all',
+  productId?: string,
 ): Promise<MetaOperationOverview> {
   return (
     await axios.get<MetaOperationOverview>(
       '/api/growth-decision/meta-operations',
-      { params: { page } },
+      { params: { page, category, productId } },
     )
   ).data;
+}
+export async function getOperationTimeline(
+  id: string,
+): Promise<import('@shared/meta-operations').OperationTimeline> {
+  return (await axios.get(`${root}/${encodeURIComponent(id)}/timeline`)).data;
 }
 export async function getMetaEntities(): Promise<MetaAdEntity[]> {
   return (

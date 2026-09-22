@@ -37,6 +37,8 @@ export function adjustmentOperations(
         ({ field, before, after }): MetaOperation => ({
           id: `adjustment-${job.id}-${index}-${field}`,
           source: 'adjustment_page',
+          deliveryStatus: item.after!.effectiveStatus,
+          adsetId: item.before.adsetId,
           adjustmentJobId: job.id,
           capturedEvidence: item.evidence,
           accountId: item.before.accountId,
@@ -77,7 +79,9 @@ export function adjustmentOperations(
                 : 'decrease'
               : after === 'PAUSED'
                 ? 'pause'
-                : 'adjust',
+                : after === 'ACTIVE'
+                  ? 'resume'
+                  : 'adjust',
           changePct:
             field === 'budget' && Number(before) > 0
               ? (Number(after) / Number(before) - 1) * 100

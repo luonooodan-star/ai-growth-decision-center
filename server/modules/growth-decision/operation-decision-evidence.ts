@@ -65,6 +65,7 @@ export function operationDecisionEvidence(
     increase: 'increase',
     decrease: 'decrease',
     pause: 'pause',
+    resume: 'resume',
     adjust: 'adjust_ads',
   }[op.category];
   return {

@@ -9,6 +9,9 @@ export class MetaOperationsController {
     private readonly service: MetaOperationsService,
     private readonly skills: SkillReviewService,
   ) {}
+  @Get(':id/timeline') timeline(@Param('id') id: string) {
+    return this.service.timeline(id);
+  }
   @Get('weekly') weekly() {
     return this.skills.list();
   }
@@ -38,7 +41,11 @@ export class MetaOperationsController {
     return this.service.syncPlan(Number(offset || 0));
   }
   @Get()
-  list(@Query('page') page?: string) {
-    return this.service.overview(Number(page || 1));
+  list(
+    @Query('page') page?: string,
+    @Query('category') category?: string,
+    @Query('productId') productId?: string,
+  ) {
+    return this.service.overview(Number(page || 1), category, productId);
   }
 }

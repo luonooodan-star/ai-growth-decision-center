@@ -2,6 +2,7 @@
 import { getMetaToken, graph, requestOrigin } from '../../../../lib/meta';
 import {
   adjustmentBudgetUnits,
+  resolveCampaignAccounts,
   adjustmentSnapshotMatches,
   readAdjustmentSnapshot,
   validateAdjustmentChange,
@@ -32,12 +33,18 @@ export async function POST(request: Request) {
       change: MetaAdjustmentChange;
       ownerId?: string;
       accountIds?: string[];
+      campaignIds?: string[];
     };
     const profile = await call('me', { fields: 'id' });
     const ownerId = String(profile.id || '');
     if (!ownerId || (body.ownerId && body.ownerId !== ownerId))
       throw new Error('Meta 登录用户已变化，请重新预检');
     if (body.action === 'identity') return Response.json({ ownerId });
+    if (body.action === 'campaign-accounts')
+      return Response.json({
+        ownerId,
+        ...(await resolveCampaignAccounts(body.campaignIds!, call)),
+      });
     if (body.action === 'account-names') {
       const ids = body.accountIds;
       if (

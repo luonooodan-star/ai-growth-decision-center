@@ -4,6 +4,7 @@ export type MetaOperationCategory =
   | 'increase'
   | 'decrease'
   | 'pause'
+  | 'resume'
   | 'adjust'
   | 'other';
 export interface MetaOperationInput {
@@ -38,6 +39,8 @@ export interface MetaOperationInput {
   raw: string;
 }
 export interface MetaOperation extends MetaOperationInput {
+  adsetId?: string;
+  deliveryStatus?: string;
   source?: 'adjustment_page' | 'meta_import';
   adjustmentJobId?: string;
   capturedEvidence?: import('./meta-adjustment').MetaAdjustmentItem['evidence'];
@@ -49,6 +52,23 @@ export interface MetaOperation extends MetaOperationInput {
   changePct?: number;
   productId?: string;
   linked: boolean;
+}
+export interface OperationObservation {
+  id: string;
+  operationId: string;
+  productId?: string;
+  accountId: string;
+  campaignId: string;
+  objectId: string;
+  observedAt: string;
+  kind: 'adjustment' | 'periodic';
+  snapshot?: CampaignDailySnapshot;
+  note: string;
+}
+export interface OperationTimeline {
+  operations: MetaOperation[];
+  observations: OperationObservation[];
+  truncated: boolean;
 }
 export interface MetaOperationImport {
   operations: MetaOperationInput[];

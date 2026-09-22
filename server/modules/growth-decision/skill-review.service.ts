@@ -3,6 +3,9 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { LocalDatabaseService } from '@server/database/local-database.service';
@@ -15,6 +18,10 @@ import { MetaOperationsService } from './meta-operations.service';
 import { reviewMetaOperation, dataDay } from './meta-operation-engine';
 import { validateCampaignRules } from './campaign-rules';
 import { centerIdentity } from '../../common/utils/center-identity';
+import {
+  configuredDorisUsers,
+  runPersonalData,
+} from '../../common/utils/personal-doris';
 
 export function previousReviewWeek(now = new Date()) {
   const local = new Date(`${dataDay(now.toISOString())}T00:00:00Z`);
@@ -27,7 +34,32 @@ export function previousReviewWeek(now = new Date()) {
 }
 
 @Injectable()
-export class SkillReviewService {
+export class SkillReviewService implements OnModuleInit, OnModuleDestroy {
+  private timer?: NodeJS.Timeout;
+  private readonly logger = new Logger(SkillReviewService.name);
+  onModuleInit() {
+    // Enqueue last completed week, idempotently. Codex worker claims the report;
+    // this timer never fabricates analysis or publishes rules automatically.
+    this.timer = setInterval(() => {
+      try {
+        if (process.env.GROWTH_PERSONAL_DATA !== '1') this.generate();
+        else
+          for (const username of configuredDorisUsers()) {
+            try {
+              runPersonalData(username, () => this.generate());
+            } catch {
+              this.logger.warn(`周复盘证据入队失败：${username}`);
+            }
+          }
+      } catch {
+        this.logger.warn('周复盘证据入队失败，下次检查重试');
+      }
+    }, 30 * 60000);
+    this.timer.unref();
+  }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
   constructor(
     private readonly db: LocalDatabaseService,
     private readonly meta: MetaOperationsService,
@@ -73,6 +105,29 @@ export class SkillReviewService {
         );
       if (!operations.length && !manualRecords.length) continue;
       const snapshots = this.db.listCampaignSnapshots(product.id);
+      const points = new Map<
+        string,
+        import('@shared/meta-operations').OperationObservation
+      >();
+      const campaignPoints = new Map<
+        string,
+        import('@shared/meta-operations').OperationObservation[]
+      >();
+      let observationTruncated = false;
+      for (const op of operations.slice(0, 150)) {
+        if (!op.campaignId) continue;
+        const key = `${op.accountId}:${op.campaignId}`;
+        if (!campaignPoints.has(key)) {
+          const rows = this.db.listOperationObservations(
+            op.accountId,
+            op.campaignId,
+          );
+          if (rows.length > 2000) observationTruncated = true;
+          campaignPoints.set(key, rows.slice(0, 2000));
+        }
+        for (const point of campaignPoints.get(key)!)
+          if (point.operationId === op.id) points.set(point.id, point);
+      }
       this.db.saveSkillReport({
         id,
         productId: product.id,
@@ -82,6 +137,8 @@ export class SkillReviewService {
         status: 'pending',
         attempt: 0,
         evidence: {
+          observations: [...points.values()].slice(0, 1500),
+          observationTruncated: observationTruncated || points.size > 1500,
           product,
           operations: operations.slice(0, 150).map((o) => ({
             ...reviewMetaOperation(o, snapshots, all, now),
@@ -136,7 +193,8 @@ export class SkillReviewService {
     return {
       job,
       outputContract: {
-        summary: '周复盘结论，区分事实、假设、缺口和同期干扰',
+        summary:
+          '按增量、减量、关停、开启分别复盘。结合预算变化比例、操作时间锚点和三小时累计快照，区分事实、假设、缺口和同期干扰。将 capturedEvidence.strategies（操作前已审核策略）与实际行为、后续 D0 ROAS 交叉对照，指出一致、偏离、不适用、证据不足及改进空间；不得用本周新结论倒评历史操作，不把相关性当因果。',
         candidates: [
           {
             title: '候选标题',

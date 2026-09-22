@@ -56,7 +56,7 @@ test('failed uncertain pending and preview do not become successful measures', (
     expect(adjustmentOperations([j])).toEqual([]);
   }
 });
-test('resume is an adjustment; missing old baseline never invented', () => {
+test('resume has its own category; missing old baseline never invented', () => {
   const j = job();
   j.items[0] = {
     before: { ...before, status: 'PAUSED' },
@@ -66,7 +66,7 @@ test('resume is an adjustment; missing old baseline never invented', () => {
     completedAt: j.createdAt,
   };
   const [o] = adjustmentOperations([j]);
-  expect(o.category).toBe('adjust');
+  expect(o.category).toBe('resume');
   expect(o.capturedEvidence).toBeUndefined();
 });
 test('historical imports retained but exact local mirror deduplicated', () => {

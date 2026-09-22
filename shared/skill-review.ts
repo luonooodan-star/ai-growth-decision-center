@@ -54,6 +54,8 @@ export interface WeeklySkillReport {
   error?: string;
   completedAt?: string;
   evidence: {
+    observations?: import('./meta-operations').OperationObservation[];
+    observationTruncated?: boolean;
     product: GrowthProduct;
     operations: Array<
       MetaOperationReview & { decision: OperationDecisionEvidence }

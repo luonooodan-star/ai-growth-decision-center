@@ -74,6 +74,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GrowthDataFetchService.name);
   private timer?: NodeJS.Timeout;
   private startupTimer?: NodeJS.Timeout;
+  private observationTimer?: NodeJS.Timeout;
+  private observationCheckRunning = false;
   private readonly activeRuns = new Map<string, Promise<GrowthFetchRun[]>>();
   private get activeRun() {
     return this.activeRuns.get(personalScopeKey());
@@ -120,6 +122,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       });
     }, FETCH_INTERVAL_MS);
     this.timer.unref();
+    this.observationTimer = setInterval(() => {
+      void this.fetchDueObservations();
+    }, 5 * 60000);
+    this.observationTimer.unref();
     // A deployment/restart must not keep postponing the first sync by another hour.
     this.startupTimer = setTimeout(() => {
       if (process.env.GROWTH_PERSONAL_DATA === '1') {
@@ -148,6 +154,35 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
     if (this.startupTimer) clearTimeout(this.startupTimer);
+    if (this.observationTimer) clearInterval(this.observationTimer);
+  }
+  private async fetchDueObservations() {
+    if (this.observationCheckRunning) return;
+    this.observationCheckRunning = true;
+    const capture = async () => {
+      if (this.activeRun) return;
+      for (const productId of this.metaOperations.trackingDueProducts()) {
+        if (this.activeRun) break;
+        await this.trigger('scheduled', productId, 1);
+      }
+    };
+    try {
+      if (process.env.GROWTH_PERSONAL_DATA !== '1') await capture();
+      else
+        for (const username of configuredDorisUsers()) {
+          try {
+            await runPersonalData(username, capture);
+          } catch {
+            this.logger.warn(
+              `三小时观察抓取失败：${username}；保留缺口，下次检查重试`,
+            );
+          }
+        }
+    } catch {
+      this.logger.warn('三小时观察抓取失败，下次检查重试');
+    } finally {
+      this.observationCheckRunning = false;
+    }
   }
   private async scheduledPersonalFetch() {
     if (process.env.GROWTH_PERSONAL_DATA !== '1')

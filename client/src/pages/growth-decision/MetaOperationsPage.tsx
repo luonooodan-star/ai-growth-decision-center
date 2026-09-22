@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { metaEventStatusLabel } from '@shared/meta-targets';
 import type {
@@ -11,11 +11,13 @@ import { getMetaOperations, saveOperationReason } from '@/api/meta-operations';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { OperationTimeline } from './OperationTimeline';
 
 const LABELS: Record<MetaOperationCategory, string> = {
   increase: '已执行加量',
   decrease: '已执行减量',
-  pause: '停投观察',
+  pause: '关停',
+  resume: '开启',
   adjust: '调整后观察',
   other: '其他审计记录',
 };
@@ -34,6 +36,8 @@ const Day = ({ row }: { row: CampaignDailySnapshot }) => (
 );
 
 export default function MetaOperationsPage() {
+  const [params] = useSearchParams();
+  const productId = params.get('productId') || undefined;
   const [conflictsOnly, setConflictsOnly] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [data, setData] = useState<MetaOperationOverview | null>(null);
@@ -45,7 +49,7 @@ export default function MetaOperationsPage() {
   useEffect(() => {
     let active = true;
     setBusy(true);
-    getMetaOperations(page)
+    getMetaOperations(page, filter, productId)
       .then((result) => {
         if (active) {
           setData(result);
@@ -61,7 +65,7 @@ export default function MetaOperationsPage() {
     return () => {
       active = false;
     };
-  }, [page, refresh]);
+  }, [page, refresh, filter, productId]);
   return (
     <div className="mx-auto max-w-[1540px] space-y-6 px-5 py-8 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -94,6 +98,14 @@ export default function MetaOperationsPage() {
         后台直接操作的变更不会自动记录。调整当日不参与前后完整日对照。
       </p>
       <div className="flex flex-wrap gap-2">
+        {productId && (
+          <Link
+            className="rounded-lg border px-3 py-2 text-sm text-blue-600"
+            to="/operations"
+          >
+            当前为产品证据库 · 查看全部产品
+          </Link>
+        )}
         <Link
           className="rounded-lg border px-3 py-2 text-sm text-blue-600"
           to="/skills"
@@ -108,15 +120,21 @@ export default function MetaOperationsPage() {
         </Button>
         <Button
           variant={filter === 'all' ? 'default' : 'outline'}
-          onClick={() => setFilter('all')}
+          onClick={() => {
+            setFilter('all');
+            setPage(1);
+          }}
         >
-          本页全部
+          全部操作
         </Button>
         {(Object.keys(LABELS) as MetaOperationCategory[]).map((key) => (
           <Button
             key={key}
             variant={filter === key ? 'default' : 'outline'}
-            onClick={() => setFilter(key)}
+            onClick={() => {
+              setFilter(key);
+              setPage(1);
+            }}
           >
             {LABELS[key]}
           </Button>
@@ -316,6 +334,7 @@ export default function MetaOperationsPage() {
                   {op.raw}
                 </pre>
               </details>
+              {op.campaignId && <OperationTimeline id={op.id} />}
               {op.productId && op.campaignId && (
                 <Link
                   className="text-sm text-blue-600"

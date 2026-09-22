@@ -395,7 +395,7 @@ describe('advertising adjustment workbench', () => {
       media: 'facebook',
       refresh: '1',
     });
-    expect(bi.part).toHaveBeenCalledTimes(3);
+    expect(bi.part).toHaveBeenCalledTimes(2); // accounts no longer query Doris DWD
     for (const call of bi.part.mock.calls)
       expect(call.slice(1)).toEqual([true, ADJUSTMENT_REFRESH_MS, '']);
     const args = bi.part.mock.calls[1][0];
@@ -431,7 +431,7 @@ describe('advertising adjustment workbench', () => {
     expect(JSON.parse(bi.part.mock.calls[0][0].filters_json).campaign_id).toBe(
       '123',
     );
-    expect(bi.part.mock.calls[2][1]).toBe(false); // reuse account map
+    expect(bi.part.mock.calls).toHaveLength(2); // no legacy DWD account lookup
     await expect(
       service.day({
         date: today,
@@ -480,7 +480,7 @@ describe('advertising adjustment workbench', () => {
       media: 'facebook',
     };
     await Promise.all([service.day(q), service.day(q)]);
-    expect(bi.part).toHaveBeenCalledTimes(3);
+    expect(bi.part).toHaveBeenCalledTimes(2);
     await Promise.all(
       ['1', '2', '3', '4'].map((campaignId) =>
         service.day({ ...q, campaignId }),

@@ -8,6 +8,12 @@ import type {
   MetaSyncPlan,
 } from '@shared/api.interface';
 import { metaTargets } from '@shared/meta-targets';
+import type { OperationTimeline } from '@shared/meta-operations';
+import {
+  activeOperationAnchors,
+  periodicObservation,
+  OBSERVATION_INTERVAL_MS,
+} from './operation-tracking';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import {
   dataDay,
@@ -111,6 +117,16 @@ export class MetaOperationsService {
 
   captureSnapshots(productId: string): void {
     const snapshots = this.db.listCampaignSnapshots(productId);
+    for (const op of activeOperationAnchors(this.linkedOperations()).filter(
+      (o) => o.productId === productId,
+    )) {
+      const point = periodicObservation(
+        op,
+        this.db.listOperationObservations(op.accountId, op.campaignId!),
+        snapshots,
+      );
+      if (point) this.db.saveOperationObservation(point);
+    }
     const product = this.db.getProduct(productId);
     if (product)
       for (const {
@@ -289,11 +305,84 @@ export class MetaOperationsService {
     });
   }
 
-  overview(page = 1): MetaOperationOverview {
+  trackingDueProducts(now = new Date()): string[] {
+    return [
+      ...new Set(
+        activeOperationAnchors(this.linkedOperations())
+          .filter((op) => {
+            if (!op.productId) return false;
+            const slot = Math.floor(
+              (now.getTime() - Date.parse(op.occurredAt)) /
+                OBSERVATION_INTERVAL_MS,
+            );
+            return (
+              slot >= 1 &&
+              !this.db
+                .listOperationObservations(op.accountId, op.campaignId!)
+                .some((p) => p.id === `${op.id}:periodic:${slot}`)
+            );
+          })
+          .map((op) => op.productId!),
+      ),
+    ];
+  }
+
+  timeline(id: string): OperationTimeline {
+    const all = this.linkedOperations();
+    const anchor = all.find((op) => op.id === id);
+    if (!anchor?.campaignId)
+      throw new BadRequestException('操作或广告系列不存在');
+    const operations = all.filter(
+      (op) =>
+        op.accountId === anchor.accountId &&
+        op.campaignId === anchor.campaignId,
+    );
+    const points = this.db.listOperationObservations(
+      anchor.accountId,
+      anchor.campaignId,
+    );
+    // Old tasks may predate persistent observations; only their frozen evidence is used.
+    for (const op of operations)
+      if (
+        op.source === 'adjustment_page' &&
+        !points.some((p) => p.id === `${op.id}:adjustment`)
+      )
+        points.push({
+          id: `${op.id}:adjustment`,
+          operationId: op.id,
+          productId: op.productId,
+          accountId: op.accountId,
+          campaignId: op.campaignId!,
+          objectId: op.objectId,
+          observedAt: op.occurredAt,
+          kind: 'adjustment',
+          snapshot: op.capturedEvidence?.baseline,
+          note:
+            op.capturedEvidence?.note || '历史操作没有冻结快照，未补造数据。',
+        });
+    return {
+      operations,
+      observations: points
+        .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+        .slice(0, 2000),
+      truncated: points.length > 2000,
+    };
+  }
+
+  overview(
+    page = 1,
+    category?: string,
+    productId?: string,
+  ): MetaOperationOverview {
     const operations = this.linkedOperations();
+    const filtered = operations.filter(
+      (op) =>
+        (!category || category === 'all' || op.category === category) &&
+        (!productId || op.productId === productId),
+    );
     const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
     const histories = new Map<string, CampaignDailySnapshot[]>();
-    const items = operations
+    const items = filtered
       .slice((safePage - 1) * 50, safePage * 50)
       .map((o) => {
         if (o.productId && !histories.has(o.productId))
@@ -312,7 +401,7 @@ export class MetaOperationsService {
       });
     return {
       items,
-      total: operations.length,
+      total: filtered.length,
       page: safePage,
       lastImportAt: operations
         .map((o) => o.importedAt)
@@ -388,6 +477,7 @@ export class MetaOperationsService {
         increase: '已执行加量',
         decrease: '已执行减量',
         pause: '已停投',
+        resume: '已开启',
         adjust: '已调整广告',
       }[op.category];
       const actionType =
