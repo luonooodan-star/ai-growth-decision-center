@@ -37,6 +37,53 @@ const day = (date = '2026-09-19'): BiDay => ({
   events: { state: 'fresh', rows: [{ ...dimension, metric_value: 20 }] },
 });
 describe('integrated paid growth BI', () => {
+  test('500 campaigns across countries use low-cardinality shards, not 500 campaign requests', async () => {
+    const rows = ['IN', 'US', 'BR'].flatMap((country_code) =>
+      Array.from({ length: 500 }, (_, i) => ({
+        campaign_id: String(i + 1),
+        campaign_name: `Campaign ${i}`,
+        buyer_alias: 'alice',
+        country_code,
+        spend: 1,
+      })),
+    );
+    const query = jest.fn(async (q: Record<string, unknown>) => {
+      const dims = q.dimensions as string[];
+      const filters = JSON.parse(String(q.filters_json || '{}'));
+      if (!dims.length) return { rows: [{ spend: 1500 }] };
+      if (dims.length === 1 && dims[0] === 'buyer_alias')
+        return { rows: [{ buyer_alias: 'alice', spend: 1500 }] };
+      if (dims.length === 1 && dims[0] === 'country_code')
+        return {
+          rows: ['IN', 'US', 'BR'].map((country_code) => ({
+            country_code,
+            spend: 500,
+          })),
+        };
+      if (dims.length === 1)
+        throw Error('Should not enumerate hundreds of campaigns');
+      const selected = filters.country_code
+        ? rows.filter((r) => r.country_code === filters.country_code)
+        : rows;
+      return {
+        rows: selected.slice(0, 1000),
+        truncated: selected.length > 1000,
+      };
+    });
+    expect(
+      await completeBiQuery(query, {
+        dimensions: [
+          'campaign_id',
+          'campaign_name',
+          'buyer_alias',
+          'country_code',
+        ],
+        metrics: ['spend'],
+        filters_json: '{}',
+      }),
+    ).toHaveLength(1500);
+    expect(query).toHaveBeenCalledTimes(7);
+  });
   test('weighted metrics distinguish media CPI, Adjust CPI, and full-spend D0', () => {
     const a = day(),
       b = day('2026-09-18');

@@ -56,6 +56,43 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
   },
 });
 describe('advertising adjustment workbench', () => {
+  test('personal ownership reads a lightweight campaign manifest, independent of local filter slices', async () => {
+    const bi = {
+      part: jest
+        .fn()
+        .mockResolvedValue({
+          state: 'cached',
+          rows: [{ campaign_id: '123', spend: 10 }],
+        }),
+    };
+    const meta = {
+      campaignAccounts: jest
+        .fn()
+        .mockResolvedValue({
+          ownerId: 'owner',
+          campaigns: [{ campaignId: '123', accountId: '456' }],
+        }),
+    };
+    const service = new AdAdjustmentService(bi as never, meta as never);
+    const date = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const result = await service.day({
+      date,
+      appId: '11',
+      media: 'facebook',
+      part: 'accounts',
+      localFilters: '1',
+    });
+    expect(result.accounts.rows[0].advertiser_id).toBe('456');
+    const args = (bi.part.mock.calls as unknown[][])[0][0] as {
+      dimensions: string[];
+    };
+    expect(args.dimensions).toContain('campaign_id');
+    expect(args.dimensions).not.toContain('buyer_alias');
+    expect(args.dimensions).not.toContain('country_code');
+    expect(meta.campaignAccounts).toHaveBeenCalledWith(['123']);
+  });
   test('one full authorized slice supports local AND filters and recomputes ROAS without requests', async () => {
     const d = day();
     d.filterable = true;

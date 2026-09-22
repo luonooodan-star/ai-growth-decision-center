@@ -189,7 +189,18 @@ export class AdAdjustmentService {
             message: '历史指标无需重复核验 Meta 账户；操作权限以当前校验为准',
           })
         : !q.media || q.media === 'facebook'
-          ? this.personalAccounts(q, dailyArgs)
+          ? this.personalAccounts(q, {
+              ...dailyArgs,
+              // Ownership needs only the campaign manifest, never the country
+              // and buyer cross-product. Reuse the lightweight BI summary cache.
+              dimensions: ADJUSTMENT_DIMENSIONS.filter(
+                (field) =>
+                  !field.startsWith('adgroup_') &&
+                  !field.startsWith('creative_') &&
+                  field !== 'buyer_alias' &&
+                  field !== 'country_code',
+              ),
+            })
           : Promise.resolve({ rows: [], state: 'unsupported' as const });
     const optionsTask =
       q.part === 'options'

@@ -26,16 +26,39 @@ export async function completeBiQuery(
       string,
       unknown
     >;
-    for (const field of q.dimensions as string[]) {
+    let selected: { field: string; groups: DorisRow[] } | undefined;
+    const dimensions = q.dimensions as string[];
+    const candidates = [...dimensions].sort((a, b) => {
+      const rank = (field: string) =>
+        field === 'buyer_alias'
+          ? 0
+          : field === 'country_code'
+            ? 1
+            : field.endsWith('_name')
+              ? 3
+              : 2;
+      return rank(a) - rank(b);
+    });
+    for (const field of candidates) {
       if (Object.hasOwn(filters, field)) continue;
+      if (
+        field.endsWith('_name') &&
+        dimensions.includes(field.replace(/_name$/, '_id'))
+      )
+        continue;
       const manifest = await run({ ...q, dimensions: [field] });
       if (
         saturated(manifest) ||
-        !manifest.rows?.length ||
+        (manifest.rows?.length || 0) < 2 ||
         manifest.rows.some((r) => r[field] == null)
       )
         continue;
-      const groups = manifest.rows;
+      if (!selected || manifest.rows!.length < selected.groups.length)
+        selected = { field, groups: manifest.rows! };
+      if (selected.groups.length <= 4) break;
+    }
+    if (selected) {
+      const { field, groups } = selected;
       const results: DorisRow[][] = new Array(groups.length);
       let cursor = 0;
       let failed = false;
