@@ -123,7 +123,8 @@ export function install(server, configFile) {
     if (req.method === 'GET') {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Referrer-Policy': 'no-referrer',
+        // Same-origin forms need a non-opaque Origin; never send the ticket cross-origin.
+        'Referrer-Policy': 'same-origin',
         'Cache-Control': 'no-store',
         'Content-Security-Policy':
           "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",

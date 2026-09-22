@@ -246,13 +246,55 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   listProducts(): GrowthProduct[] {
-    const rows: Record<string, unknown>[] = this.database
+    const rows: Record<string, unknown>[] = this.systemDatabase
       .prepare('SELECT payload FROM growth_product ORDER BY updated_at DESC')
       .all();
-    return rows.map(
-      (row: Record<string, unknown>): GrowthProduct =>
-        this.normalizeProduct(this.parsePayload<GrowthProduct>(row.payload)),
+    const products = rows.map((row) =>
+      this.parsePayload<GrowthProduct>(row.payload),
     );
+    // Keep products discovered in existing personal spaces reachable without replacing
+    // shared standards with stale private copies.
+    if (personalDataIdentity.getStore()) {
+      for (const row of this.database
+        .prepare('SELECT payload FROM growth_product')
+        .all()) {
+        const product = this.parsePayload<GrowthProduct>(row.payload);
+        if (!products.some((p) => p.id === product.id)) products.push(product);
+      }
+    }
+    return products.map((product) => this.withPersonalProductData(product));
+  }
+
+  private withPersonalProductData(product: GrowthProduct): GrowthProduct {
+    if (!personalDataIdentity.getStore()) return this.normalizeProduct(product);
+    const row = this.database
+      .prepare('SELECT payload FROM growth_product WHERE id = ?')
+      .get(product.id);
+    const own = row ? this.parsePayload<GrowthProduct>(row.payload) : undefined;
+    const visible = this.normalizeProduct({
+      ...product,
+      accountId: own?.accountId,
+      accountIds: own?.accountIds || [],
+      adAccounts: own?.adAccounts,
+      accountSyncAt: own?.accountSyncAt,
+      lastSyncAt: own?.lastSyncAt,
+      latestMetricValues: own?.latestMetricValues,
+    });
+    if (!row) {
+      // Personal records retain their product foreign key, without copying shared
+      // account lists or observations into this user's data space.
+      this.database
+        .prepare(
+          'INSERT OR IGNORE INTO growth_product (id, name, updated_at, payload) VALUES (?, ?, ?, ?)',
+        )
+        .run(
+          visible.id,
+          visible.name,
+          new Date().toISOString(),
+          JSON.stringify(visible),
+        );
+    }
+    return visible;
   }
 
   getOperationEvidence(id: string): OperationDecisionEvidence | undefined {
@@ -284,13 +326,22 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(item.operationId, JSON.stringify(item));
   }
   listSkillReports(): WeeklySkillReport[] {
-    return this.database
+    const reports = this.systemDatabase
       .prepare('SELECT payload FROM growth_skill_report ORDER BY id DESC')
       .all()
       .map((r) => this.parsePayload<WeeklySkillReport>(r.payload));
+    if (personalDataIdentity.getStore()) {
+      for (const row of this.database
+        .prepare('SELECT payload FROM growth_skill_report ORDER BY id DESC')
+        .all()) {
+        const report = this.parsePayload<WeeklySkillReport>(row.payload);
+        if (!reports.some((r) => r.id === report.id)) reports.push(report);
+      }
+    }
+    return reports;
   }
   saveSkillReport(report: WeeklySkillReport): void {
-    this.database
+    this.systemDatabase
       .prepare(
         'INSERT INTO growth_skill_report (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
       )
@@ -328,16 +379,46 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   getProduct(id: string): GrowthProduct | undefined {
-    const row: Record<string, unknown> | undefined = this.database
-      .prepare('SELECT payload FROM growth_product WHERE id = ?')
-      .get(id);
+    const row: Record<string, unknown> | undefined =
+      this.systemDatabase
+        .prepare('SELECT payload FROM growth_product WHERE id = ?')
+        .get(id) ||
+      this.database
+        .prepare('SELECT payload FROM growth_product WHERE id = ?')
+        .get(id);
     return row
-      ? this.normalizeProduct(this.parsePayload<GrowthProduct>(row.payload))
+      ? this.withPersonalProductData(
+          this.parsePayload<GrowthProduct>(row.payload),
+        )
       : undefined;
   }
 
   saveProduct(product: GrowthProduct): void {
     const updatedAt: string = new Date().toISOString();
+    if (personalDataIdentity.getStore()) {
+      // Public catalog, standards and approved knowledge are shared; account lists,
+      // source observations and fetch timestamps must stay in the user's database.
+      const prior = this.systemDatabase
+        .prepare('SELECT payload FROM growth_product WHERE id = ?')
+        .get(product.id);
+      const old = prior
+        ? this.parsePayload<GrowthProduct>(prior.payload)
+        : undefined;
+      const shared = {
+        ...product,
+        accountId: old?.accountId,
+        accountIds: old?.accountIds || [],
+        adAccounts: old?.adAccounts,
+        accountSyncAt: old?.accountSyncAt,
+        lastSyncAt: old?.lastSyncAt,
+        latestMetricValues: old?.latestMetricValues,
+      };
+      this.systemDatabase
+        .prepare(
+          'INSERT INTO growth_product (id, name, updated_at, payload) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, payload=excluded.payload',
+        )
+        .run(product.id, product.name, updatedAt, JSON.stringify(shared));
+    }
     this.database
       .prepare(
         `

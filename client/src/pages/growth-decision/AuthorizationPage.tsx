@@ -35,7 +35,7 @@ export default function AuthorizationPage() {
           <h1 className="mt-2 text-2xl font-bold">授权与连接</h1>
           <p className="mt-2 text-sm text-slate-500">
             当前决策中心用户：{username || '身份待确认'}。Doris 与 Meta
-            分别授权，不与其他用户共用。
+            分别授权；产品目录、指标标准和 Skill 知识由团队共用。
           </p>
         </div>
         <Button

@@ -14,6 +14,7 @@ import type {
 import { MetaOperationsService } from './meta-operations.service';
 import { reviewMetaOperation, dataDay } from './meta-operation-engine';
 import { validateCampaignRules } from './campaign-rules';
+import { centerIdentity } from '../../common/utils/center-identity';
 
 export function previousReviewWeek(now = new Date()) {
   const local = new Date(`${dataDay(now.toISOString())}T00:00:00Z`);
@@ -46,7 +47,10 @@ export class SkillReviewService {
     const week = previousReviewWeek(now);
     const all = this.meta.linkedOperations();
     for (const product of this.db.listProducts()) {
-      const id = `${week.start}-${product.id}`;
+      // Each operator contributes a report; shared storage must not let the first
+      // operator's report suppress everybody else's evidence for the same week.
+      const username = centerIdentity.getStore();
+      const id = `${week.start}-${product.id}${username ? `-user-${username}` : ''}`;
       if (this.db.listSkillReports().some((r) => r.id === id)) continue;
       const operations = all.filter(
         (o) =>

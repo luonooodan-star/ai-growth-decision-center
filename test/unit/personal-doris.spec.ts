@@ -110,19 +110,46 @@ describe('personal Doris authorization and data isolation', () => {
     ).toHaveLength(6);
     expect(calls.join()).not.toContain('forbidden-shared');
   });
-  test('legacy snapshots/products and another user cache are not visible', () => {
+  test('legacy product standards and knowledge are shared while accounts and caches stay personal', () => {
     const legacy = db.listProducts()[0];
+    db.saveProduct({
+      ...legacy,
+      skillVersion: 'shared-v2',
+      thresholds: { goal: 100 },
+      knowledge: [
+        {
+          id: 'shared',
+          sourceCaseId: 'case',
+          conclusion: 'shared knowledge',
+          caution: 'review',
+          approvedAt: new Date().toISOString(),
+        },
+      ],
+    });
     db.saveBiCache('same', JSON.stringify('legacy-secret'));
     savePersonalDoris('growth', 'fixture-growth-key');
     savePersonalDoris('fjx', 'fixture-fjx-key');
     runPersonalData('growth', () => {
-      expect(db.listProducts()).toEqual([]);
-      db.saveProduct(legacy);
+      expect(db.listProducts()[0].skillVersion).toBe('shared-v2');
+      expect(db.getProduct(legacy.id)?.accountIds).toEqual([]);
+      db.saveProduct({
+        ...db.getProduct(legacy.id)!,
+        accountIds: ['growth-only'],
+        lastSyncAt: '2026-09-22',
+        thresholds: { goal: 110 },
+      });
       db.saveBiCache('same', JSON.stringify('growth-private'));
     });
     runPersonalData('fjx', () => {
-      expect(db.listProducts()).toEqual([]);
-      expect(db.getProduct(legacy.id)).toBeUndefined();
+      expect(db.getProduct(legacy.id)).toMatchObject({
+        accountIds: [],
+        thresholds: { goal: 110 },
+        skillVersion: 'shared-v2',
+      });
+      expect(db.getProduct(legacy.id)?.knowledge?.[0].conclusion).toBe(
+        'shared knowledge',
+      );
+      expect(db.getProduct(legacy.id)?.lastSyncAt).toBeUndefined();
       expect(db.getBiCache('same')).toBeUndefined();
       db.saveBiCache('same', JSON.stringify('fjx-private'));
     });
@@ -133,6 +160,13 @@ describe('personal Doris authorization and data isolation', () => {
       JSON.stringify('fjx-private'),
     );
     expect(db.getBiCache('same')).toBe(JSON.stringify('legacy-secret'));
+    expect(
+      runPersonalData('growth', () => db.getProduct(legacy.id)?.accountIds),
+    ).toEqual(['growth-only']);
+    // Viewing the shared catalog does not require a personal data key.
+    expect(
+      runPersonalData('new-user', () => db.listProducts()[0].thresholds),
+    ).toEqual({ goal: 110 });
   });
   test('rotating credentials changes namespace and invalidates old in-flight credential access', () => {
     savePersonalDoris('fjx', 'fixture-old-key');

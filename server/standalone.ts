@@ -102,14 +102,20 @@ async function bootstrap(): Promise<void> {
     if (
       request.path.startsWith('/api/growth-decision') &&
       request.path !== '/api/growth-decision/adjustments/authorization-link' &&
-      request.path !== '/api/growth-decision/adjustments/authorization-status' &&
+      request.path !==
+        '/api/growth-decision/adjustments/authorization-status' &&
+      !(
+        request.method === 'GET' &&
+        [
+          '/api/growth-decision/dashboard',
+          '/api/growth-decision/meta-operations/weekly',
+        ].includes(request.path)
+      ) &&
       !personalDorisStatus(credentials!.username).configured
     ) {
-      response
-        .status(403)
-        .json({
-          message: '请先配置本人的 Doris Key；不会使用他人的凭据或缓存',
-        });
+      response.status(403).json({
+        message: '请先配置本人的 Doris Key；不会使用他人的凭据或缓存',
+      });
       return;
     }
     runPersonalData(credentials!.username, next);

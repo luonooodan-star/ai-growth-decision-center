@@ -100,21 +100,24 @@ test('HTTP/2 authorization page accepts :authority and still rejects wrong origi
         ':path': `/growth-center-link?ticket=${ticket}`,
         ...headers,
       });
+      let responseHeaders;
       let status,
         text = '';
       req.on('response', (h) => {
         status = h[':status'];
+        responseHeaders = h;
       });
       req.on('data', (chunk) => {
         text += chunk;
       });
-      req.on('end', () => resolve({ status, text }));
+      req.on('end', () => resolve({ status, text, headers: responseHeaders }));
       req.on('error', reject);
       req.end(body);
     });
   try {
     const page = await request({ ':method': 'GET' });
     assert.equal(page.status, 200);
+    assert.equal(page.headers['referrer-policy'], 'same-origin');
     assert.match(page.text, /授权当前登录/);
     assert.equal(
       (await request({ ':method': 'GET', ':authority': 'evil.test' })).status,
@@ -127,6 +130,10 @@ test('HTTP/2 authorization page accepts :authority and still rejects wrong origi
       'content-type': 'application/x-www-form-urlencoded',
       cookie: 'meta_session=h2-test',
     };
+    assert.equal(
+      (await request({ ...headers, origin: 'null' }, body)).status,
+      403,
+    );
     assert.equal(
       (await request({ ...headers, origin: 'https://evil.test' }, body)).status,
       403,
