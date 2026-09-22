@@ -93,7 +93,20 @@ export function createMetaDisplayReader() {
   const pending = new Map<string, Promise<Record<string, unknown>>>();
   let generation = 0;
   let running = 0;
-  const waiting: (() => void)[] = [];
+  const byScope = new Map<string, number>();
+  const waiting: { scope: string; resolve: () => void }[] = [];
+  const dispatch = () => {
+    while (running < 6) {
+      const index = waiting.findIndex(
+        (item) => (byScope.get(item.scope) || 0) < 2,
+      );
+      if (index < 0) return;
+      const item = waiting.splice(index, 1)[0];
+      running++;
+      byScope.set(item.scope, (byScope.get(item.scope) || 0) + 1);
+      item.resolve();
+    }
+  };
   return {
     clear() {
       generation++;
@@ -114,9 +127,10 @@ export function createMetaDisplayReader() {
         throw new Error('Meta 只读请求繁忙，请稍后重试');
       const epoch = generation;
       const task = (async () => {
-        if (running >= 4)
-          await new Promise<void>((resolve) => waiting.push(resolve));
-        else running++;
+        await new Promise<void>((resolve) => {
+          waiting.push({ scope, resolve });
+          dispatch();
+        });
         try {
           const value = await graph(path, params);
           if (epoch === generation) {
@@ -129,9 +143,11 @@ export function createMetaDisplayReader() {
           }
           return value;
         } finally {
-          const next = waiting.shift();
-          if (next) next();
-          else running--;
+          running--;
+          const remaining = (byScope.get(scope) || 1) - 1;
+          if (remaining) byScope.set(scope, remaining);
+          else byScope.delete(scope);
+          dispatch();
         }
       })();
       pending.set(key, task);

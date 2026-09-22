@@ -134,6 +134,7 @@ export function adjustmentTree(
         const account = resolveAccount(r);
         if (
           day.scope &&
+          !day.filterable &&
           (day.scope.optimizer !== filters.optimizer ||
             day.scope.country !== filters.country)
         )
@@ -141,7 +142,9 @@ export function adjustmentTree(
         if (
           !adjustmentMatches(
             r,
-            day.scope ? { ...filters, optimizer: '', country: '' } : filters,
+            day.scope && !day.filterable
+              ? { ...filters, optimizer: '', country: '' }
+              : filters,
             account,
           )
         )

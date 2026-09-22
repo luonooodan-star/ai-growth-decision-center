@@ -16,12 +16,7 @@ const incomplete = (d: AdjustmentDay) =>
     .map((p) => p.message || '数据不完整，未用于达标判断')
     .join('；');
 
-export function useAdjustmentData(
-  appId: string,
-  media: string,
-  optimizer = '',
-  country = '',
-) {
+export function useAdjustmentData(appId: string, media: string) {
   const [days, setDays] = useState<AdjustmentDay[]>([]);
   const [today, setToday] = useState(adjustmentToday);
   const [loading, setLoading] = useState(false);
@@ -30,7 +25,6 @@ export function useAdjustmentData(
   const [details, setDetails] = useState<Record<string, AdjustmentDetail>>({});
   const [options, setOptions] = useState<AdjustmentDay['options']>();
   const [accountsReady, setAccountsReady] = useState(false);
-  const activated = useRef(false);
   const detailCache = useRef<Record<string, AdjustmentDetail>>({});
   const active = useRef<AbortController | null>(null);
   const children = useRef(new Map<string, AbortController>());
@@ -55,7 +49,6 @@ export function useAdjustmentData(
     setLoading(true);
     setError('');
     setAccountsReady(false);
-    activated.current = true;
     setProgress('先读取缓存 · 今日数据后台更新…');
     const live = () =>
       epoch === generation.current && !controller.signal.aborted;
@@ -70,12 +63,10 @@ export function useAdjustmentData(
       ) => {
         if (!live()) return;
         if (cache && !value[part].updatedAt) return;
+        if (value.date === date && part === 'daily') setOptions(value.daily);
         setDays((old) => {
           const previous = old.find(
-            (d) =>
-              d.date === value.date &&
-              d.scope?.optimizer === optimizer &&
-              d.scope?.country === country,
+            (d) => d.date === value.date && d.filterable === value.filterable,
           );
           const next = {
             ...(previous || value),
@@ -89,7 +80,7 @@ export function useAdjustmentData(
         d: string,
         part: 'daily' | 'revenue' | 'accounts',
       ) => {
-        const query = { date: d, appId, media, optimizer, country, part };
+        const query = { date: d, appId, media, localFilters: '1', part };
         if (part === 'accounts') {
           let offset: number | undefined = 0;
           let owner: string | undefined;
@@ -190,22 +181,6 @@ export function useAdjustmentData(
       const todayWork = ['daily', 'revenue', 'accounts'].map((p) =>
         fetchPart(date, p as keyof typeof labels),
       );
-      const optionsWork = (async () => {
-        try {
-          const value = await getAdjustmentDay(
-            { date, appId, media, part: 'options' },
-            controller.signal,
-          );
-          if (live()) setOptions(value.options);
-          if (
-            value.options?.state === 'missing' ||
-            value.options?.state === 'stale'
-          )
-            failures.push(`筛选项：${value.options.message || '未完成'}`);
-        } catch (e) {
-          if (live()) failures.push(`筛选项：${message(e)}`);
-        }
-      })();
       // Historical cache display must not wait for a slow live Meta check.
       const historyWork = Promise.all(
         adjustmentDates(date)
@@ -216,7 +191,7 @@ export function useAdjustmentData(
             ),
           ),
       );
-      await Promise.all([...todayWork, historyWork, optionsWork]);
+      await Promise.all([...todayWork, historyWork]);
       if (live()) {
         setError(failures.join('；'));
         setProgress(
@@ -236,7 +211,7 @@ export function useAdjustmentData(
         active.current = null;
       }
     }
-  }, [appId, media, optimizer, country, reset]);
+  }, [appId, media, reset]);
 
   const loadDetail = useCallback(
     async (campaignId: string) => {
@@ -304,8 +279,7 @@ export function useAdjustmentData(
                 appId,
                 media,
                 campaignId,
-                optimizer,
-                country,
+                localFilters: '1',
                 refresh: date === today ? '1' : undefined,
               },
               controller.signal,
@@ -330,7 +304,7 @@ export function useAdjustmentData(
         }
       }
     },
-    [appId, media, today, optimizer, country],
+    [appId, media, today],
   );
   useEffect(() => {
     reset();
@@ -340,16 +314,8 @@ export function useAdjustmentData(
     setProgress('');
     setOptions(undefined);
     setAccountsReady(false);
-    activated.current = false;
     return reset;
   }, [appId, media, reset]);
-  useEffect(() => {
-    // Selecting a server-side slice cancels obsolete work, never relabels old rows.
-    if (!activated.current) return;
-    reset();
-    void load();
-    return reset;
-  }, [optimizer, country, load, reset]);
   return {
     days,
     today,

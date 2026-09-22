@@ -12,6 +12,7 @@ export interface AdjustmentQuery {
   cacheOnly?: string;
   optimizer?: string;
   country?: string;
+  localFilters?: string;
   /** Bounded live ownership lookup, independent of historical data. */
   accountOffset?: string;
   accountSession?: string;
@@ -23,6 +24,7 @@ export interface AdjustmentDay {
   accounts: BiPart;
   granularity?: 'campaign' | 'detail';
   scope?: { optimizer: string; country: string };
+  filterable?: boolean;
   options?: BiPart;
   timings?: Record<string, number>;
 }

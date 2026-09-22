@@ -43,7 +43,7 @@ test('display reads deduplicate, isolate credentials, expire and clear after wri
   expect(graph).toHaveBeenCalledTimes(4);
 });
 
-test('display requests have at most four concurrent Graph reads; failures are not cached', async () => {
+test('display requests have at most two concurrent Graph reads per identity; failures are not cached', async () => {
   const reader = createMetaDisplayReader();
   let active = 0,
     peak = 0;
@@ -59,7 +59,7 @@ test('display requests have at most four concurrent Graph reads; failures are no
       reader.read('a', graph, String(i), {}),
     ),
   );
-  expect(peak).toBe(4);
+  expect(peak).toBe(2);
   const failed = jest.fn().mockRejectedValue(new Error('offline'));
   await expect(reader.read('b', failed, 'me', {})).rejects.toThrow('offline');
   await expect(reader.read('b', failed, 'me', {})).rejects.toThrow('offline');

@@ -9,6 +9,7 @@ import type { BiProduct } from '@shared/paid-growth.interface';
 import type { MetricStandardProduct } from '@shared/metric-signals';
 import {
   adjustmentAccounts,
+  adjustmentMatches,
   adjustmentDates,
   adjustmentSignal,
   adjustmentReportedTotal,
@@ -57,7 +58,7 @@ export default function AdAdjustmentPage() {
     loadDetail,
     options: filterData,
     accountsReady,
-  } = useAdjustmentData(appId, media, optimizer, country);
+  } = useAdjustmentData(appId, media);
   useEffect(() => {
     let live = true;
     setSetupError('');
@@ -135,10 +136,30 @@ export default function AdAdjustmentPage() {
   const noSpend = useMemo(
     () =>
       verifiedNoSpend(
-        days.filter(
-          (d) =>
-            d.scope?.optimizer === optimizer && d.scope?.country === country,
-        ),
+        days
+          .filter(
+            (d) =>
+              d.filterable ||
+              (d.scope?.optimizer === optimizer &&
+                d.scope?.country === country),
+          )
+          .map((d) =>
+            d.filterable
+              ? {
+                  ...d,
+                  daily: {
+                    ...d.daily,
+                    rows: d.daily.rows.filter((row) =>
+                      adjustmentMatches(
+                        row,
+                        { search: '', account: '', optimizer, country },
+                        '',
+                      ),
+                    ),
+                  },
+                }
+              : d,
+          ),
         [today],
       ),
     [days, today, optimizer, country],

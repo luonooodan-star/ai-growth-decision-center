@@ -56,6 +56,68 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
   },
 });
 describe('advertising adjustment workbench', () => {
+  test('one full authorized slice supports local AND filters and recomputes ROAS without requests', async () => {
+    const d = day();
+    d.filterable = true;
+    d.scope = { optimizer: '', country: '' };
+    d.granularity = 'campaign';
+    d.daily.rows.push({
+      ...raw,
+      buyer_alias: 'bob',
+      country_code: 'US',
+      spend: 30,
+    });
+    d.revenue.rows.push({
+      ...raw,
+      buyer_alias: 'bob',
+      country_code: 'US',
+      metric_value: 15,
+    });
+    expect(adjustmentTree([d], filters, d.date)[0].days[d.date].spend).toBe(40);
+    const alice = adjustmentTree(
+      [d],
+      {
+        ...filters,
+        optimizer: 'alice',
+        country: 'IN',
+        account: 'account1',
+        search: 'Campaign',
+      },
+      d.date,
+    );
+    expect(alice[0].days[d.date].spend).toBe(10);
+    expect(alice[0].days[d.date].roas).toBe(150);
+    expect(
+      adjustmentTree(
+        [d],
+        { ...filters, optimizer: 'alice', country: 'US' },
+        d.date,
+      ),
+    ).toEqual([]);
+    const bi = {
+      part: jest.fn().mockResolvedValue({ rows: [], state: 'cached' }),
+    };
+    const service = new AdAdjustmentService(bi as never);
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const result = await service.day({
+      date: today,
+      appId: '11',
+      media: 'facebook',
+      part: 'daily',
+      localFilters: '1',
+    });
+    expect(result.filterable).toBe(true);
+    const args = (bi.part.mock.calls as unknown[][])[0][0] as {
+      dimensions: string[];
+      filters_json: string;
+    };
+    expect(args.dimensions).toContain('buyer_alias');
+    expect(args.dimensions).toContain('country_code');
+    expect(args.dimensions).not.toContain('creative_id');
+    expect(JSON.parse(args.filters_json).buyer_alias).toBeUndefined();
+  });
   test('historical summary and detail reuse daily cache without Meta verification', async () => {
     const bi = {
       part: jest.fn().mockResolvedValue({ rows: [], state: 'cached' }),

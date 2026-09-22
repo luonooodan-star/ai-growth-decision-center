@@ -2,8 +2,13 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
+import { json } from 'express';
+import {
+  CenterSessions,
+  centerLoginPage,
+} from './common/utils/center-sessions';
 import { __express as hbsExpressEngine } from 'hbs';
-import { authenticateCenter } from './common/utils/center-identity';
+import { authenticateCenterAsync } from './common/utils/center-identity';
 import { join } from 'node:path';
 import {
   personalDorisStatus,
@@ -53,73 +58,161 @@ async function bootstrap(): Promise<void> {
     throw new Error('GROWTH_BASIC_AUTH_PASSWORD 至少需要 12 位');
   }
 
-  app.use((request: Request, response: Response, next: NextFunction): void => {
-    if (request.path === '/health/live') {
-      response.json({ ok: true });
-      return;
-    }
-    const credentials = readBasicCredentials(request.headers.authorization);
-    const authenticated: boolean = Boolean(
-      credentials &&
-      authenticateCenter(
-        credentials.username,
-        credentials.password,
-        accessPassword,
-      ),
-    );
-    if (!authenticated) {
-      response.setHeader(
-        'WWW-Authenticate',
-        'Basic realm="AI Growth Decision Center", charset="UTF-8"',
-      );
-      response.status(401).send('需要访问授权');
-      return;
-    }
-    const origin: string | undefined = request.headers.origin;
-    const isWrite: boolean = !['GET', 'HEAD', 'OPTIONS'].includes(
-      request.method,
-    );
-    if (isWrite && origin) {
+  const sessions = new CenterSessions(accessPassword);
+  app.use('/api/center/login', json({ limit: '4kb' }));
+
+  app.use(
+    async (
+      request: Request,
+      response: Response,
+      next: NextFunction,
+    ): Promise<void> => {
       try {
-        if (new URL(origin).host !== request.headers.host) {
-          response.status(403).send('已拒绝跨站写入');
+        if (request.path === '/health/live') {
+          response.json({ ok: true });
           return;
         }
-      } catch {
-        response.status(403).send('请求来源无效');
-        return;
+        response.setHeader('Cache-Control', 'no-store');
+        const token = request.headers.cookie
+          ?.split(';')
+          .map((s) => s.trim())
+          .find((s) => s.startsWith('center_session='))
+          ?.slice('center_session='.length);
+        const cookie = (value: string, age: number) =>
+          response.setHeader(
+            'Set-Cookie',
+            `center_session=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${request.secure ? '; Secure' : ''}`,
+          );
+        const origin: string | undefined = request.headers.origin;
+        const isWrite: boolean = !['GET', 'HEAD', 'OPTIONS'].includes(
+          request.method,
+        );
+        if (
+          isWrite &&
+          (origin || request.headers['sec-fetch-site'] === 'cross-site')
+        ) {
+          try {
+            if (
+              !origin ||
+              new URL(origin).origin !==
+                `${request.protocol}://${request.headers.host}`
+            ) {
+              response.status(403).send('已拒绝跨站写入');
+              return;
+            }
+          } catch {
+            response.status(403).send('请求来源无效');
+            return;
+          }
+        }
+        if (request.path === '/login' && request.method === 'GET') {
+          response.type('html').send(centerLoginPage);
+          return;
+        }
+        if (request.path === '/api/center/login' && request.method === 'POST') {
+          if (
+            !origin ||
+            typeof request.body?.username !== 'string' ||
+            typeof request.body?.password !== 'string'
+          ) {
+            response.status(400).json({ message: '登录请求无效' });
+            return;
+          }
+          const fresh = await sessions.login(
+            request.body.username,
+            request.body.password,
+          );
+          if (!fresh) {
+            response.status(401).json({ message: '用户名或密码错误' });
+            return;
+          }
+          sessions.logout(token);
+          cookie(fresh, 8 * 3600);
+          response.json({ ok: true });
+          return;
+        }
+        if (
+          request.path === '/api/center/logout' &&
+          request.method === 'POST'
+        ) {
+          if (!origin) {
+            response.status(403).end();
+            return;
+          }
+          sessions.logout(token);
+          cookie('', 0);
+          response.json({ ok: true });
+          return;
+        }
+        const session = await sessions.resolve(token);
+        // Keep explicit CLI Basic access, never Chrome's cached Basic identity.
+        const credentials =
+          !request.headers['sec-fetch-mode'] && !token
+            ? readBasicCredentials(request.headers.authorization)
+            : undefined;
+        const username =
+          session?.username ||
+          (credentials &&
+          (await authenticateCenterAsync(
+            credentials.username,
+            credentials.password,
+            accessPassword,
+          ))
+            ? credentials.username
+            : undefined);
+        if (!username) {
+          if (request.method === 'GET' && !request.path.startsWith('/api/'))
+            response.redirect('/login');
+          else response.status(401).json({ message: '请重新登录' });
+          return;
+        }
+        const binding = request.headers['x-center-session'];
+        if (
+          session &&
+          ((binding && binding !== session.sessionId) ||
+            (isWrite && (!origin || binding !== session.sessionId)))
+        ) {
+          response
+            .status(409)
+            .json({ message: '登录身份已变化，请刷新页面后重试' });
+          return;
+        }
+        if (request.path === '/api/center/me') {
+          response.setHeader('Cache-Control', 'no-store');
+          response.json({
+            username,
+            sessionId: session?.sessionId,
+            doris: personalDorisStatus(username),
+          });
+          return;
+        }
+        response.setHeader('Cache-Control', 'no-store');
+        if (
+          request.path.startsWith('/api/growth-decision') &&
+          request.path !==
+            '/api/growth-decision/adjustments/authorization-link' &&
+          request.path !==
+            '/api/growth-decision/adjustments/authorization-status' &&
+          !(
+            request.method === 'GET' &&
+            [
+              '/api/growth-decision/dashboard',
+              '/api/growth-decision/meta-operations/weekly',
+            ].includes(request.path)
+          ) &&
+          !personalDorisStatus(username).configured
+        ) {
+          response.status(403).json({
+            message: '请先配置本人的 Doris Key；不会使用他人的凭据或缓存',
+          });
+          return;
+        }
+        runPersonalData(username, next);
+      } catch (error) {
+        next(error);
       }
-    }
-    if (request.path === '/api/center/me') {
-      response.setHeader('Cache-Control', 'no-store');
-      response.json({
-        username: credentials!.username,
-        doris: personalDorisStatus(credentials!.username),
-      });
-      return;
-    }
-    response.setHeader('Cache-Control', 'no-store');
-    if (
-      request.path.startsWith('/api/growth-decision') &&
-      request.path !== '/api/growth-decision/adjustments/authorization-link' &&
-      request.path !==
-        '/api/growth-decision/adjustments/authorization-status' &&
-      !(
-        request.method === 'GET' &&
-        [
-          '/api/growth-decision/dashboard',
-          '/api/growth-decision/meta-operations/weekly',
-        ].includes(request.path)
-      ) &&
-      !personalDorisStatus(credentials!.username).configured
-    ) {
-      response.status(403).json({
-        message: '请先配置本人的 Doris Key；不会使用他人的凭据或缓存',
-      });
-      return;
-    }
-    runPersonalData(credentials!.username, next);
-  });
+    },
+  );
 
   app.useStaticAssets(clientDirectory);
   app.setBaseViewsDir(clientDirectory);

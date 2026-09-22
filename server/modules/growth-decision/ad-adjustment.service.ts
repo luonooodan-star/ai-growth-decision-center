@@ -138,8 +138,8 @@ export class AdAdjustmentService {
             (field) =>
               !field.startsWith('adgroup_') &&
               !field.startsWith('creative_') &&
-              field !== 'buyer_alias' &&
-              field !== 'country_code',
+              (q.localFilters === '1' ||
+                (field !== 'buyer_alias' && field !== 'country_code')),
           ),
     };
     const timings: Record<string, number> = {};
@@ -229,6 +229,7 @@ export class AdAdjustmentService {
         : accounts,
       granularity: q.campaignId ? 'detail' : 'campaign',
       scope: { optimizer: q.optimizer || '', country: q.country || '' },
+      filterable: q.localFilters === '1' && !q.optimizer && !q.country,
       options,
       timings,
     };

@@ -7,6 +7,7 @@ import {
 import axios from 'axios';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { centerIdentity } from '../../common/utils/center-identity';
+import { AdjustmentLocks } from '../../common/utils/adjustment-locks';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { metaWorkspaceOrigin } from '@shared/meta-workspace';
 import { readMetaLocalBridge } from './meta-local-bridge';
@@ -23,6 +24,7 @@ import {
 @Injectable()
 export class MetaAdjustmentService {
   private readonly logger = new Logger(MetaAdjustmentService.name);
+  private readonly executionLocks = new AdjustmentLocks();
   private readonly identities = new Map<
     string,
     { ownerId: string; until: number }
@@ -363,15 +365,33 @@ export class MetaAdjustmentService {
       throw new BadRequestException('确认清单已过期，请重新预检');
     if (all.some((j) => j.state === 'running'))
       throw new BadRequestException('已有调整任务执行中，请完成后再提交');
+    let release: () => void;
+    try {
+      release = this.executionLocks.acquire(
+        job.id,
+        job.items.map(
+          (item) => `${item.before.accountId}:${item.before.campaignId}`,
+        ),
+      );
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
     job.state = 'running';
     job.submittedAt = new Date().toISOString();
-    this.db.saveAdjustmentJob(job);
-    void this.run(cookie, job).catch(() => {
-      // Persistence failure: do not continue any remaining mutation. Restart recovery marks inflight rows uncertain.
-      this.logger.error(
-        `调整任务 ${job.id} 留档失败，已停止执行；需核对数据库与 Meta 状态`,
-      );
-    });
+    try {
+      this.db.saveAdjustmentJob(job);
+    } catch (error) {
+      release();
+      throw error;
+    }
+    void this.run(cookie, job)
+      .then(release)
+      .catch(() => {
+        // Persistence failure: do not continue any remaining mutation. Restart recovery marks inflight rows uncertain.
+        this.logger.error(
+          `调整任务 ${job.id} 留档失败，已停止执行；需核对数据库与 Meta 状态`,
+        );
+      });
     return job;
   }
   private async run(cookie: string, job: MetaAdjustmentJob): Promise<void> {

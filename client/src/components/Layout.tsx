@@ -19,6 +19,43 @@ const Layout = () => {
   >({ dorisConfigured: false, meta: 'checking' });
   const checking = useRef(false);
   const lastCheck = useRef(0);
+  const identity = useRef('');
+  const logout = async () => {
+    try {
+      await axios.post('/api/center/logout');
+      try {
+        localStorage.setItem('center-session-changed', String(Date.now()));
+      } catch {
+        /* private browsing */
+      }
+      window.location.replace('/login');
+    } catch {
+      setAuthError('注销失败，请重试；当前身份未切换');
+    }
+  };
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'center-session-changed') window.location.reload();
+    };
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (
+          error.response?.status === 401 ||
+          (error.response?.status === 409 &&
+            error.response?.data?.message ===
+              '登录身份已变化，请刷新页面后重试')
+        )
+          window.location.replace('/login');
+        return Promise.reject(error);
+      },
+    );
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
   const refresh = useCallback(async () => {
     if (checking.current) return;
     checking.current = true;
@@ -27,6 +64,13 @@ const Layout = () => {
     setConnection((old) => ({ ...old, meta: 'checking' }));
     try {
       const { data } = await axios.get('/api/center/me', { timeout: 10000 });
+      if (identity.current && identity.current !== data.username) {
+        window.location.reload();
+        return;
+      }
+      identity.current = data.username;
+      if (data.sessionId)
+        axios.defaults.headers.common['X-Center-Session'] = data.sessionId;
       setUsername(data.username || '');
       setConnection((old) => ({
         ...old,
@@ -129,6 +173,14 @@ const Layout = () => {
               <p className="text-[11px] text-slate-500">
                 {username || '身份待确认'}
               </p>
+              <div className="mt-1 flex justify-end gap-3 text-xs text-blue-600">
+                <button type="button" onClick={() => void logout()}>
+                  切换账户
+                </button>
+                <button type="button" onClick={() => void logout()}>
+                  退出登录
+                </button>
+              </div>
               <NavLink
                 to="/authorization"
                 className={`mt-1 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${connection.meta === 'authorized' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
