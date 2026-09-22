@@ -47,6 +47,28 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
     jest.restoreAllMocks();
   });
   const cookie = 'meta_session=test-session; ignored=secret';
+  test('account name lookup is bounded, deduplicated and read-only', async () => {
+    jest
+      .mocked(axios.post)
+      .mockResolvedValue({
+        data: { accounts: [{ id: '222', name: 'Test account' }] },
+      });
+    expect(await service.accountNames(cookie, ['222', '222'])).toEqual({
+      accounts: [{ id: '222', name: 'Test account' }],
+    });
+    expect(jest.mocked(axios.post).mock.calls[0][1]).toEqual({
+      action: 'account-names',
+      accountIds: ['222'],
+    });
+    await expect(service.accountNames(cookie, ['invalid'])).rejects.toThrow(
+      'ID 无效',
+    );
+    await expect(
+      service.accountNames(cookie, Array(11).fill('222')),
+    ).rejects.toThrow('ID 无效');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(db.listAdjustmentJobs()).toHaveLength(0);
+  });
   test('local bridge uses private auth without browser cookie and rechecks identity', async () => {
     jest.spyOn(bridge, 'readMetaLocalBridge').mockReturnValue({
       origin: 'http://127.0.0.1:18761',

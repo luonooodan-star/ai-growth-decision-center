@@ -95,6 +95,18 @@ export class MetaAdjustmentService {
       throw error;
     }
   }
+  async accountNames(cookie: string, ids: string[]) {
+    if (
+      !Array.isArray(ids) ||
+      ids.length > 10 ||
+      ids.some((id) => typeof id !== 'string' || !/^\d{1,40}$/.test(id))
+    )
+      throw new BadRequestException('广告账户 ID 无效');
+    return this.relay<{ accounts: { id: string; name: string }[] }>(cookie, {
+      action: 'account-names',
+      accountIds: [...new Set(ids)],
+    });
+  }
   async identity(cookie: string): Promise<string> {
     if (readMetaLocalBridge()) {
       // Shared local authorization can be rebound/revoked: never cache its identity.

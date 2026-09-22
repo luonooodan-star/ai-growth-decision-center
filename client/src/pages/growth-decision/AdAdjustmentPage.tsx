@@ -2,13 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableFilter as FilterSelect } from './SearchableFilter';
+import { useAccountNames } from './useAccountNames';
 import { getBiProducts, getBiStandards } from '@/api/paid-growth';
 import type { BiProduct } from '@shared/paid-growth.interface';
 import type { MetricStandardProduct } from '@shared/metric-signals';
@@ -37,36 +32,6 @@ const formatTime = (stamp: string | number) =>
     timeZone: 'Asia/Shanghai',
     hour12: false,
   });
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <Select
-      value={value || '__all__'}
-      onValueChange={(v) => onChange(v === '__all__' ? '' : v)}
-    >
-      <SelectTrigger aria-label={label} className="w-full min-w-40 bg-white">
-        <SelectValue placeholder={`全部${label}`} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__all__">全部{label}</SelectItem>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 export default function AdAdjustmentPage() {
   const draftState = useAdjustmentDrafts();
   const [products, setProducts] = useState<BiProduct[]>([]);
@@ -151,6 +116,10 @@ export default function AdAdjustmentPage() {
         .map((value) => ({ value, label: value })),
     };
   }, [days, current, filterData]);
+  const { names: accountNames, pending: accountNamesPending } = useAccountNames(
+    options.accounts.map((option) => option.value),
+    metadataRevision,
+  );
   const tree = useMemo(
     () =>
       withAdjustmentDetails(
@@ -436,7 +405,19 @@ export default function AdAdjustmentPage() {
             <FilterSelect
               label="广告账户"
               value={account}
-              options={options.accounts}
+              options={options.accounts.map((option) =>
+                /^\d+$/.test(option.value)
+                  ? {
+                      value: option.value,
+                      label:
+                        accountNames[option.value] ||
+                        (accountNamesPending
+                          ? '账户名称读取中'
+                          : '账户名称未返回'),
+                      description: option.value,
+                    }
+                  : option,
+              )}
               onChange={setAccount}
             />
             <FilterSelect

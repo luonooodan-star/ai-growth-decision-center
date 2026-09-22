@@ -27,6 +27,12 @@ export class MetaAdjustmentController {
       throw new BadRequestException('仅允许本站确认提交');
     return req.headers.cookie || '';
   }
+  @Post('account-names') accountNames(
+    @Req() req: Request,
+    @Body() body: { accountIds: string[] },
+  ) {
+    return this.service.accountNames(this.write(req), body.accountIds);
+  }
   @Post('inspect') inspect(
     @Req() req: Request,
     @Body() body: { target: MetaAdjustmentTarget; creative?: boolean },

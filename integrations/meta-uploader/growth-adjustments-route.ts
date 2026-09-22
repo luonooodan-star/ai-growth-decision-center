@@ -31,12 +31,44 @@ export async function POST(request: Request) {
       target: MetaAdjustmentTarget;
       change: MetaAdjustmentChange;
       ownerId?: string;
+      accountIds?: string[];
     };
     const profile = await call('me', { fields: 'id' });
     const ownerId = String(profile.id || '');
     if (!ownerId || (body.ownerId && body.ownerId !== ownerId))
       throw new Error('Meta 登录用户已变化，请重新预检');
     if (body.action === 'identity') return Response.json({ ownerId });
+    if (body.action === 'account-names') {
+      const ids = body.accountIds;
+      if (
+        !Array.isArray(ids) ||
+        ids.length > 10 ||
+        ids.some((id) => !/^\d{1,40}$/.test(id))
+      )
+        throw new Error('广告账户 ID 无效');
+      const accounts: { id: string; name: string }[] = [];
+      const queue = [...new Set(ids)];
+      await Promise.all(
+        Array.from({ length: 2 }, async () => {
+          while (queue.length) {
+            const id = queue.shift()!;
+            try {
+              const account = await call(`act_${id}`, {
+                fields: 'account_id,name',
+              });
+              if (
+                String(account.account_id) === id &&
+                typeof account.name === 'string'
+              )
+                accounts.push({ id, name: account.name });
+            } catch {
+              /* An inaccessible name must not hide the Doris account ID. */
+            }
+          }
+        }),
+      );
+      return Response.json({ accounts });
+    }
     if (body.action === 'read')
       return Response.json({
         ownerId,
