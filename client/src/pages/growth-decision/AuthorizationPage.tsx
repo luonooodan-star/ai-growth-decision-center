@@ -11,17 +11,42 @@ export default function AuthorizationPage() {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
   const openMeta = async () => {
-    setOpening(true);
     setError('');
+    // Open during the click gesture, before awaiting the signed link, so browsers
+    // do not treat the later navigation as an unsolicited popup.
+    const authorizationWindow = window.open(
+      'about:blank',
+      '_blank',
+      'popup,width=960,height=800',
+    );
+    if (!authorizationWindow) {
+      setError('浏览器拦截了授权窗口，请允许本站弹出窗口后重新点击。');
+      return;
+    }
+    authorizationWindow.opener = null;
+    authorizationWindow.document.title = '正在打开 Meta 授权';
+    authorizationWindow.document.body.textContent =
+      '正在获取个人授权入口，请稍候…';
+    setOpening(true);
     try {
       const { data } = await axios.post(
         '/api/growth-decision/adjustments/authorization-link',
         {},
         { timeout: 15000 },
       );
-      window.location.assign(data.url);
+      const url = new URL(data.url);
+      if (url.protocol !== 'https:' || url.pathname !== '/growth-center-link') {
+        throw new Error('Invalid authorization URL');
+      }
+      if (authorizationWindow.closed) {
+        setError('授权窗口已关闭，请重新点击打开。');
+        return;
+      }
+      authorizationWindow.location.replace(url.href);
     } catch {
+      authorizationWindow.close();
       setError('无法打开个人授权入口，请让管理员检查本机桥配置与原工具服务。');
+    } finally {
       setOpening(false);
     }
   };
@@ -89,10 +114,10 @@ export default function AuthorizationPage() {
             身份，再授权给当前决策中心用户。也可在该页面撤销本人授权。
           </p>
           <Button disabled={!username || opening} onClick={openMeta}>
-            {opening ? '正在打开…' : '打开 Meta 授权 / 撤销页面'}
+            {opening ? '正在打开…' : '新窗口打开 Meta 授权 / 撤销页面'}
           </Button>
           <p className="text-xs leading-5 text-slate-500">
-            授权后返回本页点击“重新检测”。检测只读取身份，不修改广告；已授权不代表拥有全部广告账户的操作权限。
+            授权页在新窗口打开，当前页面保留。授权后切回本页将重新检测，也可点击“重新检测”。检测只读取身份，不修改广告；已授权不代表拥有全部广告账户的操作权限。
           </p>
           {checkedAt && (
             <p className="text-xs text-slate-400">
