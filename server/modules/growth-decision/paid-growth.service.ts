@@ -146,14 +146,14 @@ export class PaidGrowthService {
             }
           : { rows: [], state: 'missing', message: '暂无缓存，等待抓取' },
       );
-    const existing = this.pending.get(key);
-    if (existing) return existing;
     if (
       !refresh &&
       cache?.updatedAt &&
       Date.now() - Date.parse(cache.updatedAt) < ttl
     )
       return Promise.resolve({ ...cache, state: 'cached' });
+    const existing = this.pending.get(key);
+    if (existing) return existing;
     const promise = (async (): Promise<BiPart> => {
       try {
         const rows = await completeBiQuery((args) => this.query(args), args);

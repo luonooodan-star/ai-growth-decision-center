@@ -405,19 +405,13 @@ export class LocalDatabaseService implements OnModuleDestroy {
         'INSERT INTO growth_bi_cache (cache_key, payload) VALUES (?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload',
       )
       .run(key, payload);
-    // Only disposable BI cache is bounded; decision snapshots and history are untouched.
+    // Keep shared BI/adjustment data on disk for 90 days per personal scope.
+    // Do not evict recent dates merely because detailed queries exceed 1,500
+    // entries / 128 MiB. Query responses remain lazy and are not all loaded in RAM.
     this.database
       .prepare(
-        `DELETE FROM growth_bi_cache WHERE cache_key IN (
-      SELECT cache_key FROM (
-        SELECT cache_key,
-          SUM(length(CAST(payload AS BLOB))) OVER (
-            ORDER BY json_extract(payload, '$.updatedAt') DESC, cache_key
-          ) AS bytes,
-          ROW_NUMBER() OVER (ORDER BY json_extract(payload, '$.updatedAt') DESC, cache_key) AS position
-        FROM growth_bi_cache
-      ) WHERE bytes > 134217728 OR position > 1500
-    )`,
+        `DELETE FROM growth_bi_cache
+         WHERE julianday(json_extract(payload, '$.updatedAt')) < julianday('now', '-90 days')`,
       )
       .run();
   }
@@ -909,6 +903,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
         PRIMARY KEY (account_id, id)
       );
       CREATE TABLE IF NOT EXISTS growth_bi_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS growth_bi_cache_age ON growth_bi_cache(julianday(json_extract(payload, '$.updatedAt')));
       CREATE TABLE IF NOT EXISTS growth_fetch_checkpoint (
         checkpoint_key TEXT PRIMARY KEY,
         updated_at TEXT NOT NULL,

@@ -90,12 +90,71 @@ export function useAdjustmentData(
         part: 'daily' | 'revenue' | 'accounts',
       ) => {
         const query = { date: d, appId, media, optimizer, country, part };
+        if (part === 'accounts') {
+          let offset: number | undefined = 0;
+          let owner: string | undefined;
+          const rows: AdjustmentDay['accounts']['rows'] = [];
+          try {
+            while (offset !== undefined && live()) {
+              const value = await getAdjustmentDay(
+                { ...query, accountOffset: String(offset) },
+                controller.signal,
+              );
+              if (!live()) return;
+              const page = value.accounts;
+              if (page.state === 'missing' || page.state === 'stale')
+                throw new Error(page.message || '账户核验未完成');
+              if (
+                owner &&
+                page.accountOwnerId &&
+                owner !== page.accountOwnerId
+              ) {
+                rows.length = 0;
+                setAccountsReady(false);
+                merge(
+                  {
+                    ...value,
+                    accounts: {
+                      rows: [],
+                      state: 'missing',
+                      message: 'Meta 身份已变化，请重新抓取',
+                    },
+                  },
+                  part,
+                );
+                throw new Error('Meta 身份已变化，请重新抓取');
+              }
+              owner = page.accountOwnerId || owner;
+              rows.push(...page.rows);
+              merge({ ...value, accounts: { ...page, rows: [...rows] } }, part);
+              setAccountsReady(true);
+              setProgress(
+                `已核验 ${rows.length} 个系列，已确认的系列可操作 · 其余分批核验中`,
+              );
+              if (page.message && page.message.includes('无法'))
+                failures.push(`${d}：${page.message}`);
+              const next = page.accountNextOffset;
+              if (next !== undefined && next <= offset)
+                throw new Error('账户核验分页未推进');
+              offset = next;
+            }
+          } catch (e) {
+            if (live())
+              failures.push(
+                `账户核验部分未完成：${message(e)}；已确认的系列仍可操作，请重新抓取重试其余系列`,
+              );
+          }
+          return;
+        }
         try {
           const cached = await getAdjustmentDay(
             { ...query, cacheOnly: '1' },
             controller.signal,
           );
           merge(cached, part, true);
+          // The server has already validated this user's historical cache TTL.
+          // Reading it does not grant permission to modify an advertising object.
+          if (d !== date && cached[part].state === 'cached') return;
         } catch {
           /* A cache failure must not block a fresh read. */
         }
@@ -112,12 +171,6 @@ export function useAdjustmentData(
             failures.push(`${d} ${labels[part]}：${p.message || '未完成'}`);
           if (d === date) {
             done.add(part);
-            if (part === 'accounts')
-              setAccountsReady(
-                p.state === 'fresh' ||
-                  p.state === 'cached' ||
-                  media !== 'facebook',
-              );
             setProgress(
               `今日：${Object.entries(labels)
                 .map(
@@ -151,19 +204,17 @@ export function useAdjustmentData(
           if (live()) failures.push(`筛选项：${message(e)}`);
         }
       })();
-      await Promise.all(todayWork);
-      if (!live()) return;
-      // Histories do not compete with today's first paint.
-      await Promise.all(
+      // Historical cache display must not wait for a slow live Meta check.
+      const historyWork = Promise.all(
         adjustmentDates(date)
           .slice(0, 2)
           .flatMap((d) =>
-            ['daily', 'revenue', 'accounts'].map((p) =>
+            ['daily', 'revenue'].map((p) =>
               fetchPart(d, p as keyof typeof labels),
             ),
           ),
       );
-      await optionsWork;
+      await Promise.all([...todayWork, historyWork, optionsWork]);
       if (live()) {
         setError(failures.join('；'));
         setProgress(

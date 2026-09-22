@@ -12,6 +12,8 @@ export interface AdjustmentQuery {
   cacheOnly?: string;
   optimizer?: string;
   country?: string;
+  /** Bounded live ownership lookup, independent of historical data. */
+  accountOffset?: string;
 }
 export interface AdjustmentDay {
   date: string;

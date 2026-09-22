@@ -25,21 +25,17 @@ const q = {
 };
 test('resolves only personal Doris visible campaign IDs, never queries forbidden DWD', async () => {
   const bi = {
-    part: jest
-      .fn()
-      .mockResolvedValue({
-        state: 'fresh',
-        rows: [{ campaign_id: '1' }, { campaign_id: '2' }],
-      }),
+    part: jest.fn().mockResolvedValue({
+      state: 'fresh',
+      rows: [{ campaign_id: '1' }, { campaign_id: '2' }],
+    }),
   };
   const meta = {
-    campaignAccounts: jest
-      .fn()
-      .mockResolvedValue({
-        ownerId: 'fjx-meta',
-        campaigns: [{ campaignId: '1', accountId: '101' }],
-        unavailable: ['2'],
-      }),
+    campaignAccounts: jest.fn().mockResolvedValue({
+      ownerId: 'fjx-meta',
+      campaigns: [{ campaignId: '1', accountId: '101' }],
+      unavailable: ['2'],
+    }),
   };
   const result = await new AdAdjustmentService(bi as never, meta as never).day(
     q,
@@ -74,16 +70,14 @@ test('no credential/permission fallback when personal Meta fails or Doris is inc
   await service.day({ ...q, cacheOnly: '1' });
   expect(meta.campaignAccounts).not.toHaveBeenCalled();
 });
-test('identity switch mid-batch discards all mappings', async () => {
+test('ownership is paginated and includes identity for client-side switch detection', async () => {
   const bi = {
-    part: jest
-      .fn()
-      .mockResolvedValue({
-        state: 'fresh',
-        rows: Array.from({ length: 11 }, (_, i) => ({
-          campaign_id: String(i + 1),
-        })),
-      }),
+    part: jest.fn().mockResolvedValue({
+      state: 'fresh',
+      rows: Array.from({ length: 11 }, (_, i) => ({
+        campaign_id: String(i + 1),
+      })),
+    }),
   };
   const meta = {
     campaignAccounts: jest
@@ -97,7 +91,14 @@ test('identity switch mid-batch discards all mappings', async () => {
         campaigns: [{ campaignId: '11', accountId: '102' }],
       }),
   };
-  expect(
-    (await new AdAdjustmentService(bi as never, meta as never).day(q)).accounts,
-  ).toMatchObject({ state: 'missing', rows: [] });
+  const service = new AdAdjustmentService(bi as never, meta as never);
+  expect((await service.day(q)).accounts).toMatchObject({
+    state: 'fresh',
+    accountOwnerId: 'first',
+    accountNextOffset: 10,
+  });
+  expect(meta.campaignAccounts).toHaveBeenCalledTimes(1);
+  const next = await service.day({ ...q, accountOffset: '10' });
+  expect(next.accounts.accountOwnerId).toBe('second');
+  expect(next.accounts.accountNextOffset).toBeUndefined();
 });

@@ -56,6 +56,32 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
   },
 });
 describe('advertising adjustment workbench', () => {
+  test('historical summary and detail reuse daily cache without Meta verification', async () => {
+    const bi = {
+      part: jest.fn().mockResolvedValue({ rows: [], state: 'cached' }),
+    };
+    const meta = { campaignAccounts: jest.fn() };
+    const service = new AdAdjustmentService(bi as never, meta as never);
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    for (const date of adjustmentDates(today).slice(0, 2)) {
+      for (const campaignId of [undefined, '123']) {
+        const result = await service.day({
+          date,
+          appId: '11',
+          media: 'facebook',
+          campaignId,
+          refresh: '1',
+        });
+        expect(result.accounts.state).toBe('unsupported');
+      }
+    }
+    expect(meta.campaignAccounts).not.toHaveBeenCalled();
+    expect(bi.part).toHaveBeenCalledTimes(8);
+    for (const call of bi.part.mock.calls as unknown[][])
+      expect(call.slice(1)).toEqual([false, 86400000, '']);
+  });
   test('parts are independent; summary filters are pushed down, options have independent scope', async () => {
     const bi = {
       part: jest.fn().mockResolvedValue({ rows: [], state: 'fresh' }),
@@ -111,14 +137,12 @@ describe('advertising adjustment workbench', () => {
   test('cache-only returns immediately while fresh work is running, without querying Doris', async () => {
     let release!: (v: never) => void;
     const db = {
-      getBiCache: jest
-        .fn()
-        .mockReturnValue(
-          JSON.stringify({
-            rows: [{ spend: 5 }],
-            updatedAt: new Date().toISOString(),
-          }),
-        ),
+      getBiCache: jest.fn().mockReturnValue(
+        JSON.stringify({
+          rows: [{ spend: 5 }],
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
       saveBiCache: jest.fn(),
     };
     const fetcher = {

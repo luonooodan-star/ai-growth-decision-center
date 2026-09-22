@@ -39,9 +39,16 @@ export class AdAdjustmentService {
     refresh: boolean,
     cacheOnly = false,
   ): Promise<BiPart> {
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    // Historical D0 may still receive late arrivals; refresh at most daily.
+    const ttl =
+      String(args.end_date) < today
+        ? 24 * 60 * 60 * 1000
+        : ADJUSTMENT_REFRESH_MS;
     // Cache peeks never wait for active Doris work. Same query shares BI cache.
-    if (cacheOnly)
-      return this.bi.part(args, false, ADJUSTMENT_REFRESH_MS, '', true);
+    if (cacheOnly) return this.bi.part(args, false, ttl, '', true);
     const key = JSON.stringify([personalScopeKey(), args, refresh]);
     const pending = this.pending.get(key);
     if (pending) return pending;
@@ -52,7 +59,7 @@ export class AdAdjustmentService {
         await new Promise<void>((resolve) => this.waiting.push(resolve));
       else this.running++;
       try {
-        return await this.bi.part(args, refresh, ADJUSTMENT_REFRESH_MS, '');
+        return await this.bi.part(args, refresh, ttl, '');
       } finally {
         const next = this.waiting.shift();
         if (next) next();
@@ -77,6 +84,8 @@ export class AdAdjustmentService {
       throw new BadRequestException('请先选择产品和渠道');
     if (q.campaignId !== undefined && !/^\d{1,40}$/.test(q.campaignId))
       throw new BadRequestException('广告系列 ID 无效');
+    if (q.accountOffset !== undefined && !/^\d{1,7}$/.test(q.accountOffset))
+      throw new BadRequestException('账户核验分页无效');
     if (q.part && !['daily', 'revenue', 'accounts', 'options'].includes(q.part))
       throw new BadRequestException('数据类型无效');
     for (const value of [q.optimizer, q.country])
@@ -145,9 +154,15 @@ export class AdAdjustmentService {
       }),
     });
     const accountsTask =
-      !q.media || q.media === 'facebook'
-        ? this.personalAccounts(q, dailyArgs)
-        : Promise.resolve({ rows: [], state: 'unsupported' as const });
+      q.date < today
+        ? Promise.resolve({
+            rows: [],
+            state: 'unsupported' as const,
+            message: '历史指标无需重复核验 Meta 账户；操作权限以当前校验为准',
+          })
+        : !q.media || q.media === 'facebook'
+          ? this.personalAccounts(q, dailyArgs)
+          : Promise.resolve({ rows: [], state: 'unsupported' as const });
     const optionsTask =
       q.part === 'options'
         ? read(
@@ -200,7 +215,6 @@ export class AdAdjustmentService {
         state: 'missing',
         message: '等待本次个人 Meta 归属核验',
       };
-    const started = Date.now();
     try {
       if (!this.meta) throw new Error('个人 Meta 桥接服务不可用');
       // Only resolve IDs visible through this user's Doris key. No DWD/admin key fallback.
@@ -217,20 +231,18 @@ export class AdAdjustmentService {
             .map((row) => String(row.campaign_id || ''))
             .filter((id) => /^\d{1,40}$/.test(id)),
         ),
-      ];
+      ].sort();
       const rows: BiPart['rows'] = [];
       let unavailable = 0;
       let ownerId: string | undefined;
-      // Serial bounded batches: at most two Graph reads in flight per request.
-      for (let offset = 0; offset < ids.length; offset += 10) {
-        if (Date.now() - started > 90000)
-          throw new Error('Meta 账户核验超时，请缩小系列范围重试');
+      // One bounded page per HTTP request. Previously all campaigns were held
+      // until the last batch finished, discarding successes after a timeout.
+      const offset = Number(q.accountOffset || 0);
+      if (offset < ids.length) {
         const batch = ids.slice(offset, offset + 10);
         const result = await this.meta.campaignAccounts(batch);
         if (!result.ownerId || !Array.isArray(result.campaigns))
           throw new Error('请更新原工具适配器并重新授权');
-        if (ownerId && ownerId !== result.ownerId)
-          throw new Error('Meta 身份已变化，请重新抓取');
         ownerId = result.ownerId;
         const valid = result.campaigns.filter(
           (c) => batch.includes(c.campaignId) && /^\d{1,40}$/.test(c.accountId),
@@ -246,6 +258,8 @@ export class AdAdjustmentService {
       }
       return {
         rows,
+        accountOwnerId: ownerId,
+        accountNextOffset: offset + 10 < ids.length ? offset + 10 : undefined,
         state: 'fresh',
         updatedAt: new Date().toISOString(),
         message: unavailable

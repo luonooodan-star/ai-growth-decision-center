@@ -195,17 +195,27 @@ describe('BI persistence and product registration', () => {
       clock.mockRestore();
     }
   });
-  test('cache prunes only disposable BI records while retaining product data', () => {
+  test('cache retains more than 1500 entries for 90 days and prunes only expired BI data', () => {
     const products = db.listProducts();
     for (let i = 0; i < 1502; i++)
       db.saveBiCache(
         `bounded-${i}`,
         JSON.stringify({
           rows: [],
-          updatedAt: new Date(1700000000000 + i * 1000).toISOString(),
+          updatedAt: new Date(
+            Date.now() - 89 * 86400000 + i * 1000,
+          ).toISOString(),
         }),
       );
-    expect(db.getBiCache('bounded-0')).toBeUndefined();
+    db.saveBiCache(
+      'expired',
+      JSON.stringify({
+        rows: [],
+        updatedAt: new Date(Date.now() - 91 * 86400000).toISOString(),
+      }),
+    );
+    expect(db.getBiCache('expired')).toBeUndefined();
+    expect(db.getBiCache('bounded-0')).toBeDefined();
     expect(db.getBiCache('bounded-1501')).toBeDefined();
     expect(db.listProducts()).toEqual(products);
   });
