@@ -4,6 +4,7 @@ import type { MetaAdjustmentSnapshot } from '@shared/api.interface';
 import { inspectAdjustment, adjustmentError } from '@/api/meta-adjustments';
 import { AdjustmentRowEditor } from './AdjustmentEditor';
 import type { ComponentProps } from 'react';
+import { useAuthorization } from '@/components/AuthorizationContext';
 
 // Read-only Meta inspections are viewport-driven and bounded, never one request per table row at once.
 let running = 0;
@@ -13,8 +14,8 @@ const cache = new Map<
   { at: number; snapshots: MetaAdjustmentSnapshot[] }
 >();
 const pending = new Map<string, Promise<MetaAdjustmentSnapshot[]>>();
-function inspect(node: AdjustmentNode, live: () => boolean) {
-  const key = node.key;
+function inspect(node: AdjustmentNode, live: () => boolean, scope: string) {
+  const key = JSON.stringify([scope, node.key]);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 60000) return Promise.resolve(hit.snapshots);
   if (pending.has(key)) return pending.get(key)!;
@@ -63,6 +64,8 @@ export function AdjustmentControls({
   drafts: ComponentProps<typeof AdjustmentRowEditor>['drafts'];
   update: ComponentProps<typeof AdjustmentRowEditor>['update'];
 }) {
+  const { username, ownerId } = useAuthorization();
+  const scope = JSON.stringify([username, ownerId]);
   const anchor = useRef<HTMLDivElement>(null);
   const [snapshots, setSnapshots] = useState<MetaAdjustmentSnapshot[]>([]);
   const [error, setError] = useState('');
@@ -80,7 +83,7 @@ export function AdjustmentControls({
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       observer.disconnect();
-      void inspect(node, () => live)
+      void inspect(node, () => live, scope)
         .then((value) => {
           if (!live) return;
           setSnapshots(value);
@@ -95,7 +98,7 @@ export function AdjustmentControls({
       live = false;
       observer.disconnect();
     };
-  }, [node.key, valid, retry]);
+  }, [node.key, valid, retry, scope]);
   return (
     <div ref={anchor} className="min-w-56 max-w-64">
       {snapshots.length ? (
@@ -121,7 +124,7 @@ export function AdjustmentControls({
             type="button"
             className="ml-2 underline"
             onClick={() => {
-              cache.delete(node.key);
+              cache.delete(JSON.stringify([scope, node.key]));
               setRetry((v) => v + 1);
             }}
           >

@@ -1,5 +1,70 @@
-import { resolveCampaignAccounts } from '@shared/meta-adjustment';
-import { AdAdjustmentService } from '@server/modules/growth-decision/ad-adjustment.service';
+import {
+  resolveCampaignAccounts,
+  createMetaDisplayReader,
+} from '@shared/meta-adjustment';
+import {
+  AdAdjustmentService,
+  accountVerificationIds,
+} from '@server/modules/growth-decision/ad-adjustment.service';
+
+test('verification prioritizes spend, skips confirmed zero and retains unknown/negative spend', () => {
+  expect(
+    accountVerificationIds([
+      { campaign_id: '1', spend: 0 },
+      { campaign_id: '2', spend: 20 },
+      { campaign_id: '3', spend: 100 },
+      { campaign_id: '4' },
+      { campaign_id: '5', spend: -1 },
+      { campaign_id: '2', spend: 10 },
+    ]),
+  ).toEqual(['3', '2', '4', '5']);
+});
+
+test('display reads deduplicate, isolate credentials, expire and clear after writes', async () => {
+  const reader = createMetaDisplayReader();
+  const graph = jest.fn().mockResolvedValue({ id: '1' });
+  await Promise.all(
+    Array.from({ length: 10 }, () =>
+      reader.read('identity-a', graph, '1', { fields: 'id' }),
+    ),
+  );
+  expect(graph).toHaveBeenCalledTimes(1);
+  await reader.read('identity-b', graph, '1', { fields: 'id' });
+  expect(graph).toHaveBeenCalledTimes(2);
+  reader.clear();
+  await reader.read('identity-a', graph, '1', { fields: 'id' });
+  expect(graph).toHaveBeenCalledTimes(3);
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 61000);
+  try {
+    await reader.read('identity-a', graph, '1', { fields: 'id' });
+  } finally {
+    clock.mockRestore();
+  }
+  expect(graph).toHaveBeenCalledTimes(4);
+});
+
+test('display requests have at most four concurrent Graph reads; failures are not cached', async () => {
+  const reader = createMetaDisplayReader();
+  let active = 0,
+    peak = 0;
+  const graph = jest.fn(async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    return {};
+  });
+  await Promise.all(
+    Array.from({ length: 12 }, (_, i) =>
+      reader.read('a', graph, String(i), {}),
+    ),
+  );
+  expect(peak).toBe(4);
+  const failed = jest.fn().mockRejectedValue(new Error('offline'));
+  await expect(reader.read('b', failed, 'me', {})).rejects.toThrow('offline');
+  await expect(reader.read('b', failed, 'me', {})).rejects.toThrow('offline');
+  expect(failed).toHaveBeenCalledTimes(2);
+});
 
 test('campaign ownership uses only read-only Graph calls and rejects inaccessible/mismatched objects', async () => {
   const call = jest.fn(async (id: string, fields: unknown, post?: boolean) => {
@@ -59,7 +124,8 @@ test('no credential/permission fallback when personal Meta fails or Doris is inc
     campaignAccounts: jest.fn().mockRejectedValue(new Error('个人授权已失效')),
   };
   const service = new AdAdjustmentService(bi as never, meta as never);
-  expect((await service.day(q)).accounts).toMatchObject({
+  const first = await service.day(q);
+  expect(first.accounts).toMatchObject({
     state: 'missing',
     rows: [],
   });
@@ -92,13 +158,30 @@ test('ownership is paginated and includes identity for client-side switch detect
       }),
   };
   const service = new AdAdjustmentService(bi as never, meta as never);
-  expect((await service.day(q)).accounts).toMatchObject({
+  const first = await service.day(q);
+  expect(first.accounts).toMatchObject({
     state: 'fresh',
     accountOwnerId: 'first',
     accountNextOffset: 10,
   });
   expect(meta.campaignAccounts).toHaveBeenCalledTimes(1);
-  const next = await service.day({ ...q, accountOffset: '10' });
+  bi.part.mockResolvedValue({ state: 'fresh', rows: [] });
+  const next = await service.day({
+    ...q,
+    accountOffset: '10',
+    accountSession: first.accounts.accountSession,
+  });
   expect(next.accounts.accountOwnerId).toBe('second');
   expect(next.accounts.accountNextOffset).toBeUndefined();
+  expect(bi.part).toHaveBeenCalledTimes(1);
+  expect(
+    (
+      await service.day({
+        ...q,
+        accountOffset: '10',
+        country: 'IN',
+        accountSession: first.accounts.accountSession,
+      })
+    ).accounts.state,
+  ).toBe('missing');
 });

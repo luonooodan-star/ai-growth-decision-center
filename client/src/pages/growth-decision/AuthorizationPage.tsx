@@ -6,8 +6,16 @@ import { PersonalDorisSettings } from '@/components/PersonalDorisSettings';
 import { useAuthorization } from '@/components/AuthorizationContext';
 
 export default function AuthorizationPage() {
-  const { username, dorisConfigured, meta, ownerId, checkedAt, refresh } =
-    useAuthorization();
+  const {
+    username,
+    dorisConfigured,
+    meta,
+    ownerId,
+    checkedAt,
+    diagnostic,
+    reason,
+    refresh,
+  } = useAuthorization();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
   const openMeta = async () => {
@@ -119,6 +127,11 @@ export default function AuthorizationPage() {
           <p className="text-xs leading-5 text-slate-500">
             授权页在新窗口打开，当前页面保留。授权后切回本页将重新检测，也可点击“重新检测”。检测只读取身份，不修改广告；已授权不代表拥有全部广告账户的操作权限。
           </p>
+          {meta !== 'authorized' && reason && (
+            <p className="text-sm text-amber-700">
+              {reason} {diagnostic && <span>（{diagnostic}）</span>}
+            </p>
+          )}
           {checkedAt && (
             <p className="text-xs text-slate-400">
               最近检测：{new Date(checkedAt).toLocaleString()}

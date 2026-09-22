@@ -5,6 +5,144 @@ export interface MetaAdjustmentTarget {
   adsetId?: string;
   level: 'campaign' | 'adset' | 'ad';
 }
+
+export const META_FAILURE_MESSAGES = {
+  authentication:
+    'Meta 登录凭据无效或已过期，请在原工具确认个人登录后重新授权。',
+  permission: '当前 Meta 身份缺少所需权限，请检查应用权限和广告账户授权。',
+  rate_limit: 'Meta 请求已被限流，请稍后重试；不需要反复重新授权。',
+  timeout: 'Meta 请求超时，请检查原工具到 Meta 的网络；不代表授权失效。',
+  network: '原工具无法完成 Meta 网络请求，请检查网络或代理。',
+  upstream: 'Meta 返回服务错误，请稍后检测；不要重复提交广告修改。',
+  validation: 'Meta 请求或对象校验失败，请检查对象及请求配置。',
+  unknown: '原工具校验失败，未返回可识别的 Meta 错误码，请检查服务日志。',
+} as const;
+export interface MetaFailure {
+  category: keyof typeof META_FAILURE_MESSAGES;
+  message: string;
+  code?: number;
+  subcode?: number;
+  httpStatus?: number;
+}
+const errorNumber = (v: unknown) =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 999999999
+    ? v
+    : undefined;
+export function sanitizeMetaFailure(value: unknown): MetaFailure | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const data = value as Record<string, unknown>;
+  if (
+    typeof data.category !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(META_FAILURE_MESSAGES, data.category)
+  )
+    return undefined;
+  const category = data.category as MetaFailure['category'];
+  const http = errorNumber(data.httpStatus);
+  return {
+    category,
+    message: META_FAILURE_MESSAGES[category],
+    code: errorNumber(data.code),
+    subcode: errorNumber(data.subcode),
+    httpStatus: http && http >= 100 && http <= 599 ? http : undefined,
+  };
+}
+/** Parse only the original Graph client's numeric prefix. Never return its raw
+ * message, URL, request parameters, token, response body or stack. */
+export function metaFailure(error: unknown): MetaFailure {
+  const text = error instanceof Error ? error.message : '';
+  const match = /^#(\d{1,9})(?:\/(\d{1,9}))?(?:\s|$)/.exec(text);
+  const code = match ? Number(match[1]) : undefined;
+  const subcode = match?.[2] ? Number(match[2]) : undefined;
+  const httpMatch = /Meta API[^\n]*HTTP (\d{3})/.exec(text);
+  const httpStatus = httpMatch ? Number(httpMatch[1]) : undefined;
+  let category: MetaFailure['category'] = 'unknown';
+  if (code === 190 || code === 102) category = 'authentication';
+  else if (code === 10 || (code !== undefined && code >= 200 && code <= 299))
+    category = 'permission';
+  else if ([4, 17, 32, 613, 80004].includes(code || 0) || httpStatus === 429)
+    category = 'rate_limit';
+  else if (
+    (error instanceof Error &&
+      ['AbortError', 'TimeoutError'].includes(error.name)) ||
+    /timed?\s*out|timeout/i.test(text)
+  )
+    category = 'timeout';
+  else if (
+    /fetch failed|failed to fetch|ECONNRESET|ENOTFOUND|ECONNREFUSED/i.test(text)
+  )
+    category = 'network';
+  else if (code === 1 || code === 2 || (httpStatus && httpStatus >= 500))
+    category = 'upstream';
+  else if (code !== undefined) category = 'validation';
+  return {
+    category,
+    message: META_FAILURE_MESSAGES[category],
+    code,
+    subcode,
+    httpStatus,
+  };
+}
+
+/** Display-only Graph reads: scope must be a credential fingerprint, never a token.
+ * Preflight, apply and readback must use the original uncached Graph function. */
+export function createMetaDisplayReader() {
+  const cache = new Map<
+    string,
+    { until: number; value: Record<string, unknown> }
+  >();
+  const pending = new Map<string, Promise<Record<string, unknown>>>();
+  let generation = 0;
+  let running = 0;
+  const waiting: (() => void)[] = [];
+  return {
+    clear() {
+      generation++;
+      cache.clear();
+      pending.clear();
+    },
+    async read(
+      scope: string,
+      graph: MetaGraphCall,
+      path: string,
+      params: Record<string, string>,
+    ) {
+      const key = JSON.stringify([scope, path, Object.entries(params).sort()]);
+      const hit = cache.get(key);
+      if (hit && hit.until > Date.now()) return hit.value;
+      if (pending.has(key)) return pending.get(key)!;
+      if (waiting.length >= 100)
+        throw new Error('Meta 只读请求繁忙，请稍后重试');
+      const epoch = generation;
+      const task = (async () => {
+        if (running >= 4)
+          await new Promise<void>((resolve) => waiting.push(resolve));
+        else running++;
+        try {
+          const value = await graph(path, params);
+          if (epoch === generation) {
+            cache.delete(key);
+            cache.set(key, {
+              value,
+              until: Date.now() + (path === 'me' ? 15000 : 60000),
+            });
+            while (cache.size > 1000) cache.delete(cache.keys().next().value!);
+          }
+          return value;
+        } finally {
+          const next = waiting.shift();
+          if (next) next();
+          else running--;
+        }
+      })();
+      pending.set(key, task);
+      try {
+        return await task;
+      } finally {
+        if (pending.get(key) === task) pending.delete(key);
+      }
+    },
+  };
+}
 export async function resolveCampaignAccounts(
   ids: string[],
   graph: MetaGraphCall,
@@ -18,9 +156,10 @@ export async function resolveCampaignAccounts(
   const campaigns: Array<{ campaignId: string; accountId: string }> = [];
   const unavailable: string[] = [];
   const queue = [...new Set(ids)];
+  let failure: unknown;
   await Promise.all(
     Array.from({ length: 2 }, async () => {
-      while (queue.length) {
+      while (queue.length && !failure) {
         const id = queue.shift()!;
         try {
           const entity = await graph(id, { fields: 'id,account_id,objective' });
@@ -34,12 +173,23 @@ export async function resolveCampaignAccounts(
             campaignId: id,
             accountId: String(entity.account_id),
           });
-        } catch {
-          unavailable.push(id);
+        } catch (error) {
+          if (
+            [
+              'authentication',
+              'rate_limit',
+              'timeout',
+              'network',
+              'upstream',
+            ].includes(metaFailure(error).category)
+          )
+            failure = error;
+          else unavailable.push(id);
         }
       }
     }),
   );
+  if (failure) throw failure;
   return { campaigns, unavailable };
 }
 export interface MetaAdjustmentSnapshot extends MetaAdjustmentTarget {

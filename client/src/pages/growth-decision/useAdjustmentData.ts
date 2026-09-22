@@ -93,15 +93,17 @@ export function useAdjustmentData(
         if (part === 'accounts') {
           let offset: number | undefined = 0;
           let owner: string | undefined;
+          let accountSession: string | undefined;
           const rows: AdjustmentDay['accounts']['rows'] = [];
           try {
             while (offset !== undefined && live()) {
               const value = await getAdjustmentDay(
-                { ...query, accountOffset: String(offset) },
+                { ...query, accountOffset: String(offset), accountSession },
                 controller.signal,
               );
               if (!live()) return;
               const page = value.accounts;
+              accountSession = page.accountSession;
               if (page.state === 'missing' || page.state === 'stale')
                 throw new Error(page.message || '账户核验未完成');
               if (
@@ -129,7 +131,7 @@ export function useAdjustmentData(
               merge({ ...value, accounts: { ...page, rows: [...rows] } }, part);
               setAccountsReady(true);
               setProgress(
-                `已核验 ${rows.length} 个系列，已确认的系列可操作 · 其余分批核验中`,
+                `已确认 ${rows.length} / ${page.accountTotal ?? '待确认'} 个系列，已确认的系列可操作 · 优先核验有消耗的系列`,
               );
               if (page.message && page.message.includes('无法'))
                 failures.push(`${d}：${page.message}`);

@@ -6,6 +6,8 @@ export type Connections = {
   meta: 'checking' | 'authorized' | 'unauthorized' | 'unavailable';
   ownerId?: string;
   checkedAt?: string;
+  diagnostic?: string;
+  reason?: string;
   refresh: () => void;
 };
 export const AuthorizationContext = createContext<Connections>({

@@ -12,6 +12,7 @@ import { metaWorkspaceOrigin } from '@shared/meta-workspace';
 import { readMetaLocalBridge } from './meta-local-bridge';
 import {
   validateAdjustmentChange,
+  sanitizeMetaFailure,
   validateAdjustmentTarget,
   type MetaAdjustmentChange,
   type MetaAdjustmentJob,
@@ -97,14 +98,32 @@ export class MetaAdjustmentService {
               : 'Meta 登录已失效，请重新登录',
           );
         const data = error.response?.data;
+        const metaFailure = sanitizeMetaFailure(data?.metaFailure);
         const uncertain = !error.response || data?.uncertain === true;
-        const message =
-          typeof data?.error === 'string'
+        const message = metaFailure
+          ? metaFailure.message
+          : typeof data?.error === 'string'
             ? data.error.slice(0, 250)
             : error.response?.status === 404
               ? '原广告服务尚未安装调整适配接口'
               : '原广告服务连接或校验失败';
-        throw new BadRequestException({ message, uncertain });
+        const diagnostic = metaFailure
+          ? `META_${metaFailure.category.toUpperCase()}`
+          : !error.response
+            ? ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code || '')
+              ? 'BRIDGE_TIMEOUT'
+              : 'BRIDGE_UNREACHABLE'
+            : error.response.status === 404
+              ? 'ADAPTER_MISSING'
+              : error.response.status >= 500
+                ? 'UPLOADER_ERROR'
+                : 'UPSTREAM_REJECTED';
+        throw new BadRequestException({
+          message,
+          uncertain,
+          diagnostic,
+          metaFailure,
+        });
       }
       throw error;
     }
@@ -120,11 +139,49 @@ export class MetaAdjustmentService {
         checkedAt: new Date().toISOString(),
       };
     } catch (error) {
+      const response =
+        error instanceof BadRequestException ? error.getResponse() : undefined;
+      const code =
+        error instanceof UnauthorizedException
+          ? 'AUTH_REQUIRED'
+          : typeof response === 'object' && 'diagnostic' in response
+            ? String(response.diagnostic)
+            : 'CHECK_FAILED';
+      const metaFailure =
+        typeof response === 'object' && 'metaFailure' in response
+          ? sanitizeMetaFailure(response.metaFailure)
+          : undefined;
+      const metaCode =
+        metaFailure?.code === undefined
+          ? ''
+          : `（Meta #${metaFailure.code}${metaFailure.subcode === undefined ? '' : `/${metaFailure.subcode}`}）`;
+      const reasons: Record<string, string> = {
+        AUTH_REQUIRED:
+          '个人授权缺失、失效或适配器身份版本不兼容，请检查个人授权。',
+        BRIDGE_TIMEOUT:
+          '本机桥请求超过 45 秒未返回；可能堵在原工具或 Meta 上游，不等于授权失效。',
+        BRIDGE_UNREACHABLE:
+          '决策中心无法连接本机桥，请检查原广告工具进程及桥接端口。',
+        ADAPTER_MISSING:
+          '原广告工具没有返回调整适配接口，请更新适配器并重启原工具。',
+        UPLOADER_ERROR:
+          '原广告工具返回服务错误，需检查原工具日志；不要重复提交广告修改。',
+        UPSTREAM_REJECTED:
+          '请求已收到原工具回复，但身份校验被拒绝；需检查 Meta 登录、权限或上游错误。',
+        CHECK_FAILED:
+          '连接检查未完成，需检查服务配置及日志；当前不能确认授权状态。',
+      };
       return {
         status:
-          error instanceof UnauthorizedException
+          error instanceof UnauthorizedException ||
+          metaFailure?.category === 'authentication'
             ? 'unauthorized'
             : 'unavailable',
+        diagnostic: code,
+        reason: metaFailure
+          ? metaFailure.message + metaCode
+          : reasons[code] || reasons.CHECK_FAILED,
+        metaFailure,
         checkedAt: new Date().toISOString(),
       };
     }

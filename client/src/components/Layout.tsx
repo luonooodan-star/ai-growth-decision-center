@@ -18,11 +18,13 @@ const Layout = () => {
     Omit<Connections, 'username' | 'refresh'>
   >({ dorisConfigured: false, meta: 'checking' });
   const checking = useRef(false);
+  const lastCheck = useRef(0);
   const refresh = useCallback(async () => {
     if (checking.current) return;
     checking.current = true;
+    lastCheck.current = Date.now();
     setAuthError('');
-    setConnection((old) => ({ ...old, meta: 'checking', ownerId: undefined }));
+    setConnection((old) => ({ ...old, meta: 'checking' }));
     try {
       const { data } = await axios.get('/api/center/me', { timeout: 10000 });
       setUsername(data.username || '');
@@ -44,22 +46,34 @@ const Layout = () => {
               : 'unavailable',
         ownerId: result.data.ownerId,
         checkedAt: result.data.checkedAt,
+        diagnostic: result.data.diagnostic,
+        reason: result.data.reason,
       }));
     } catch {
       setConnection((old) => ({
         ...old,
         meta: 'unavailable',
         ownerId: undefined,
+        diagnostic: 'CENTER_REQUEST_FAILED',
+        reason:
+          '浏览器未能完成决策中心的连接检查请求；不能据此判断 Meta 授权失效。',
       }));
-      setAuthError('连接状态读取失败，请进入授权页面检查');
+      setAuthError(
+        '连接状态暂时读取失败，不代表授权失效；可进入授权页面重新检测',
+      );
     } finally {
       checking.current = false;
     }
   }, []);
   useEffect(() => {
     void refresh();
-    window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
+    // Window switches must not compete with the table's Meta reads. Explicit
+    // rechecks on the authorization page still call refresh immediately.
+    const onFocus = () => {
+      if (Date.now() - lastCheck.current >= 60000) void refresh();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [refresh]);
   const navClass = ({ isActive }: { isActive: boolean }): string =>
     `flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${

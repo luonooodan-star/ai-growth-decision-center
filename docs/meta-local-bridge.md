@@ -39,6 +39,20 @@ node scripts/company-mac/setup-meta-local-bridge.mjs /Users/toufanga/Downloads/w
 
 ## 验证
 
+### 故障定位（个人授权版）
+
+授权状态失败时，返回并显示脱敏分类，而不是把所有失败当作断桥或要求重新授权：
+
+- `BRIDGE_UNREACHABLE` / `BRIDGE_TIMEOUT`：决策中心到本机桥的连接失败/请求超时。
+- `ADAPTER_MISSING` / `UPLOADER_ERROR`：接口缺失或原工具服务错误。
+- `META_AUTHENTICATION` / `META_PERMISSION`：Meta 身份凭据或权限问题。
+- `META_RATE_LIMIT` / `META_TIMEOUT` / `META_NETWORK`：Meta 限流或上游网络问题，不等于授权失效。
+- `META_VALIDATION` / `META_UNKNOWN`：对象/参数或暂未识别的错误，需进一步核对。
+
+原 Graph 客户端保留 `#code/subcode` 前缀，适配器只提取数字和固定分类文案。不会返回原始消息、URL、Cookie、token、请求体或堆栈。原 key、OAuth 和 Graph 客户端不作修改。授权/限流/网络等全局错误会停止本批后续账户查询；广告提交不自动重试。
+
+这些诊断和只读缓存更新需要重新执行 `setup-meta-local-bridge.mjs` 并重启原工具；单独更新决策中心无法让旧适配器返回新增错误码。分类是诊断证据，不代表故障已修复；仍需在公司环境实测。
+
 - 单元测试覆盖配置的回环限制、文件权限。
 - `node --test test/meta-local-bridge.test.mjs` 使用临时本机模拟服务验证鉴权、明确授权、撤销和请求转交。
 - 授权页兼容 HTTP/1.1 `Host` 和 HTTP/2 `:authority`；两者冲突时拒绝，不能使用 `X-Forwarded-Host` 绕过校验。回归测试覆盖真实本机 HTTP/2 请求、错误地址、跨站 POST。

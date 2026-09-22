@@ -8,6 +8,25 @@ import { PaidGrowthService, validateBiQuery } from './paid-growth.service';
 import type { BiPart } from '@shared/paid-growth.interface';
 import { personalScopeKey } from '../../common/utils/personal-doris';
 import { MetaAdjustmentService } from './meta-adjustment.service';
+import { biNumber } from '@shared/paid-growth';
+import { randomUUID } from 'node:crypto';
+
+export function accountVerificationIds(rows: BiPart['rows']): string[] {
+  const campaigns = new Map<string, { spend: number; unknown: boolean }>();
+  for (const row of rows) {
+    const id = String(row.campaign_id || '');
+    if (!/^\d{1,40}$/.test(id)) continue;
+    const value = campaigns.get(id) || { spend: 0, unknown: false };
+    const spend = biNumber(row.spend);
+    if (spend === null) value.unknown = true;
+    else value.spend += spend;
+    campaigns.set(id, value);
+  }
+  return [...campaigns]
+    .filter(([, value]) => value.unknown || value.spend !== 0)
+    .sort(([a, av], [b, bv]) => bv.spend - av.spend || a.localeCompare(b))
+    .map(([id]) => id);
+}
 
 // Verified against Doris list_datasets: both sources expose the same hierarchy.
 export const ADJUSTMENT_DIMENSIONS = [
@@ -29,6 +48,15 @@ export class AdAdjustmentService {
   private running = 0;
   private readonly waiting: (() => void)[] = [];
   private readonly pending = new Map<string, Promise<BiPart>>();
+  private readonly accountSessions = new Map<
+    string,
+    {
+      scope: string;
+      query: string;
+      ids: string[];
+      until: number;
+    }
+  >();
   constructor(
     private readonly bi: PaidGrowthService,
     private readonly meta?: MetaAdjustmentService,
@@ -217,27 +245,50 @@ export class AdAdjustmentService {
       };
     try {
       if (!this.meta) throw new Error('个人 Meta 桥接服务不可用');
-      // Only resolve IDs visible through this user's Doris key. No DWD/admin key fallback.
-      const daily = await this.read(args, false);
-      if (!['fresh', 'cached'].includes(daily.state))
-        return {
-          rows: [],
-          state: 'missing',
-          message: '个人 Doris 明细未完整返回，暂不核验 Meta 归属',
-        };
-      const ids = [
-        ...new Set(
-          daily.rows
-            .map((row) => String(row.campaign_id || ''))
-            .filter((id) => /^\d{1,40}$/.test(id)),
-        ),
-      ].sort();
+      const offset = Number(q.accountOffset || 0);
+      let session = q.accountSession;
+      let ids: string[];
+      if (offset > 0) {
+        const saved = session && this.accountSessions.get(session);
+        if (
+          !saved ||
+          saved.until <= Date.now() ||
+          saved.scope !== personalScopeKey() ||
+          saved.query !== JSON.stringify(args)
+        )
+          throw new Error('本轮账户核验已过期或筛选已变化，请重新抓取');
+        ids = saved.ids;
+      } else {
+        // Only resolve IDs visible through this user's Doris key. No DWD/admin key fallback.
+        const daily = await this.read(args, false);
+        if (!['fresh', 'cached'].includes(daily.state))
+          return {
+            rows: [],
+            state: 'missing',
+            message: '个人 Doris 明细未完整返回，暂不核验 Meta 归属',
+          };
+        // Only omit zero-spend rows after the source passed completeness checks.
+        // Unknown spend is not zero; high-spend visible rows get controls first.
+        ids = accountVerificationIds(daily.rows);
+        session = randomUUID();
+        for (const [key, value] of this.accountSessions)
+          if (value.until <= Date.now()) this.accountSessions.delete(key);
+        this.accountSessions.set(session, {
+          scope: personalScopeKey(),
+          query: JSON.stringify(args),
+          ids,
+          until: Date.now() + 600000,
+        });
+        while (this.accountSessions.size > 64)
+          this.accountSessions.delete(
+            this.accountSessions.keys().next().value!,
+          );
+      }
       const rows: BiPart['rows'] = [];
       let unavailable = 0;
       let ownerId: string | undefined;
       // One bounded page per HTTP request. Previously all campaigns were held
       // until the last batch finished, discarding successes after a timeout.
-      const offset = Number(q.accountOffset || 0);
       if (offset < ids.length) {
         const batch = ids.slice(offset, offset + 10);
         const result = await this.meta.campaignAccounts(batch);
@@ -259,6 +310,8 @@ export class AdAdjustmentService {
       return {
         rows,
         accountOwnerId: ownerId,
+        accountTotal: ids.length,
+        accountSession: session,
         accountNextOffset: offset + 10 < ids.length ? offset + 10 : undefined,
         state: 'fresh',
         updatedAt: new Date().toISOString(),

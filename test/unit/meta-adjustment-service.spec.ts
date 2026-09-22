@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { BadRequestException } from '@nestjs/common';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -58,6 +59,46 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
     jest.restoreAllMocks();
   });
   const cookie = 'meta_session=test-session; ignored=secret';
+  it('exposes safe numeric Meta code and only treats authentication failures as unauthorized', async () => {
+    const identity = jest.spyOn(service, 'identity');
+    for (const [category, code, status] of [
+      ['authentication', 190, 'unauthorized'],
+      ['rate_limit', 17, 'unavailable'],
+    ] as const) {
+      identity.mockRejectedValueOnce(
+        new BadRequestException({
+          diagnostic: `META_${category.toUpperCase()}`,
+          metaFailure: {
+            category,
+            code,
+            subcode: 463,
+            message: 'secret upstream details',
+          },
+        }),
+      );
+      const result = await service.authorizationStatus(cookie);
+      expect(result.status).toBe(status);
+      expect(result.reason).toContain(`Meta #${code}/463`);
+      expect(JSON.stringify(result)).not.toContain('secret upstream details');
+    }
+  });
+  it('reports a timeout separately without exposing raw upstream errors', async () => {
+    jest.spyOn(service, 'identity').mockRejectedValueOnce(
+      new BadRequestException({
+        diagnostic: 'BRIDGE_TIMEOUT',
+        message: 'private upstream detail',
+        uncertain: true,
+      }),
+    );
+    const result = await service.authorizationStatus(cookie);
+    expect(result).toMatchObject({
+      status: 'unavailable',
+      diagnostic: 'BRIDGE_TIMEOUT',
+    });
+    expect(result.reason).toContain('45 秒');
+    expect(JSON.stringify(result)).not.toContain('private upstream detail');
+    expect(applied).toBe(0);
+  });
   it('reports authorization only after identity succeeds; failures do not claim authorization', async () => {
     expect(await service.authorizationStatus(cookie)).toMatchObject({
       status: 'authorized',
@@ -146,16 +187,14 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
       secret: 'a'.repeat(64),
     });
     jest.mocked(centerIdentity.getStore).mockReturnValue('fjx');
-    jest
-      .mocked(axios.post)
-      .mockResolvedValueOnce({
-        data: {
-          ownerId: 'fjx-owner',
-          campaigns: [{ campaignId: '111', accountId: '222' }],
-          unavailable: [],
-        },
-        headers: { 'x-growth-identity-version': '2' },
-      });
+    jest.mocked(axios.post).mockResolvedValueOnce({
+      data: {
+        ownerId: 'fjx-owner',
+        campaigns: [{ campaignId: '111', accountId: '222' }],
+        unavailable: [],
+      },
+      headers: { 'x-growth-identity-version': '2' },
+    });
     expect((await service.campaignAccounts(['111'])).ownerId).toBe('fjx-owner');
     const request = jest.mocked(axios.post).mock.calls[0];
     expect(request[1]).toEqual({

@@ -3,6 +3,8 @@ import { getMetaToken, graph, requestOrigin } from '../../../../lib/meta';
 import {
   adjustmentBudgetUnits,
   resolveCampaignAccounts,
+  createMetaDisplayReader,
+  metaFailure,
   adjustmentSnapshotMatches,
   readAdjustmentSnapshot,
   validateAdjustmentChange,
@@ -10,6 +12,8 @@ import {
   type MetaAdjustmentTarget,
   type MetaGraphCall,
 } from '../../../../lib/growth-adjustment-contract';
+
+const displayReader = createMetaDisplayReader();
 
 export async function POST(request: Request) {
   if (request.headers.get('origin') !== requestOrigin(request))
@@ -21,11 +25,12 @@ export async function POST(request: Request) {
       { status: 401 },
     );
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(35000)]);
-  const call: MetaGraphCall = (path, params, post = false) =>
+  const direct: MetaGraphCall = (path, params, post = false) =>
     graph(path, token, post ? {} : params, {
       signal,
       ...(post ? { method: 'POST', body: new URLSearchParams(params) } : {}),
     });
+  let mutating = false;
   try {
     const body = (await request.json()) as {
       action: string;
@@ -35,6 +40,27 @@ export async function POST(request: Request) {
       accountIds?: string[];
       campaignIds?: string[];
     };
+    mutating = body.action === 'apply';
+    if (mutating) displayReader.clear();
+    // Hash in memory only; the original tool still owns all login/key handling.
+    const scope = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)),
+      ),
+    )
+      .map((n) => n.toString(16).padStart(2, '0'))
+      .join('');
+    const displayOnly =
+      !body.ownerId &&
+      ['read', 'resolve-ad', 'campaign-accounts', 'account-names'].includes(
+        body.action,
+      );
+    const call: MetaGraphCall = displayOnly
+      ? (path, params, post = false) => {
+          if (post) throw new Error('只读缓存不允许写入');
+          return displayReader.read(scope, direct, path, params);
+        }
+      : direct;
     const profile = await call('me', { fields: 'id' });
     const ownerId = String(profile.id || '');
     if (!ownerId || (body.ownerId && body.ownerId !== ownerId))
@@ -165,16 +191,15 @@ export async function POST(request: Request) {
       );
     }
   } catch (error) {
-    // Graph errors can contain request details; never return tokens or raw upstream payloads.
-    const message = error instanceof Error ? error.message : '';
+    const failure = metaFailure(error);
     return Response.json(
       {
-        error:
-          message.includes('Meta API') || message.includes('#')
-            ? 'Meta 校验失败，请检查权限或对象状态'
-            : message.slice(0, 250),
+        error: failure.message,
+        metaFailure: failure,
       },
       { status: 400 },
     );
+  } finally {
+    if (mutating) displayReader.clear();
   }
 }
