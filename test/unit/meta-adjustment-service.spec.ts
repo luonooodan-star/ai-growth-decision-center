@@ -6,6 +6,7 @@ import { MetaAdjustmentService } from '@server/modules/growth-decision/meta-adju
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import type { MetaAdjustmentSnapshot } from '@shared/meta-adjustment';
 import * as bridge from '@server/modules/growth-decision/meta-local-bridge';
+import { centerIdentity } from '@server/common/utils/center-identity';
 
 const before: MetaAdjustmentSnapshot = {
   id: '111',
@@ -25,6 +26,7 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
   let env: NodeJS.ProcessEnv;
   let applied: number;
   beforeEach(() => {
+    jest.spyOn(centerIdentity, 'getStore').mockReturnValue('growth');
     env = { ...process.env };
     root = mkdtempSync(join(tmpdir(), 'adjustment-job-test-'));
     process.env.GROWTH_DATABASE_PATH = join(root, 'db.sqlite');
@@ -34,25 +36,67 @@ describe('adjustment durable job lifecycle (no Meta network)', () => {
     applied = 0;
     jest.spyOn(axios, 'post').mockImplementation(async (_url, data) => {
       const body = data as { action: string };
-      if (body.action === 'identity') return { data: { ownerId: '123' } };
-      if (body.action === 'read') return { data: { snapshot: before } };
+      if (body.action === 'identity')
+        return {
+          data: { ownerId: '123' },
+          headers: { 'x-growth-identity-version': '2' },
+        };
+      if (body.action === 'read')
+        return {
+          data: { snapshot: before },
+          headers: { 'x-growth-identity-version': '2' },
+        };
       applied++;
       return { data: { after: { ...before, status: 'PAUSED' } } };
     });
   });
   afterEach(() => {
+    centerIdentity.disable();
     db.onModuleDestroy();
     rmSync(root, { recursive: true, force: true });
     process.env = env;
     jest.restoreAllMocks();
   });
   const cookie = 'meta_session=test-session; ignored=secret';
-  test('account name lookup is bounded, deduplicated and read-only', async () => {
+  it('reports authorization only after identity succeeds; failures do not claim authorization', async () => {
+    expect(await service.authorizationStatus(cookie)).toMatchObject({
+      status: 'authorized',
+      ownerId: '123',
+    });
     jest
-      .mocked(axios.post)
-      .mockResolvedValue({
-        data: { accounts: [{ id: '222', name: 'Test account' }] },
-      });
+      .spyOn(service, 'identity')
+      .mockRejectedValueOnce(new Error('network unavailable'));
+    expect(await service.authorizationStatus(cookie)).toMatchObject({
+      status: 'unavailable',
+    });
+    expect(await service.authorizationStatus('')).toMatchObject({
+      status: 'unauthorized',
+    });
+    expect(applied).toBe(0);
+  });
+  test('same Meta identity cannot submit another center user preview', async () => {
+    const job = await service.preview(cookie, [{ before, status: 'PAUSED' }]);
+    expect(job.centerUsername).toBe('growth');
+    jest.mocked(centerIdentity.getStore).mockReturnValue('fjx');
+    expect(await service.list(cookie)).toEqual([]);
+    await expect(service.submit(cookie, job.id)).rejects.toThrow('当前用户');
+    expect(applied).toBe(0);
+  });
+  test('old shared bridge is rejected before preview/mutation', async () => {
+    jest.spyOn(bridge, 'readMetaLocalBridge').mockReturnValue({
+      origin: 'http://127.0.0.1:18761',
+      secret: 'a'.repeat(64),
+    });
+    jest.mocked(axios.post).mockResolvedValue({ data: { ownerId: '123' } });
+    await expect(
+      service.preview(cookie, [{ before, status: 'PAUSED' }]),
+    ).rejects.toThrow('尚未升级');
+    expect(db.listAdjustmentJobs()).toEqual([]);
+  });
+  test('account name lookup is bounded, deduplicated and read-only', async () => {
+    jest.mocked(axios.post).mockResolvedValue({
+      data: { accounts: [{ id: '222', name: 'Test account' }] },
+    });
     expect(await service.accountNames(cookie, ['222', '222'])).toEqual({
       accounts: [{ id: '222', name: 'Test account' }],
     });

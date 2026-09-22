@@ -7,6 +7,12 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import {
+  configuredDorisUsers,
+  personalScopeKey,
+  readPersonalDorisToken,
+  runPersonalData,
+} from '../../common/utils/personal-doris';
 
 import type {
   CampaignDailySnapshot,
@@ -68,9 +74,23 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GrowthDataFetchService.name);
   private timer?: NodeJS.Timeout;
   private startupTimer?: NodeJS.Timeout;
-  private activeRun?: Promise<GrowthFetchRun[]>;
+  private readonly activeRuns = new Map<string, Promise<GrowthFetchRun[]>>();
+  private get activeRun() {
+    return this.activeRuns.get(personalScopeKey());
+  }
+  private set activeRun(value: Promise<GrowthFetchRun[]> | undefined) {
+    if (value) this.activeRuns.set(personalScopeKey(), value);
+    else this.activeRuns.delete(personalScopeKey());
+  }
   private readonly queryGate = new DorisQueryGate();
-  private completeReader?: DorisCompleteReader;
+  private readonly completeReaders = new Map<string, DorisCompleteReader>();
+  private get completeReader() {
+    return this.completeReaders.get(personalScopeKey());
+  }
+  private set completeReader(value: DorisCompleteReader | undefined) {
+    if (value) this.completeReaders.set(personalScopeKey(), value);
+    else this.completeReaders.delete(personalScopeKey());
+  }
   private nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
 
   constructor(
@@ -81,14 +101,19 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     for (const run of this.database.listFetchRuns()) {
-      if (run.status === 'running') this.database.saveFetchRun({ ...run, status: 'partial',
-        finishedAt: new Date().toISOString(), message: '服务重启中断了抓取；已保存分片，可点击补齐缺失数据续抓' });
+      if (run.status === 'running')
+        this.database.saveFetchRun({
+          ...run,
+          status: 'partial',
+          finishedAt: new Date().toISOString(),
+          message: '服务重启中断了抓取；已保存分片，可点击补齐缺失数据续抓',
+        });
     }
     this.database.pruneFetchCheckpoints();
     this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
     this.timer = setInterval(() => {
       this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
-      void this.trigger('scheduled').catch((error: unknown) => {
+      void this.scheduledPersonalFetch().catch((error: unknown) => {
         this.logger.error(
           error instanceof Error ? error.message : String(error),
         );
@@ -97,9 +122,25 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     this.timer.unref();
     // A deployment/restart must not keep postponing the first sync by another hour.
     this.startupTimer = setTimeout(() => {
-      const overdue = this.database.listProducts().some(p => p.status === 'active' &&
-        (!p.lastSyncAt || !Number.isFinite(Date.parse(p.lastSyncAt)) || Date.now() - Date.parse(p.lastSyncAt) >= FETCH_INTERVAL_MS));
-      if (overdue) void this.trigger('scheduled').catch(error => this.logger.error(String(error)));
+      if (process.env.GROWTH_PERSONAL_DATA === '1') {
+        void this.scheduledPersonalFetch().catch(() =>
+          this.logger.error('个人启动同步失败'),
+        );
+        return;
+      }
+      const overdue = this.database
+        .listProducts()
+        .some(
+          (p) =>
+            p.status === 'active' &&
+            (!p.lastSyncAt ||
+              !Number.isFinite(Date.parse(p.lastSyncAt)) ||
+              Date.now() - Date.parse(p.lastSyncAt) >= FETCH_INTERVAL_MS),
+        );
+      if (overdue)
+        void this.trigger('scheduled').catch((error) =>
+          this.logger.error(String(error)),
+        );
     }, 60_000);
     this.startupTimer.unref();
   }
@@ -107,6 +148,20 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
     if (this.startupTimer) clearTimeout(this.startupTimer);
+  }
+  private async scheduledPersonalFetch() {
+    if (process.env.GROWTH_PERSONAL_DATA !== '1')
+      return this.trigger('scheduled');
+    for (const username of configuredDorisUsers()) {
+      try {
+        await runPersonalData(username, async () => {
+          if (this.database.listProducts().some((p) => p.status === 'active'))
+            await this.trigger('scheduled');
+        });
+      } catch {
+        this.logger.warn(`个人定时抓取失败：${username}，未回退到共用凭据`);
+      }
+    }
   }
 
   getHistory(productId?: string): GrowthFetchHistoryResponse {
@@ -128,11 +183,19 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     resumeMissing = false,
   ): Promise<GrowthFetchRun[]> {
     if (this.activeRun) {
-      if (productId && this.database.listFetchRuns(productId)[0]?.status !== 'running')
+      if (
+        productId &&
+        this.database.listFetchRuns(productId)[0]?.status !== 'running'
+      )
         throw new ConflictException('其他产品正在抓取，请稍后重试');
       return this.activeRun;
     }
-    this.activeRun = this.runProducts(trigger, productId, historyDays, resumeMissing);
+    this.activeRun = this.runProducts(
+      trigger,
+      productId,
+      historyDays,
+      resumeMissing,
+    );
     try {
       return await this.activeRun;
     } finally {
@@ -158,7 +221,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
 
     const results: GrowthFetchRun[] = [];
     for (const product of products) {
-      results.push(await this.fetchProduct(product, trigger, historyDays, resumeMissing));
+      results.push(
+        await this.fetchProduct(product, trigger, historyDays, resumeMissing),
+      );
     }
     return results;
   }
@@ -187,18 +252,20 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     run.progress = { completed: 0, reused: 0, failed: 0, current: '准备查询' };
     run.gaps = [];
     this.completeReader = new DorisCompleteReader({
-      productId: product.id, resume: resumeMissing || trigger === 'scheduled',
-      query: args => this.queryMetric(args),
-      getCheckpoint: key => this.database.getFetchCheckpoint(key),
-      saveCheckpoint: value => this.database.saveFetchCheckpoint(value),
+      productId: product.id,
+      resume: resumeMissing || trigger === 'scheduled',
+      query: (args) => this.queryMetric(args),
+      getCheckpoint: (key) => this.database.getFetchCheckpoint(key),
+      saveCheckpoint: (value) => this.database.saveFetchCheckpoint(value),
       progress: (phase, current, reused) => {
         run.phase = phase;
         run.progress!.current = current;
         if (reused) run.progress!.reused++;
-        if (current.includes('完成分片') || current.includes('校验通过')) run.progress!.completed++;
+        if (current.includes('完成分片') || current.includes('校验通过'))
+          run.progress!.completed++;
         this.database.saveFetchRun(run);
       },
-      gap: gap => {
+      gap: (gap) => {
         run.gaps!.push(gap);
         run.progress!.failed = run.gaps!.length;
         this.database.saveFetchRun(run);
@@ -244,9 +311,15 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? earliestStoredDate
           : defaultStartDate;
       if (resumeMissing || trigger === 'scheduled') {
-        const previous = this.database.listFetchRuns(product.id).find(item => item.id !== run.id);
+        const previous = this.database
+          .listFetchRuns(product.id)
+          .find((item) => item.id !== run.id);
         const missingStart = previous?.startDate;
-        if (previous?.status !== 'success' && missingStart && missingStart >= historyCutoffDate)
+        if (
+          previous?.status !== 'success' &&
+          missingStart &&
+          missingStart >= historyCutoffDate
+        )
           startDate = missingStart < startDate ? missingStart : startDate;
       }
       run.startDate = startDate;
@@ -433,7 +506,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               degradationNotes,
             )
           : Promise.resolve({ rows: [], row_count: 0 }),
-        deliveryDate && discoveredAppId && product.channel.toLowerCase() === 'facebook'
+        deliveryDate &&
+        discoveredAppId &&
+        product.channel.toLowerCase() === 'facebook'
           ? this.queryAdDeliveryDetails(
               discoveredAppId,
               startDate,
@@ -450,16 +525,19 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const rowsFetched = metricRowsFetched + accountRowsFetched;
       const sourceQuality = campaignFetchQuality(run.gaps || []);
       const unsafeDates = sourceQuality.primary;
-      const deliveryRows: DorisRow[] = (delivery.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'report_date') || ''));
-      const cohortRows: DorisRow[] = (cohort.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'install_date') || ''));
+      const deliveryRows: DorisRow[] = (delivery.rows || []).filter(
+        (row) => !unsafeDates.has(dorisString(row, 'report_date') || ''),
+      );
+      const cohortRows: DorisRow[] = (cohort.rows || []).filter(
+        (row) => !unsafeDates.has(dorisString(row, 'install_date') || ''),
+      );
       const adDeliveryRows: DorisRow[] = adDelivery.rows || [];
       const spendRows: number = deliveryRows.filter(
         (row: DorisRow): boolean => dorisNumber(row, 'spend') !== undefined,
       ).length;
-      const latestMetricValues = unsafeDates.size ? product.latestMetricValues : this.calculateLatestMetrics(
-        deliveryRows,
-        cohortRows,
-      );
+      const latestMetricValues = unsafeDates.size
+        ? product.latestMetricValues
+        : this.calculateLatestMetrics(deliveryRows, cohortRows);
       const updatedProduct: GrowthProduct = {
         ...accountProduct,
         dorisAppId: discoveredAppId || accountProduct.dorisAppId,
@@ -468,24 +546,52 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       };
       this.database.saveProduct(updatedProduct);
       for (const previous of this.database.listCampaignSnapshots(product.id)) {
-        if (unsafeDates.has(previous.dataDate)) this.database.saveCampaignSnapshot({
-          ...previous, qualityIssues: [...previous.qualityIssues.filter(issue => !issue.startsWith('补齐未完成')),
-            '补齐未完成：保留上次快照，暂不可用于新的投放判断'],
-        });
+        if (unsafeDates.has(previous.dataDate))
+          this.database.saveCampaignSnapshot({
+            ...previous,
+            qualityIssues: [
+              ...previous.qualityIssues.filter(
+                (issue) => !issue.startsWith('补齐未完成'),
+              ),
+              '补齐未完成：保留上次快照，暂不可用于新的投放判断',
+            ],
+          });
       }
       for (const snapshot of buildCampaignSnapshots(
-        product.id, deliveryRows, cohortRows, adDeliveryRows,
-        new Date().toISOString(), degradationNotes,
-        { channel: product.channel, entities: [...this.database.listMetaEntities(), ...this.database.listCampaignSnapshots(product.id)
-          .filter(s => !!s.accountId).map(s => ({accountId:s.accountId!,campaignId:s.campaignId,id:s.campaignId,
-            level:'campaign' as const,name:s.campaignName,fetchedAt:s.fetchedAt}))] },
+        product.id,
+        deliveryRows,
+        cohortRows,
+        adDeliveryRows,
+        new Date().toISOString(),
+        degradationNotes,
+        {
+          channel: product.channel,
+          entities: [
+            ...this.database.listMetaEntities(),
+            ...this.database
+              .listCampaignSnapshots(product.id)
+              .filter((s) => !!s.accountId)
+              .map((s) => ({
+                accountId: s.accountId!,
+                campaignId: s.campaignId,
+                id: s.campaignId,
+                level: 'campaign' as const,
+                name: s.campaignName,
+                fetchedAt: s.fetchedAt,
+              })),
+          ],
+        },
       )) {
         this.database.saveCampaignSnapshot(snapshot);
       }
       const snapshotCount: number = this.saveDailySnapshots(
         updatedProduct,
-        (deliveryDates.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'report_date') || '')),
-        (cohortDates.rows || []).filter(row => !unsafeDates.has(dorisString(row, 'install_date') || '')),
+        (deliveryDates.rows || []).filter(
+          (row) => !unsafeDates.has(dorisString(row, 'report_date') || ''),
+        ),
+        (cohortDates.rows || []).filter(
+          (row) => !unsafeDates.has(dorisString(row, 'install_date') || ''),
+        ),
         deliveryRows,
       );
       const historicalBackfillCount: number =
@@ -505,14 +611,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       );
       this.metaOperations.reconcile();
       this.metaOperations.captureSnapshots(updatedProduct.id);
-      this.updateMonitoringSnapshots(
-        updatedProduct,
-        deliveryRows,
-        cohortRows,
-      );
+      this.updateMonitoringSnapshots(updatedProduct, deliveryRows, cohortRows);
 
       const spendMissing: boolean = deliveryRows.length > 0 && spendRows === 0;
-      const isPartial: boolean = metricRowsFetched === 0 || spendMissing || Boolean(run.gaps?.length);
+      const isPartial: boolean =
+        metricRowsFetched === 0 || spendMissing || Boolean(run.gaps?.length);
       Object.assign(run, {
         status: isPartial ? 'partial' : 'success',
         finishedAt: new Date().toISOString(),
@@ -522,8 +625,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           ? run.gaps?.length
             ? `部分完成：${run.gaps.length} 个数据范围未通过完整性校验，已保护旧快照；可点击补齐缺失数据`
             : spendMissing
-            ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
-            : '连接成功，但当前时间窗口没有返回可用数据'
+              ? `已读取 ${rowsFetched} 行，但 Doris 未返回可识别的消耗列；请核对 query_metric 的实际列名`
+              : '连接成功，但当前时间窗口没有返回可用数据'
           : `抓取完成，已读取 ${rowsFetched} 行，动态同步 ${updatedProduct.adAccounts?.length || 0} 个广告账户` +
             `（新增 ${newAccountCount}，无近期投放 ${inactiveAccountCount}），发现 ${anomalyCount} 条新异常${
               trigger === 'manual'
@@ -584,8 +687,17 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           limit: 1000,
         }),
       ]);
-    if ([historyResult, recentResult].some(result => result.truncated || (result.rows?.length || 0) >= 1000 || Number(result.row_count || 0) > (result.rows?.length || 0)))
-      throw new Error('广告账户清单达到查询上限，保留原清单，不能据此判断账户停投');
+    if (
+      [historyResult, recentResult].some(
+        (result) =>
+          result.truncated ||
+          (result.rows?.length || 0) >= 1000 ||
+          Number(result.row_count || 0) > (result.rows?.length || 0),
+      )
+    )
+      throw new Error(
+        '广告账户清单达到查询上限，保留原清单，不能据此判断账户停投',
+      );
     const rows: DorisRow[] = historyResult.rows || [];
     const recentlyActiveIds: Set<string> = new Set(
       (recentResult.rows || [])
@@ -1242,26 +1354,49 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       ) {
         continue;
       }
-      const campaignSnapshot: CampaignDailySnapshot | undefined = 'campaignExecution' in record && record.campaignExecution
-        ? this.database.listCampaignSnapshots(product.id).find((snapshot) =>
-            snapshot.key === record.campaignExecution?.campaignKey && campaignMetric(snapshot, metric.key) !== undefined)
-        : undefined;
-      const currentValue: number | undefined = 'campaignExecution' in record && record.campaignExecution
-        ? campaignSnapshot && campaignMetric(campaignSnapshot, metric.key)
-        : this.latestExperimentValue(record, metric.key, deliveryRows, cohortRows);
+      const campaignSnapshot: CampaignDailySnapshot | undefined =
+        'campaignExecution' in record && record.campaignExecution
+          ? this.database
+              .listCampaignSnapshots(product.id)
+              .find(
+                (snapshot) =>
+                  snapshot.key === record.campaignExecution?.campaignKey &&
+                  campaignMetric(snapshot, metric.key) !== undefined,
+              )
+          : undefined;
+      const currentValue: number | undefined =
+        'campaignExecution' in record && record.campaignExecution
+          ? campaignSnapshot && campaignMetric(campaignSnapshot, metric.key)
+          : this.latestExperimentValue(
+              record,
+              metric.key,
+              deliveryRows,
+              cohortRows,
+            );
       if (currentValue === undefined) continue;
 
       const withinLower: boolean =
         metric.lowerBound === undefined || currentValue >= metric.lowerBound;
       const withinUpper: boolean =
         metric.upperBound === undefined || currentValue <= metric.upperBound;
-      const executionDate: string | undefined = 'campaignExecution' in record && record.campaignExecution?.executedAt
-        ? new Date(record.campaignExecution.executedAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }) : undefined;
-      const eligibleForRecovery: boolean = !('campaignExecution' in record && record.campaignExecution) || Boolean(
-        campaignSnapshot && !campaignSnapshot.qualityIssues.length &&
-        nowMs - new Date(campaignSnapshot.fetchedAt).getTime() < 3 * 3600000 &&
-        (!executionDate || campaignSnapshot.dataDate > executionDate));
-      const isNormal: boolean = withinLower && withinUpper && eligibleForRecovery;
+      const executionDate: string | undefined =
+        'campaignExecution' in record && record.campaignExecution?.executedAt
+          ? new Date(record.campaignExecution.executedAt).toLocaleDateString(
+              'en-CA',
+              { timeZone: 'Asia/Shanghai' },
+            )
+          : undefined;
+      const eligibleForRecovery: boolean =
+        !('campaignExecution' in record && record.campaignExecution) ||
+        Boolean(
+          campaignSnapshot &&
+          !campaignSnapshot.qualityIssues.length &&
+          nowMs - new Date(campaignSnapshot.fetchedAt).getTime() <
+            3 * 3600000 &&
+          (!executionDate || campaignSnapshot.dataDate > executionDate),
+        );
+      const isNormal: boolean =
+        withinLower && withinUpper && eligibleForRecovery;
       const normalSince: string | undefined = isNormal
         ? this.monitoringNormalSince(record) || now
         : undefined;
@@ -1279,11 +1414,13 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           dorisString(row, 'report_date') === latestDeliveryDate &&
           this.rowMatchesCase(row, record),
       );
-      const metrics: GrowthDeliveryMetricValues = campaignSnapshot ? { ...campaignSnapshot.metrics } : latestMatches.length
-        ? this.deliveryDiagnosticValues(
-            this.aggregateDeliveryRows(latestMatches),
-          )
-        : {};
+      const metrics: GrowthDeliveryMetricValues = campaignSnapshot
+        ? { ...campaignSnapshot.metrics }
+        : latestMatches.length
+          ? this.deliveryDiagnosticValues(
+              this.aggregateDeliveryRows(latestMatches),
+            )
+          : {};
       if (metric.key === 'd0_roas') metrics.d0_roas = currentValue;
       const previous: GrowthMonitoringSnapshot | undefined =
         this.database.listMonitoringSnapshots(record.id, 1)[0];
@@ -1298,7 +1435,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             ? 'judgment_observation'
             : 'experiment',
         observedAt: now,
-        dataDate: campaignSnapshot?.dataDate || latestDeliveryDate || now.slice(0, 10),
+        dataDate:
+          campaignSnapshot?.dataDate || latestDeliveryDate || now.slice(0, 10),
         campaignId: record.campaignId,
         campaignName: record.campaignName,
         adsetId: record.adsetId,
@@ -1332,7 +1470,8 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
               ? 'observation_recovery_ready'
               : 'experiment_recovery_ready',
           actor: 'hourly_doris_threshold_compare',
-          detail: '目标指标已连续 24 小时处于产品指标库正常范围，可人工审核并移出观察',
+          detail:
+            '目标指标已连续 24 小时处于产品指标库正常范围，可人工审核并移出观察',
           metadata: {
             source: 'doris_mcp',
             targetMetric: metric.key,
@@ -1422,9 +1561,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         this.rowMatchesCase(row, experiment),
     );
     if (!matches.length) return undefined;
-    return this.deliveryMetricValues(
-      this.aggregateDeliveryRows(matches),
-    )[metricKey];
+    return this.deliveryMetricValues(this.aggregateDeliveryRows(matches))[
+      metricKey
+    ];
   }
 
   private rowMatchesCase(
@@ -1868,10 +2007,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     dataDate: string,
   ): GrowthDiagnosticBreakdown[] {
     if (!currentRow) return [];
-    const adsetId: string | undefined = dorisString(
-      currentRow,
-      'adgroup_id',
-    );
+    const adsetId: string | undefined = dorisString(currentRow, 'adgroup_id');
     const normalizedRows: DorisRow[] = rows
       .filter(
         (row: DorisRow): boolean =>
@@ -1888,12 +2024,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
             dorisNumber(row, 'media_installs') ?? dorisNumber(row, 'installs'),
         }),
       );
-    return this.buildBreakdowns(
-      normalizedRows,
-      'ad',
-      'ad_id',
-      'ad_name',
-    );
+    return this.buildBreakdowns(normalizedRows, 'ad', 'ad_id', 'ad_name');
   }
 
   private buildTaggedBreakdowns(
@@ -1902,10 +2033,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     dataDate: string,
   ): GrowthDiagnosticBreakdown[] {
     if (!currentRow) return [];
-    const adsetId: string | undefined = dorisString(
-      currentRow,
-      'adgroup_id',
-    );
+    const adsetId: string | undefined = dorisString(currentRow, 'adgroup_id');
     const dimensions: GrowthDiagnosticBreakdown['dimension'][] = [
       'placement',
       'age',
@@ -2051,10 +2179,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       this.queryOptionalFacebookBreakdown(
         'placement',
         'bi_dwd.dwd_facebook_ad_daily',
-        [
-          ['publisher_platform', 'platform_position'],
-          ['placement'],
-        ],
+        [['publisher_platform', 'platform_position'], ['placement']],
         filters,
         startDate,
         endDate,
@@ -2231,10 +2356,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   async queryMetric(
     argumentsValue: Record<string, unknown>,
   ): Promise<DorisQueryResult> {
-    const result: unknown = await this.queryGate.run(() => this.callMcpTool(
-      'query_metric',
-      { ...argumentsValue, limit: Math.min(1000, Number(argumentsValue.limit) || 1000) },
-    ));
+    const result: unknown = await this.queryGate.run(() =>
+      this.callMcpTool('query_metric', {
+        ...argumentsValue,
+        limit: Math.min(1000, Number(argumentsValue.limit) || 1000),
+      }),
+    );
     const object: Record<string, unknown> | undefined =
       typeof result === 'object' && result !== null
         ? (result as Record<string, unknown>)
@@ -2275,17 +2402,33 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     degradationNotes: string[],
   ): Promise<DorisQueryResult> {
     if (this.completeReader && !label.includes('拆分')) {
-      return this.completeReader.read(primaryArguments, fallbackArguments, label);
+      return this.completeReader.read(
+        primaryArguments,
+        fallbackArguments,
+        label,
+      );
     }
-    const checkLimit = (result: DorisQueryResult, args: Record<string, unknown>): DorisQueryResult => {
+    const checkLimit = (
+      result: DorisQueryResult,
+      args: Record<string, unknown>,
+    ): DorisQueryResult => {
       const limit: number = Math.min(1000, Number(args.limit));
-      if (limit > 0 && Math.max(result.rows?.length || 0, Number(result.row_count || 0)) >= limit) {
-        degradationNotes.push(`${label}达到查询上限 ${limit} 行，可能截断，需补齐后再判断`);
+      if (
+        limit > 0 &&
+        Math.max(result.rows?.length || 0, Number(result.row_count || 0)) >=
+          limit
+      ) {
+        degradationNotes.push(
+          `${label}达到查询上限 ${limit} 行，可能截断，需补齐后再判断`,
+        );
       }
       return result;
     };
     try {
-      return checkLimit(await this.queryMetric(primaryArguments), primaryArguments);
+      return checkLimit(
+        await this.queryMetric(primaryArguments),
+        primaryArguments,
+      );
     } catch (primaryError: unknown) {
       const detail: string =
         primaryError instanceof Error
@@ -2315,7 +2458,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     name: string,
     argumentsValue: Record<string, unknown>,
   ): Promise<any> {
-    const token = process.env.DORIS_SUPERSET_MCP_TOKEN || this.keychainToken();
+    const token =
+      readPersonalDorisToken() ||
+      process.env.DORIS_SUPERSET_MCP_TOKEN ||
+      this.keychainToken();
     if (!token)
       throw new Error('Doris MCP Key 未配置，请重新运行公司 Mac setup.sh');
     let sessionId = '';
@@ -2371,7 +2517,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     });
     const raw = await response.text();
     if (!response.ok)
-      throw new Error(`Doris MCP HTTP ${response.status}: ${raw}`);
+      throw new Error(
+        `Doris MCP HTTP ${response.status}：请检查本人的授权及数据权限`,
+      );
     const contentType = response.headers.get('content-type') || '';
     const payload: unknown = parseMcpHttpPayload(raw, contentType);
     return {

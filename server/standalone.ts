@@ -3,8 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { __express as hbsExpressEngine } from 'hbs';
-import { timingSafeEqual } from 'node:crypto';
+import { authenticateCenter } from './common/utils/center-identity';
 import { join } from 'node:path';
+import {
+  personalDorisStatus,
+  runPersonalData,
+} from './common/utils/personal-doris';
 
 import { StandaloneAppModule } from './standalone-app.module';
 import { loadMetaWorkspaceSettings } from './common/utils/meta-workspace-settings';
@@ -12,15 +16,6 @@ import {
   readOptionalHttps,
   startOptionalHttps,
 } from './common/utils/optional-https';
-
-const BASIC_AUTH_USER = 'growth';
-
-function secretsMatch(left: string, right: string): boolean {
-  const leftBuffer: Buffer = Buffer.from(left);
-  const rightBuffer: Buffer = Buffer.from(right);
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return timingSafeEqual(leftBuffer, rightBuffer);
-}
 
 function readBasicCredentials(
   authorization: string | undefined,
@@ -43,6 +38,7 @@ function readBasicCredentials(
 }
 
 async function bootstrap(): Promise<void> {
+  process.env.GROWTH_PERSONAL_DATA = '1';
   loadMetaWorkspaceSettings(process.env);
   const httpsConfig = readOptionalHttps(process.env);
   const app: NestExpressApplication =
@@ -65,8 +61,11 @@ async function bootstrap(): Promise<void> {
     const credentials = readBasicCredentials(request.headers.authorization);
     const authenticated: boolean = Boolean(
       credentials &&
-      secretsMatch(credentials.username, BASIC_AUTH_USER) &&
-      secretsMatch(credentials.password, accessPassword),
+      authenticateCenter(
+        credentials.username,
+        credentials.password,
+        accessPassword,
+      ),
     );
     if (!authenticated) {
       response.setHeader(
@@ -91,7 +90,29 @@ async function bootstrap(): Promise<void> {
         return;
       }
     }
-    next();
+    if (request.path === '/api/center/me') {
+      response.setHeader('Cache-Control', 'no-store');
+      response.json({
+        username: credentials!.username,
+        doris: personalDorisStatus(credentials!.username),
+      });
+      return;
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    if (
+      request.path.startsWith('/api/growth-decision') &&
+      request.path !== '/api/growth-decision/adjustments/authorization-link' &&
+      request.path !== '/api/growth-decision/adjustments/authorization-status' &&
+      !personalDorisStatus(credentials!.username).configured
+    ) {
+      response
+        .status(403)
+        .json({
+          message: '请先配置本人的 Doris Key；不会使用他人的凭据或缓存',
+        });
+      return;
+    }
+    runPersonalData(credentials!.username, next);
   });
 
   app.useStaticAssets(clientDirectory);

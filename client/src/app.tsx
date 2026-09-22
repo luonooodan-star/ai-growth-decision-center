@@ -3,6 +3,7 @@ import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import Layout from './components/Layout';
+import AuthorizationPage from './pages/growth-decision/AuthorizationPage';
 import GrowthDecisionPage from './pages/growth-decision/GrowthDecisionPage';
 import ProductOverviewPage from './pages/growth-decision/ProductOverviewPage';
 import MetricLibraryPage from './pages/growth-decision/MetricLibraryPage';
@@ -15,6 +16,7 @@ const RoutesComponent = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
+        <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" element={<PaidGrowthPage />} />
         <Route path="adjustments" element={<AdAdjustmentPage />} />

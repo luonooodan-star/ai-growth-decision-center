@@ -202,8 +202,8 @@ export default function MetaOperationsPage() {
                     </p>
                   )}
                   <p className="mt-1 text-xs">
-                    操作者按授权 Meta
-                    身份留档；多人共用登录时无法区分实际操作人员。
+                    新任务同时记录决策中心用户名与 Meta
+                    执行身份；旧共用授权记录无法追溯到具体优化师。
                   </p>
                 </div>
               )}

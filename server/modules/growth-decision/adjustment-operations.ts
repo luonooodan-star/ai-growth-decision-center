@@ -45,7 +45,9 @@ export function adjustmentOperations(
           objectName: item.before.name,
           objectLevel: item.before.level,
           actorId: job.ownerId,
-          actorName: `已授权 Meta 用户 ${job.ownerId}`,
+          actorName: job.centerUsername
+            ? `${job.centerUsername} · Meta ${job.ownerId}`
+            : `已授权 Meta 用户 ${job.ownerId}`,
           systemActor: false,
           occurredAt: item.startedAt || item.completedAt,
           importedAt: item.completedAt,
@@ -59,6 +61,8 @@ export function adjustmentOperations(
           after,
           raw: JSON.stringify({
             jobId: job.id,
+            centerUsername: job.centerUsername,
+            metaOwnerId: job.ownerId,
             itemIndex: index,
             currency: item.before.currency,
             budgetUnit: 'Meta minor currency unit',

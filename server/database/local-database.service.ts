@@ -1,6 +1,10 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { randomUUID, createHash } from 'node:crypto';
+import {
+  personalDataIdentity,
+  personalScopeKey,
+} from '../common/utils/personal-doris';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -108,32 +112,83 @@ const DEFAULT_GROWTH_METRICS: GrowthMetricDefinition[] = [
 
 @Injectable()
 export class LocalDatabaseService implements OnModuleDestroy {
-  private readonly database: DatabaseSync;
+  private readonly systemDatabase: DatabaseSync;
+  private readonly personalDatabases = new Map<string, DatabaseSync>();
+  private readonly databasePath: string;
+  private get database(): DatabaseSync {
+    if (!personalDataIdentity.getStore()) return this.systemDatabase;
+    const scope = personalScopeKey();
+    const known = this.personalDatabases.get(scope);
+    if (known) return known;
+    if (this.personalDatabases.size >= 64)
+      throw new Error('个人数据空间连接达到上限，请重启服务释放旧空间');
+    const file = `${this.databasePath}.personal-${createHash('sha256').update(scope).digest('hex')}`;
+    const db = new DatabaseSync(file);
+    chmodSync(file, 0o600);
+    this.personalDatabases.set(scope, db);
+    try {
+      db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+      this.initializeSchema();
+      // No legacy products, account IDs, snapshots or samples are copied.
+      for (const job of this.listAdjustmentJobs())
+        if (job.state === 'running') {
+          job.state = 'interrupted';
+          for (const item of job.items)
+            if (item.state === 'running' || item.state === 'pending') {
+              item.error = '服务重启中断任务，请只读核对 Meta；禁止直接重试';
+              item.state = item.state === 'running' ? 'uncertain' : 'failed';
+            }
+          this.saveAdjustmentJob(job);
+        }
+      for (const run of this.listFetchRuns())
+        if (run.status === 'running')
+          this.saveFetchRun({
+            ...run,
+            status: 'partial',
+            message: '服务重启中断抓取，请补齐本人的数据',
+          });
+      return db;
+    } catch (error) {
+      this.personalDatabases.delete(scope);
+      db.close();
+      throw error;
+    }
+  }
 
   constructor() {
     const databasePath: string = resolve(
       process.env.GROWTH_DATABASE_PATH || 'runtime/ai-growth.sqlite',
     );
+    this.databasePath = databasePath;
     mkdirSync(dirname(databasePath), { recursive: true });
-    this.database = new DatabaseSync(databasePath);
-    this.database.exec('PRAGMA journal_mode = WAL;');
-    this.database.exec('PRAGMA foreign_keys = ON;');
-    this.initializeSchema();
-    this.seedWingslite();
+    this.systemDatabase = new DatabaseSync(databasePath);
+    personalDataIdentity.exit(() => {
+      this.systemDatabase.exec('PRAGMA journal_mode = WAL;');
+      this.systemDatabase.exec('PRAGMA foreign_keys = ON;');
+      this.initializeSchema();
+      this.seedWingslite();
+    });
   }
 
   onModuleDestroy(): void {
-    this.database.close();
+    this.systemDatabase.close();
+    for (const db of this.personalDatabases.values()) db.close();
+    this.personalDatabases.clear();
   }
 
   saveAdjustmentJob(job: MetaAdjustmentJob): void {
-    this.database.prepare('INSERT INTO growth_adjustment_job (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload')
+    this.database
+      .prepare(
+        'INSERT INTO growth_adjustment_job (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload',
+      )
       .run(job.id, JSON.stringify(job));
   }
 
   listAdjustmentJobs(): MetaAdjustmentJob[] {
-    return this.database.prepare('SELECT payload FROM growth_adjustment_job ORDER BY rowid DESC').all()
-      .map(row => this.parsePayload<MetaAdjustmentJob>(row.payload));
+    return this.database
+      .prepare('SELECT payload FROM growth_adjustment_job ORDER BY rowid DESC')
+      .all()
+      .map((row) => this.parsePayload<MetaAdjustmentJob>(row.payload));
   }
 
   saveMetaOperation(item: MetaOperation): boolean {
@@ -155,13 +210,25 @@ export class LocalDatabaseService implements OnModuleDestroy {
   }
 
   saveMetaEntity(item: MetaAdEntity): void {
-    const row = this.database.prepare('SELECT payload FROM growth_meta_entity WHERE account_id = ? AND id = ?')
+    const row = this.database
+      .prepare(
+        'SELECT payload FROM growth_meta_entity WHERE account_id = ? AND id = ?',
+      )
       .get(item.accountId, item.id);
-    const previous = row ? this.parsePayload<MetaAdEntity>(row.payload) : undefined;
-    if (previous && Date.parse(previous.fetchedAt) > Date.parse(item.fetchedAt)) return;
+    const previous = row
+      ? this.parsePayload<MetaAdEntity>(row.payload)
+      : undefined;
+    if (previous && Date.parse(previous.fetchedAt) > Date.parse(item.fetchedAt))
+      return;
     // A partial attributes response must not erase fields fetched in a previous batch.
-    const merged = { ...previous, ...Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined)) } as MetaAdEntity;
-    if (item.conversionEventStatus === 'not_configured') delete merged.conversionEvent;
+    const merged = {
+      ...previous,
+      ...Object.fromEntries(
+        Object.entries(item).filter(([, v]) => v !== undefined),
+      ),
+    } as MetaAdEntity;
+    if (item.conversionEventStatus === 'not_configured')
+      delete merged.conversionEvent;
     this.database
       .prepare(
         `INSERT INTO growth_meta_entity (account_id, id, fetched_at, payload) VALUES (?, ?, ?, ?)

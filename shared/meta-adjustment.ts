@@ -37,6 +37,7 @@ export interface MetaAdjustmentItem extends MetaAdjustmentChange {
 export interface MetaAdjustmentJob {
   id: string;
   ownerId: string;
+  centerUsername?: string;
   createdAt: string;
   submittedAt?: string;
   completedAt?: string;

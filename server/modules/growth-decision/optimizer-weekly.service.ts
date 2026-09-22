@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { OptimizerWorkflowService } from './optimizer-workflow.service';
+import {
+  configuredDorisUsers,
+  runPersonalData,
+} from '../../common/utils/personal-doris';
 
 export function reviewWeek(now = new Date()): string {
   const local = new Date(now.getTime() + 8 * 3600000);
@@ -35,6 +39,14 @@ export class OptimizerWeeklyService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
   tick() {
+    if (process.env.GROWTH_PERSONAL_DATA === '1') {
+      for (const username of configuredDorisUsers())
+        runPersonalData(username, () => this.tickCurrentUser());
+      return;
+    }
+    this.tickCurrentUser();
+  }
+  private tickCurrentUser() {
     for (const product of this.db
       .listProducts()
       .filter((p) => p.weeklyReviewEnabled)) {

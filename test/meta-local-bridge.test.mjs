@@ -1,5 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac, randomUUID } from 'node:crypto';
+const makeTicket = (secret, username = 'growth') => {
+  const payload = Buffer.from(
+    JSON.stringify({ username, until: Date.now() + 300000, id: randomUUID() }),
+  ).toString('base64url');
+  return `${payload}.${createHmac('sha256', secret).update(payload).digest('hex')}`;
+};
 import {
   mkdtempSync,
   writeFileSync,
@@ -86,10 +93,11 @@ test('HTTP/2 authorization page accepts :authority and still rejects wrong origi
   );
   await once(bridge, 'listening');
   const client = connectHttp2(`http://127.0.0.1:${port}`);
+  const ticket = makeTicket('c'.repeat(64));
   const request = (headers, body) =>
     new Promise((resolve, reject) => {
       const req = client.request({
-        ':path': '/growth-center-link',
+        ':path': `/growth-center-link?ticket=${ticket}`,
         ...headers,
       });
       let status,
@@ -213,9 +221,10 @@ test('local bridge requires local auth, explicit binding; revocation blocks subs
     mode: 0o600,
   });
   let calls = 0;
+  let expectedCookie = 'meta_session=encrypted-test-session';
   const middlewares = (req, res) => {
     calls++;
-    assert.equal(req.headers.cookie, 'meta_session=encrypted-test-session');
+    assert.equal(req.headers.cookie, expectedCookie);
     assert.equal(req.headers.authorization, undefined);
     assert.equal(req.headers.origin, workspaceOrigin);
     let data = '';
@@ -235,13 +244,15 @@ test('local bridge requires local auth, explicit binding; revocation blocks subs
   };
   const bridge = install(server, file);
   await once(bridge, 'listening');
-  const base = `http://127.0.0.1:${browser.address().port}/growth-center-link`;
+  const pageBase = `http://127.0.0.1:${browser.address().port}/growth-center-link`;
+  let base = `${pageBase}?ticket=${makeTicket(secret)}`;
   const headers = {};
-  const post = (auth = true) =>
+  const post = (auth = true, username = 'growth') =>
     fetch(`${origin}/api/meta/growth-adjustments`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'x-growth-user': username,
         ...(auth ? { authorization: `Bearer ${secret}` } : {}),
       },
       body: JSON.stringify({ action: 'identity' }),
@@ -249,6 +260,11 @@ test('local bridge requires local auth, explicit binding; revocation blocks subs
   try {
     assert.equal((await post(false)).status, 403);
     assert.equal((await post()).status, 401);
+    assert.equal((await fetch(pageBase)).status, 403);
+    assert.equal(
+      (await fetch(`${pageBase}?ticket=${makeTicket(secret)}tampered`)).status,
+      403,
+    );
     const html = await (await fetch(base, { headers })).text();
     const nonce = html.match(/name="nonce" value="([a-f0-9]+)"/)[1];
     const bind = (action, originHeader = workspaceOrigin) =>
@@ -264,18 +280,42 @@ test('local bridge requires local auth, explicit binding; revocation blocks subs
       });
     assert.equal((await bind('bind', 'https://evil.example')).status, 403);
     assert.equal((await bind('bind')).status, 200);
-    assert.equal(existsSync(`${file}.session`), true);
+    assert.equal(existsSync(`${file}.users`), true);
     assert.equal(
-      readFileSync(`${file}.session`, 'utf8').includes(
-        'encrypted-test-session',
-      ),
+      readFileSync(`${file}.users`, 'utf8').includes('encrypted-test-session'),
       true,
     );
     assert.deepEqual(await (await post()).json(), { ownerId: 'test-user' });
+    assert.equal((await post(true, 'fjx')).status, 401);
+    assert.equal((await bind('bind')).status, 403); // One-use link.
+    const fjxUrl = `${pageBase}?ticket=${makeTicket(secret, 'fjx')}`;
+    const fjxPage = await (await fetch(fjxUrl)).text();
+    assert.match(fjxPage, /未授权或已过期/);
     assert.equal(calls, 1);
+    assert.equal(
+      (
+        await fetch(fjxUrl, {
+          method: 'POST',
+          headers: {
+            origin: workspaceOrigin,
+            cookie: 'meta_session=fjx-private-session',
+            'content-type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ nonce, action: 'bind' }),
+        })
+      ).status,
+      200,
+    );
+    expectedCookie = 'meta_session=fjx-private-session';
+    assert.equal((await post(true, 'fjx')).status, 200);
+    expectedCookie = 'meta_session=encrypted-test-session';
+    assert.equal((await post()).status, 200);
+    base = `${pageBase}?ticket=${makeTicket(secret)}`;
     assert.equal((await bind('revoke')).status, 200);
     assert.equal((await post()).status, 401);
-    assert.equal(calls, 1);
+    expectedCookie = 'meta_session=fjx-private-session';
+    assert.equal((await post(true, 'fjx')).status, 200);
+    assert.equal(calls, 4);
   } finally {
     await new Promise((r) => browser.close(r));
     await new Promise((r) => bridge.close(r));

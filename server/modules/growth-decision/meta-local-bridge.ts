@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 export function readMetaLocalBridge(
   root = process.cwd(),
-): { origin: string; secret: string } | null {
+): { origin: string; secret: string; workspaceOrigin?: string } | null {
   const file = join(root, 'runtime/meta-local-bridge.json');
   if (!existsSync(file)) return null;
   if (statSync(file).mode & 0o077) throw new Error('本机桥配置权限必须为 0600');
@@ -21,5 +21,9 @@ export function readMetaLocalBridge(
     !/^[a-f0-9]{64}$/.test(config.secret)
   )
     throw new Error('本机桥配置无效，已阻止连接');
-  return { origin: url.origin, secret: config.secret };
+  return {
+    origin: url.origin,
+    secret: config.secret,
+    workspaceOrigin: config.workspaceOrigin,
+  };
 }

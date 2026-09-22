@@ -18,6 +18,13 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
 @Controller('api/growth-decision/adjustments')
 export class MetaAdjustmentController {
   constructor(private readonly service: MetaAdjustmentService) {}
+  @Get('authorization-status') authorizationStatus(@Req() req: Request) {
+    return this.service.authorizationStatus(req.headers.cookie || '');
+  }
+  @Post('authorization-link') authorizationLink(@Req() req: Request) {
+    this.write(req);
+    return this.service.authorizationLink();
+  }
   private write(req: Request): string {
     if (
       !req.headers.origin ||

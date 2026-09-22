@@ -11,6 +11,7 @@ import {
 import { GrowthDataFetchService } from './growth-data-fetch.service';
 import { GrowthDecisionService } from './growth-decision.service';
 import { completeBiQuery } from './paid-growth-query';
+import { personalScopeKey } from '../../common/utils/personal-doris';
 
 const DAILY = 'bi_ads.ads_paid_acquisition_daily';
 const COHORT = 'bi_ads.ads_paid_acquisition_cohort_metric';
@@ -32,7 +33,7 @@ export function validateBiQuery(q: BiQuery): void {
 @Injectable()
 export class PaidGrowthService {
   private readonly pending = new Map<string, Promise<BiPart>>();
-  private syncPending?: Promise<BiProduct[]>;
+  private readonly syncPending = new Map<string, Promise<BiProduct[]>>();
   private queryRunning = 0;
   private queryWaiting: (() => void)[] = [];
   private async query(args: Record<string, unknown>) {
@@ -129,7 +130,7 @@ export class PaidGrowthService {
     namespace = '',
     cacheOnly = false,
   ): Promise<BiPart> {
-    const key = namespace + JSON.stringify(args);
+    const key = personalScopeKey() + ':' + namespace + JSON.stringify(args);
     const raw = this.database.getBiCache(key);
     const cache: BiPart | undefined = raw ? JSON.parse(raw) : undefined;
     if (cacheOnly)
@@ -226,11 +227,14 @@ export class PaidGrowthService {
   }
 
   syncProducts(): Promise<BiProduct[]> {
-    if (this.syncPending) return this.syncPending;
-    this.syncPending = this.registerProducts().finally(() => {
-      this.syncPending = undefined;
+    const scope = personalScopeKey();
+    const existing = this.syncPending.get(scope);
+    if (existing) return existing;
+    const pending = this.registerProducts().finally(() => {
+      this.syncPending.delete(scope);
     });
-    return this.syncPending;
+    this.syncPending.set(scope, pending);
+    return pending;
   }
   private async registerProducts(): Promise<BiProduct[]> {
     const products = await this.products();

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PersonalDorisController } from './personal-doris.controller';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
 import { GrowthDecisionController } from './growth-decision.controller';
@@ -24,6 +25,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
 
 @Module({
   controllers: [
+    PersonalDorisController,
     MetaAdjustmentController,
     MetaWorkspaceController,
     MetaOperationsController,

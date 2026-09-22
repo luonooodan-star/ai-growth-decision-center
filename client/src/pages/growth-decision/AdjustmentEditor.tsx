@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -24,12 +25,30 @@ import {
 export type AdjustmentDrafts = Record<string, MetaAdjustmentChange>;
 export const draftKey = (snapshot: MetaAdjustmentSnapshot) =>
   `${snapshot.accountId}:${snapshot.id}`;
-const storageKey = 'growth-adjustment-drafts-v1';
 export function useAdjustmentDrafts() {
+  const [storageKey, setStorageKey] = useState('');
   const [error, setError] = useState('');
   const [drafts, setDrafts] = useState<AdjustmentDrafts>({});
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    let live = true;
+    axios
+      .get<{ username: string; doris?: { revision: string } }>('/api/center/me')
+      .then(({ data }) => {
+        if (!live || !data.username) return;
+        setStorageKey(
+          `growth-adjustment-drafts-v3:${data.username}:${data.doris?.revision || 'unconfigured'}`,
+        );
+      })
+      .catch(() => {
+        if (live) setError('身份读取失败，已禁用草稿保存');
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!storageKey) return;
     try {
       const saved = JSON.parse(
         localStorage.getItem(storageKey) || '{}',
@@ -43,7 +62,7 @@ export function useAdjustmentDrafts() {
       setError('本机草稿读取失败，旧草稿未载入；请重新核对后填写');
     }
     setReady(true);
-  }, []);
+  }, [storageKey]);
   useEffect(() => {
     if (!ready) return;
     try {
@@ -51,7 +70,7 @@ export function useAdjustmentDrafts() {
     } catch {
       setError('草稿无法保存到浏览器，请勿刷新或离开本页');
     }
-  }, [drafts, ready]);
+  }, [drafts, ready, storageKey]);
   const update = (
     snapshot: MetaAdjustmentSnapshot,
     patch: Partial<MetaAdjustmentChange> | null,

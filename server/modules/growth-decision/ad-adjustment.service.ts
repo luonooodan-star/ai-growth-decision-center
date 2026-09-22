@@ -6,6 +6,7 @@ import {
 } from '@shared/ad-adjustment.interface';
 import { PaidGrowthService, validateBiQuery } from './paid-growth.service';
 import type { BiPart } from '@shared/paid-growth.interface';
+import { personalScopeKey } from '../../common/utils/personal-doris';
 
 // Verified against Doris list_datasets: both sources expose the same hierarchy.
 export const ADJUSTMENT_DIMENSIONS = [
@@ -37,7 +38,7 @@ export class AdAdjustmentService {
     // Cache peeks never wait for active Doris work. Same query shares BI cache.
     if (cacheOnly)
       return this.bi.part(args, false, ADJUSTMENT_REFRESH_MS, '', true);
-    const key = JSON.stringify([args, refresh]);
+    const key = JSON.stringify([personalScopeKey(), args, refresh]);
     const pending = this.pending.get(key);
     if (pending) return pending;
     if (this.waiting.length >= 100)

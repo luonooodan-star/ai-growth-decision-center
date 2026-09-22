@@ -5,7 +5,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import axios from 'axios';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { centerIdentity } from '../../common/utils/center-identity';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { metaWorkspaceOrigin } from '@shared/meta-workspace';
 import { readMetaLocalBridge } from './meta-local-bridge';
@@ -54,17 +55,25 @@ export class MetaAdjustmentService {
   }
   private async relay<T>(cookie: string, body: object): Promise<T> {
     const local = readMetaLocalBridge();
+    const username = centerIdentity.getStore();
+    if (local && !username)
+      throw new UnauthorizedException(
+        '需要个人登录身份，禁止使用共用 Meta 授权',
+      );
     const origin =
       local?.origin ||
       metaWorkspaceOrigin(process.env.GROWTH_META_WORKSPACE_ORIGIN);
     if (!origin)
       throw new BadRequestException('未配置原广告服务地址，无法执行调整');
     try {
-      return (
-        await axios.post<T>(`${origin}/api/meta/growth-adjustments`, body, {
+      const response = await axios.post<T>(
+        `${origin}/api/meta/growth-adjustments`,
+        body,
+        {
           headers: local
             ? {
                 Authorization: `Bearer ${local.secret}`,
+                'X-Growth-User': username!,
                 'Content-Type': 'application/json',
               }
             : { Cookie: this.cookie(cookie), Origin: origin },
@@ -72,14 +81,19 @@ export class MetaAdjustmentService {
           timeout: 45000,
           maxRedirects: 0,
           maxContentLength: 2 * 1024 * 1024,
-        })
-      ).data;
+        },
+      );
+      if (local && response.headers?.['x-growth-identity-version'] !== '2')
+        throw new UnauthorizedException(
+          '本机桥尚未升级个人授权版本，请先更新并重启原工具；已阻止使用共用授权',
+        );
+      return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401)
           throw new UnauthorizedException(
             local
-              ? '本机授权缺失或登录失效，请在原广告工具打开 /growth-center-link 重新授权'
+              ? '当前用户 Meta 授权缺失或失效，请点击「绑定我的 Meta」重新授权'
               : 'Meta 登录已失效，请重新登录',
           );
         const data = error.response?.data;
@@ -94,6 +108,47 @@ export class MetaAdjustmentService {
       }
       throw error;
     }
+  }
+  async authorizationStatus(cookie: string) {
+    if (!centerIdentity.getStore())
+      throw new UnauthorizedException('需要个人登录');
+    try {
+      const ownerId = await this.identity(cookie);
+      return {
+        status: 'authorized',
+        ownerId,
+        checkedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        status:
+          error instanceof UnauthorizedException
+            ? 'unauthorized'
+            : 'unavailable',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+  }
+  authorizationLink() {
+    const username = centerIdentity.getStore();
+    const local = readMetaLocalBridge();
+    if (!username || !local?.workspaceOrigin)
+      throw new UnauthorizedException('需要个人登录及本机桥配置');
+    const origin = metaWorkspaceOrigin(local.workspaceOrigin);
+    if (!origin) throw new BadRequestException('原工具地址配置无效');
+    const payload = Buffer.from(
+      JSON.stringify({
+        username,
+        until: Date.now() + 5 * 60000,
+        id: randomUUID(),
+      }),
+    ).toString('base64url');
+    const signature = createHmac('sha256', local.secret)
+      .update(payload)
+      .digest('hex');
+    return {
+      url: `${origin}/growth-center-link?ticket=${payload}.${signature}`,
+    };
   }
   async accountNames(cookie: string, ids: string[]) {
     if (
@@ -164,6 +219,7 @@ export class MetaAdjustmentService {
     const job: MetaAdjustmentJob = {
       id: randomUUID(),
       ownerId,
+      centerUsername: centerIdentity.getStore(),
       createdAt: new Date().toISOString(),
       state: 'preview',
       items: [],
@@ -211,13 +267,21 @@ export class MetaAdjustmentService {
     const owner = await this.identity(cookie);
     return this.db
       .listAdjustmentJobs()
-      .filter((j) => j.ownerId === owner)
+      .filter(
+        (j) =>
+          j.ownerId === owner && j.centerUsername === centerIdentity.getStore(),
+      )
       .slice(0, 100);
   }
   async submit(cookie: string, id: string): Promise<MetaAdjustmentJob> {
     const owner = await this.identity(cookie);
     const all = this.db.listAdjustmentJobs();
-    const job = all.find((j) => j.id === id && j.ownerId === owner);
+    const job = all.find(
+      (j) =>
+        j.id === id &&
+        j.ownerId === owner &&
+        j.centerUsername === centerIdentity.getStore(),
+    );
     if (!job) throw new BadRequestException('找不到当前用户的预检任务');
     if (job.state !== 'preview') return job; // Idempotent: never replay a submitted job.
     if (Date.now() - Date.parse(job.createdAt) > 10 * 60000)
