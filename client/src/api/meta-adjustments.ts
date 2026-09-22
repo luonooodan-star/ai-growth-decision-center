@@ -37,7 +37,8 @@ export const listAdjustments = async () =>
   (await axios.get<MetaAdjustmentJob[]>(base, { timeout: 60000 })).data;
 export function adjustmentError(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const message = error.response?.data?.message;
+    const message =
+      error.response?.data?.message || error.response?.data?.error?.message;
     if (typeof message === 'string') return message;
     if (!error.response)
       return '未收到决策中心响应，请检查服务或本机 Meta 桥连接；若已提交，请先查任务记录核对结果，勿重复操作';

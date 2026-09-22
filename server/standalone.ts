@@ -59,7 +59,15 @@ async function bootstrap(): Promise<void> {
   }
 
   const sessions = new CenterSessions(accessPassword);
-  app.use('/api/center/login', json({ limit: '4kb' }));
+  const loginJson = json({ limit: '4kb' });
+  // Nest detects installed parsers by middleware name, without checking the
+  // mount path. Mounting jsonParser directly here suppresses its global parser
+  // and leaves every other POST controller with an undefined body.
+  app.use(
+    '/api/center/login',
+    (req: Request, res: Response, next: NextFunction) =>
+      loginJson(req, res, next),
+  );
 
   app.use(
     async (

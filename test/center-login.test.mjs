@@ -100,6 +100,47 @@ test(
       ).json();
       assert.equal(me.username, 'alice');
       assert.ok(me.sessionId);
+      const postJson = (path, body) =>
+        request(path, {
+          method: 'POST',
+          headers: {
+            Cookie: a,
+            Origin: origin,
+            'X-Center-Session': me.sessionId,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+      // Exercise real Nest controllers, not only the standalone login middleware.
+      const saved = await postJson('/api/center/doris', {
+        key: 'fixture-doris-token-not-real',
+      });
+      assert.equal(
+        saved.status,
+        201,
+        'JSON body must reach the personal Doris controller',
+      );
+      const inspected = await postJson(
+        '/api/growth-decision/adjustments/inspect',
+        {
+          target: {
+            id: '123',
+            campaignId: '123',
+            accountId: '456',
+            level: 'campaign',
+          },
+          creative: false,
+        },
+      );
+      assert.equal(
+        inspected.status,
+        400,
+        'Without a bridge, a parsed inspect request must return configuration error, not 500',
+      );
+      assert.match(
+        (await inspected.json()).error.message,
+        /未配置原广告服务地址/,
+      );
       const second = await login('bob', a);
       assert.equal(second.status, 200);
       const b = second.headers.get('set-cookie').split(';')[0];
