@@ -9,6 +9,7 @@ import {
 import { NavLink, Outlet } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { isCenterSessionError } from '@shared/center-session-error';
 import { AuthorizationContext, type Connections } from './AuthorizationContext';
 
 const Layout = () => {
@@ -40,12 +41,7 @@ const Layout = () => {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (
-          error.response?.status === 401 ||
-          (error.response?.status === 409 &&
-            error.response?.data?.message ===
-              '登录身份已变化，请刷新页面后重试')
-        )
+        if (isCenterSessionError(error.response?.status, error.response?.data))
           window.location.replace('/login');
         return Promise.reject(error);
       },

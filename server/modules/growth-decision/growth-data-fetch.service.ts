@@ -76,6 +76,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private startupTimer?: NodeJS.Timeout;
   private observationTimer?: NodeJS.Timeout;
   private observationCheckRunning = false;
+  private scheduledPass?: Promise<unknown>;
   private readonly activeRuns = new Map<string, Promise<GrowthFetchRun[]>>();
   private get activeRun() {
     return this.activeRuns.get(personalScopeKey());
@@ -85,6 +86,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     else this.activeRuns.delete(personalScopeKey());
   }
   private readonly queryGate = new DorisQueryGate();
+  private readonly metricPending = new Map<string, Promise<DorisQueryResult>>();
   private readonly completeReaders = new Map<string, DorisCompleteReader>();
   private get completeReader() {
     return this.completeReaders.get(personalScopeKey());
@@ -184,7 +186,15 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       this.observationCheckRunning = false;
     }
   }
-  private async scheduledPersonalFetch() {
+  private scheduledPersonalFetch(): Promise<unknown> {
+    if (this.scheduledPass) return this.scheduledPass;
+    const task = this.runScheduledPersonalFetch().finally(() => {
+      if (this.scheduledPass === task) this.scheduledPass = undefined;
+    });
+    this.scheduledPass = task;
+    return task;
+  }
+  private async runScheduledPersonalFetch() {
     if (process.env.GROWTH_PERSONAL_DATA !== '1')
       return this.trigger('scheduled');
     for (const username of configuredDorisUsers()) {
@@ -2391,11 +2401,27 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   async queryMetric(
     argumentsValue: Record<string, unknown>,
   ): Promise<DorisQueryResult> {
-    const result: unknown = await this.queryGate.run(() =>
-      this.callMcpTool('query_metric', {
-        ...argumentsValue,
-        limit: Math.min(1000, Number(argumentsValue.limit) || 1000),
-      }),
+    const key = JSON.stringify([personalScopeKey(), argumentsValue]);
+    const existing = this.metricPending.get(key);
+    if (existing) return existing;
+    if (this.metricPending.size >= 128)
+      throw new Error('Doris 在途查询达到上限，请稍后重试');
+    const task = this.executeQueryMetric(argumentsValue).finally(() => {
+      if (this.metricPending.get(key) === task) this.metricPending.delete(key);
+    });
+    this.metricPending.set(key, task);
+    return task;
+  }
+  private async executeQueryMetric(
+    argumentsValue: Record<string, unknown>,
+  ): Promise<DorisQueryResult> {
+    const result: unknown = await this.queryGate.run(
+      () =>
+        this.callMcpTool('query_metric', {
+          ...argumentsValue,
+          limit: Math.min(1000, Number(argumentsValue.limit) || 1000),
+        }),
+      personalScopeKey(),
     );
     const object: Record<string, unknown> | undefined =
       typeof result === 'object' && result !== null

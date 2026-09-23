@@ -124,9 +124,18 @@ const FetchHistoryControl = ({
 
   useEffect(() => {
     if (!open && !loading) return;
-    void loadHistory();
-    const timer = window.setInterval(() => void loadHistory(), 3000);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let timer: number;
+    const poll = async () => {
+      if (stopped) return;
+      if (!document.hidden) await loadHistory();
+      if (!stopped) timer = window.setTimeout(() => void poll(), 3000);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
   }, [open, loading, productId]);
 
   const runManualFetch = async (resumeMissing = false): Promise<void> => {

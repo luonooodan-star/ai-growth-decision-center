@@ -136,8 +136,18 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
     void load();
   }, [load, refreshedAt]);
   useEffect(() => {
-    const timer: number = window.setInterval(() => void load(), 15000);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let timer: number;
+    const poll = async () => {
+      if (stopped) return;
+      if (!document.hidden) await load();
+      if (!stopped) timer = window.setTimeout(() => void poll(), 15000);
+    };
+    timer = window.setTimeout(() => void poll(), 15000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
   }, [load]);
   const run = async (
     action: () => Promise<unknown>,
@@ -163,7 +173,10 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
   const items: CampaignDecisionCard[] = (board?.items || []).filter(
     (c) =>
       inWorkbench(c, filter) &&
-      (!metaFilter || (metaFilter.value === '__missing' ? !c[metaFilter.key]?.length : c[metaFilter.key]?.includes(metaFilter.value))) &&
+      (!metaFilter ||
+        (metaFilter.value === '__missing'
+          ? !c[metaFilter.key]?.length
+          : c[metaFilter.key]?.includes(metaFilter.value))) &&
       [
         c.snapshot.campaignName,
         c.snapshot.campaignId,
@@ -286,7 +299,11 @@ export const CampaignDecisionBoard: React.FC<CampaignDecisionBoardProps> = ({
           await onChanged();
         }}
       />
-      <CampaignMetaFilters items={board?.items || []} value={metaFilter} onChange={setMetaFilter} />
+      <CampaignMetaFilters
+        items={board?.items || []}
+        value={metaFilter}
+        onChange={setMetaFilter}
+      />
       <CampaignBoardList
         highlightedCampaignId={campaignFromData || undefined}
         board={board}

@@ -14,6 +14,7 @@ import type {
 import { ADJUSTMENT_REFRESH_MS } from '@shared/ad-adjustment.interface';
 import { AdAdjustmentService } from '@server/modules/growth-decision/ad-adjustment.service';
 import { PaidGrowthService } from '@server/modules/growth-decision/paid-growth.service';
+import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-data-fetch.service';
 import type { BiRawRow } from '@shared/paid-growth.interface';
 
 const filters: AdjustmentFilters = {
@@ -58,20 +59,16 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
 describe('advertising adjustment workbench', () => {
   test('personal ownership reads a lightweight campaign manifest, independent of local filter slices', async () => {
     const bi = {
-      part: jest
-        .fn()
-        .mockResolvedValue({
-          state: 'cached',
-          rows: [{ campaign_id: '123', spend: 10 }],
-        }),
+      part: jest.fn().mockResolvedValue({
+        state: 'cached',
+        rows: [{ campaign_id: '123', spend: 10 }],
+      }),
     };
     const meta = {
-      campaignAccounts: jest
-        .fn()
-        .mockResolvedValue({
-          ownerId: 'owner',
-          campaigns: [{ campaignId: '123', accountId: '456' }],
-        }),
+      campaignAccounts: jest.fn().mockResolvedValue({
+        ownerId: 'owner',
+        campaigns: [{ campaignId: '123', accountId: '456' }],
+      }),
     };
     const service = new AdAdjustmentService(bi as never, meta as never);
     const date = new Date().toLocaleDateString('en-CA', {
@@ -270,18 +267,26 @@ describe('advertising adjustment workbench', () => {
     release({ rows: [], truncated: true } as never);
     await fresh;
   });
-  test('Doris concurrency is capped at four across independent BI callers', async () => {
+  test('Doris concurrency is capped at two at the real shared gate across BI callers', async () => {
     let active = 0,
       peak = 0;
-    const fetcher = {
-      queryMetric: jest.fn(async () => {
+    const fetcher = new GrowthDataFetchService(
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    jest
+      .spyOn(
+        fetcher as unknown as { callMcpTool(): Promise<unknown> },
+        'callMcpTool',
+      )
+      .mockImplementation(async () => {
         active++;
         peak = Math.max(peak, active);
         await new Promise((resolve) => setTimeout(resolve, 2));
         active--;
-        return { rows: [] };
-      }),
-    };
+        return { structuredContent: { rows: [] } };
+      });
     const service = new PaidGrowthService(
       { getBiCache: () => undefined, saveBiCache: () => undefined } as never,
       fetcher as never,
@@ -299,7 +304,7 @@ describe('advertising adjustment workbench', () => {
         ),
       ),
     );
-    expect(peak).toBe(4);
+    expect(peak).toBe(2);
     expect(active).toBe(0);
   });
   test('BI campaign queries and adjustment campaign queries have identical cache inputs', async () => {

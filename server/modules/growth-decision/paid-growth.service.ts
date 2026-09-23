@@ -34,19 +34,10 @@ export function validateBiQuery(q: BiQuery): void {
 export class PaidGrowthService {
   private readonly pending = new Map<string, Promise<BiPart>>();
   private readonly syncPending = new Map<string, Promise<BiProduct[]>>();
-  private queryRunning = 0;
-  private queryWaiting: (() => void)[] = [];
   private async query(args: Record<string, unknown>) {
-    if (this.queryRunning >= 4)
-      await new Promise<void>((resolve) => this.queryWaiting.push(resolve));
-    else this.queryRunning++;
-    try {
-      return await this.fetcher.queryMetric(args);
-    } finally {
-      const next = this.queryWaiting.shift();
-      if (next) next();
-      else this.queryRunning--;
-    }
+    // All consumers share the bounded/fair gate in GrowthDataFetchService.
+    // An extra unbounded FIFO here hides requests from its fairness policy.
+    return this.fetcher.queryMetric(args);
   }
   constructor(
     private readonly database: LocalDatabaseService,

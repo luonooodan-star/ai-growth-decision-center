@@ -107,7 +107,7 @@ describe('personal Doris authorization and data isolation', () => {
     ).toHaveLength(3);
     expect(
       calls.filter((value) => value === 'Bearer fixture-fjx-key'),
-    ).toHaveLength(6);
+    ).toHaveLength(3); // Two identical fjx reads share one MCP exchange.
     expect(calls.join()).not.toContain('forbidden-shared');
   });
   test('legacy product standards and knowledge are shared while accounts and caches stay personal', () => {
