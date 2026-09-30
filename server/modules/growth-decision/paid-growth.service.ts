@@ -47,9 +47,8 @@ export class PaidGrowthService {
 
   async day(q: BiQuery): Promise<BiDay> {
     validateBiQuery(q);
-    if (!q.appId) throw new BadRequestException('请先选择产品');
     const filters = {
-      app_id: Number(q.appId),
+      ...(q.appId ? { app_id: Number(q.appId) } : {}),
       ...(q.media ? { media_source: q.media } : {}),
     };
     const dimensions = [
@@ -84,6 +83,7 @@ export class PaidGrowthService {
       return {
         date: q.date,
         level: q.level,
+        scopeAppId: q.appId ? Number(q.appId) : undefined,
         daily,
         revenue: unsupported,
         events: unsupported,
@@ -112,7 +112,14 @@ export class PaidGrowthService {
       },
       q.refresh === '1',
     );
-    return { date: q.date, level: q.level, daily, revenue, events };
+    return {
+      date: q.date,
+      level: q.level,
+      scopeAppId: q.appId ? Number(q.appId) : undefined,
+      daily,
+      revenue,
+      events,
+    };
   }
 
   /** Lightweight all-channel spend for the adjustment overview; shares the BI day cache. */

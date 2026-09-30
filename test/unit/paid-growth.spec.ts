@@ -159,6 +159,35 @@ describe('integrated paid growth BI', () => {
       ['facebook_web', 7],
     ]);
   });
+  test('all-product channel view groups the same channel across products', () => {
+    const report = day();
+    report.level = 'channels';
+    report.daily.rows.push({
+      ...report.daily.rows[0],
+      app_id: 12,
+      app_name: 'Another App',
+      spend: 7,
+    });
+    report.revenue.rows.push({
+      ...report.revenue.rows[0],
+      app_id: 12,
+      app_name: 'Another App',
+      metric_value: 3,
+    });
+    expect(biRows([report])).toMatchObject([
+      {
+        appId: 0,
+        appName: '全部产品',
+        media: 'facebook',
+        spend: 17,
+        revenue: 8,
+      },
+    ]);
+    report.scopeAppId = 11;
+    report.daily.rows.pop();
+    report.revenue.rows.pop();
+    expect(biRows([report])[0]).toMatchObject({ appId: 11, spend: 10 });
+  });
   test('rejects malformed dates and unsupported dimensions', () => {
     expect(() =>
       validateBiQuery({ date: '2026-99-01', level: 'overall' }),
@@ -279,10 +308,14 @@ describe('BI persistence and product registration', () => {
       appId: '11',
       media: 'facebook',
     };
-    await expect(s.day({ date: q.date, level: q.level })).rejects.toThrow(
-      '请先选择产品',
-    );
-    expect(query).not.toHaveBeenCalled();
+    await s.day({ date: q.date, level: 'channels' });
+    expect(
+      query.mock.calls.every(
+        ([args]) =>
+          !Object.hasOwn(JSON.parse(String(args.filters_json)), 'app_id'),
+      ),
+    ).toBe(true);
+    query.mockClear();
     await s.day({ date: q.date, level: 'channels', appId: '11' });
     expect(
       query.mock.calls.every(

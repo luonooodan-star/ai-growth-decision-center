@@ -26,7 +26,7 @@ const ratio = (
   a === null || b === null || b <= 0 ? null : (a / b) * multiplier;
 const identity = (row: BiRawRow, level: BiLevel): string =>
   JSON.stringify([
-    String(row.app_id ?? ''),
+    ...(level === 'channels' ? [] : [String(row.app_id ?? '')]),
     ...(level === 'products' ? [] : [String(row.media_source ?? '')]),
     ...BI_DIMENSIONS[level]
       .filter((k) => !k.endsWith('_name'))
@@ -90,8 +90,14 @@ export function biRows(days: BiDay[]): BiRow[] {
       const raw = item.raw;
       const row = result.get(key) || {
         key,
-        appId: Number(raw.app_id),
-        appName: String(raw.app_name || '未命名产品'),
+        appId:
+          day.level === 'channels' && !day.scopeAppId
+            ? 0
+            : Number(day.scopeAppId || raw.app_id),
+        appName:
+          day.level === 'channels' && !day.scopeAppId
+            ? '全部产品'
+            : String(raw.app_name || '未命名产品'),
         media:
           day.level === 'products'
             ? '全部渠道'

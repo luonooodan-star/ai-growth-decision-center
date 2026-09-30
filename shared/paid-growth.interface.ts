@@ -25,6 +25,8 @@ export interface BiPart {
 export interface BiDay {
   date: string;
   level: BiLevel;
+  /** Present when the source query is narrowed to one product. */
+  scopeAppId?: number;
   daily: BiPart;
   revenue: BiPart;
   events: BiPart;

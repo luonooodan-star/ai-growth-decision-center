@@ -247,13 +247,13 @@ export default function PaidGrowthPage() {
       [
         ...new Set(
           products
-            .filter((p) => String(p.appId) === appId)
+            .filter((p) => !appId || String(p.appId) === appId)
             .map((p) => p.channel),
         ),
       ].sort(),
     [products, appId],
   );
-  const validSelection = !!appId && (!media || availableMedia.includes(media));
+  const validSelection = !media || availableMedia.includes(media);
   const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${level}`;
   useEffect(() => {
     void getBiProducts()
@@ -275,7 +275,7 @@ export default function PaidGrowthPage() {
     range = { from: start, to: end },
   ) => {
     if (!validSelection) {
-      setError('请先选择一个产品');
+      setError('所选渠道不在当前产品范围内');
       return;
     }
     const dayCount = differenceInCalendarDays(range.to, range.from) + 1;
@@ -323,7 +323,10 @@ export default function PaidGrowthPage() {
       `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
     );
     setLoadedMedia(media);
-    setParams({ appId, ...(media ? { media } : {}) }, { replace: true });
+    setParams(
+      { ...(appId ? { appId } : {}), ...(media ? { media } : {}) },
+      { replace: true },
+    );
     const next: BiDay[] = [];
     try {
       for (let i = 0; i < dayCount; i++) {
@@ -370,8 +373,9 @@ export default function PaidGrowthPage() {
     // One background request at a time. Responses persist on the server, not in browser memory.
     for (const other of BI_VIEW_LEVELS) {
       if (other === requestedLevel || abort.signal.aborted) continue;
-      // Product-only queries can be broad; keep their eager work at summary level.
-      if (!media && other !== 'products' && other !== 'channels') continue;
+      // Broad queries only prefetch summaries; detailed dimensions stay on demand.
+      if ((!appId || !media) && other !== 'products' && other !== 'channels')
+        continue;
       for (let i = 0; i < dayCount; i++) {
         if (abort.signal.aborted) return;
         const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
@@ -405,7 +409,7 @@ export default function PaidGrowthPage() {
     }
     if (!abort.signal.aborted)
       setWarming(
-        media
+        appId && media
           ? '全部维度预取已结束；切换自动读取，缺口可重新拉取。'
           : '产品与渠道汇总已缓存；其他维度切换时按需读取。',
       );
@@ -620,14 +624,24 @@ export default function PaidGrowthPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-52 space-y-1">
             <label className="block text-xs font-medium text-slate-500">
-              产品（必选）
+              产品（可选）
             </label>
             <Select
-              value={appId}
+              value={appId || 'all'}
               onValueChange={(value) => {
                 controller.current?.abort();
-                setAppId(value);
-                setMedia('');
+                const nextAppId = value === 'all' ? '' : value;
+                setAppId(nextAppId);
+                setMedia((current) =>
+                  !current ||
+                  products.some(
+                    (product) =>
+                      (!nextAppId || String(product.appId) === nextAppId) &&
+                      product.channel === current,
+                  )
+                    ? current
+                    : '',
+                );
               }}
               disabled={busy}
             >
@@ -635,6 +649,7 @@ export default function PaidGrowthPage() {
                 <SelectValue placeholder="选择产品" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">全部产品</SelectItem>
                 {[...new Map(products.map((p) => [p.appId, p])).values()].map(
                   (p) => (
                     <SelectItem key={p.appId} value={String(p.appId)}>
@@ -655,7 +670,7 @@ export default function PaidGrowthPage() {
                 controller.current?.abort();
                 setMedia(value === 'all' ? '' : value);
               }}
-              disabled={busy || !appId}
+              disabled={busy}
             >
               <SelectTrigger aria-label="渠道">
                 <SelectValue placeholder="选择渠道" />
@@ -728,7 +743,9 @@ export default function PaidGrowthPage() {
             </Button>
           ))}
           {!validSelection && (
-            <span className="text-xs text-slate-500">请先选择产品</span>
+            <span className="text-xs text-slate-500">
+              所选渠道不在当前产品范围内
+            </span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -747,7 +764,8 @@ export default function PaidGrowthPage() {
             </Button>
           ))}
           <span className="ml-auto self-center text-xs text-slate-500">
-            切换维度自动查询 · 全渠道仅预取汇总 · 缓存 5 分钟 · 最多 31 天
+            切换维度自动查询 · 全产品或全渠道仅预取汇总 · 缓存 5 分钟 · 最多 31
+            天
           </span>
         </div>
       </section>
@@ -1059,6 +1077,10 @@ export default function PaidGrowthPage() {
                       ) : level === 'products' ? (
                         <span className="text-xs text-slate-400">
                           请切换到渠道或系列维度
+                        </span>
+                      ) : level === 'channels' && !appId ? (
+                        <span className="text-xs text-slate-400">
+                          选择产品后查看决策
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">
