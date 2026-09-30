@@ -1,5 +1,5 @@
 import { biNumber, biRows } from './paid-growth';
-import type { BiDay } from './paid-growth.interface';
+import type { BiDay, BiPart } from './paid-growth.interface';
 
 /** Ratios of additive totals, never averages of product/campaign percentages. */
 export function biSummary(days: BiDay[]) {
@@ -43,6 +43,23 @@ export function biChannelSpend(days: BiDay[], channel: string): number | null {
       if (spend === null) return null;
       total += spend;
     }
+  return total;
+}
+
+/** A complete source with no rows for this channel means zero; failures stay unknown. */
+export function biPartChannelSpend(
+  part: BiPart | undefined,
+  channel: string,
+): number | null {
+  if (!part || !['fresh', 'cached'].includes(part.state)) return null;
+  let total = 0;
+  for (const row of part.rows) {
+    if (String(row.media_source || '').toLowerCase() !== channel.toLowerCase())
+      continue;
+    const spend = biNumber(row.spend);
+    if (spend === null) return null;
+    total += spend;
+  }
   return total;
 }
 

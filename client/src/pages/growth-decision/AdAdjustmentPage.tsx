@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableFilter as FilterSelect } from './SearchableFilter';
 import { useAccountNames } from './useAccountNames';
-import { getBiProducts, getBiStandards } from '@/api/paid-growth';
-import type { BiProduct } from '@shared/paid-growth.interface';
+import {
+  getBiChannelSpend,
+  getBiProducts,
+  getBiStandards,
+} from '@/api/paid-growth';
+import type { BiPart, BiProduct } from '@shared/paid-growth.interface';
+import { biPartChannelSpend } from '@shared/bi-summary';
 import type { MetricStandardProduct } from '@shared/metric-signals';
 import {
   adjustmentAccounts,
@@ -38,6 +43,12 @@ export default function AdAdjustmentPage() {
   const [products, setProducts] = useState<BiProduct[]>([]);
   const [standards, setStandards] = useState<MetricStandardProduct[]>([]);
   const [setupError, setSetupError] = useState('');
+  const [channelSpend, setChannelSpend] = useState<{
+    appId: string;
+    part: BiPart;
+  }>();
+  const [channelSpendError, setChannelSpendError] = useState('');
+  const channelSpendRequest = useRef<AbortController | null>(null);
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [appId, setAppId] = useState(''),
     [media, setMedia] = useState('');
@@ -84,6 +95,28 @@ export default function AdAdjustmentPage() {
     setOptimizer('');
     setCountry('');
   }, [appId, media]);
+  useEffect(() => {
+    channelSpendRequest.current?.abort();
+    setChannelSpend(undefined);
+    setChannelSpendError('');
+    return () => channelSpendRequest.current?.abort();
+  }, [appId]);
+  const loadChannelSpend = async () => {
+    if (!appId) return;
+    channelSpendRequest.current?.abort();
+    const controller = new AbortController();
+    channelSpendRequest.current = controller;
+    setChannelSpendError('');
+    try {
+      const part = await getBiChannelSpend(today, appId, controller.signal);
+      if (!controller.signal.aborted) setChannelSpend({ appId, part });
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setChannelSpendError(
+          error instanceof Error ? error.message : '渠道消耗读取失败',
+        );
+    }
+  };
   const dates = adjustmentDates(today);
   const current = days.find((d) => d.date === today);
   const options = useMemo(() => {
@@ -312,6 +345,7 @@ export default function AdAdjustmentPage() {
           disabled={loading || !appId || !media}
           onClick={() => {
             void refresh();
+            void loadChannelSpend();
           }}
         >
           <RefreshCw
@@ -386,6 +420,44 @@ export default function AdAdjustmentPage() {
           {appOptions.find((o) => o.value === appId)?.label || '全部产品'} ·{' '}
           {mediaLabel || '未选择渠道'}
         </h2>
+        <div className="mb-3 grid gap-3 sm:grid-cols-2">
+          {(['facebook', 'facebook_web'] as const).map((channel) => {
+            const part =
+              channelSpend?.appId === appId ? channelSpend.part : undefined;
+            return (
+              <div key={channel} className={`${panel} p-4`}>
+                <p className="text-sm text-slate-500">
+                  {channel === 'facebook' ? 'Facebook' : 'Facebook Web'} 消耗 ·
+                  今日
+                </p>
+                <p className="mt-2 text-xl font-semibold tabular-nums">
+                  {adjustmentMoney(biPartChannelSpend(part, channel))}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  产品全量 · 不受下方系列筛选影响
+                  {part?.updatedAt ? ` · ${formatTime(part.updatedAt)}` : ''}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        {channelSpendError && (
+          <p role="alert" className="mb-3 text-sm text-red-700">
+            渠道消耗读取失败：{channelSpendError}
+          </p>
+        )}
+        {channelSpend &&
+          !['fresh', 'cached'].includes(channelSpend.part.state) && (
+            <p className="mb-3 text-sm text-amber-800">
+              渠道消耗未完整返回，请重新抓取；旧值不用于汇总。
+              {channelSpend.part.message ? ` ${channelSpend.part.message}` : ''}
+            </p>
+          )}
+        {channelSpend?.part.message?.includes('已排除') && (
+          <p className="mb-3 text-sm text-amber-800">
+            {channelSpend.part.message}
+          </p>
+        )}
         <div
           data-ai-section-type="card-stat"
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"

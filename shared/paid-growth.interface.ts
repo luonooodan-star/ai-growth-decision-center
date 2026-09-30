@@ -1,4 +1,7 @@
 export const BI_LEVELS = {
+  products: '产品',
+  channels: '渠道',
+  // Retain the old API level for cached links and existing trend consumers.
   overall: '产品 / 渠道',
   campaigns: '广告系列',
   adgroups: '广告组',

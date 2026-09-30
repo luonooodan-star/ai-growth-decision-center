@@ -27,6 +27,12 @@ export class PaidGrowthController {
   @Get('day') day(@Query() query: BiQuery) {
     return this.service.day(query);
   }
+  @Get('channel-spend') channelSpend(
+    @Query('date') date: string,
+    @Query('appId') appId: string,
+  ) {
+    return this.service.channelSpend(date, appId);
+  }
   @Get('adjustment-day') adjustmentDay(@Query() query: AdjustmentQuery) {
     return this.adjustment.day(query);
   }

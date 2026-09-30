@@ -1,6 +1,8 @@
 import type { BiDay, BiLevel, BiRawRow, BiRow } from './paid-growth.interface';
 
 export const BI_DIMENSIONS: Record<BiLevel, string[]> = {
+  products: [],
+  channels: [],
   overall: [],
   campaigns: ['campaign_id', 'campaign_name'],
   adgroups: ['campaign_id', 'campaign_name', 'adgroup_id', 'adgroup_name'],
@@ -25,7 +27,7 @@ const ratio = (
 const identity = (row: BiRawRow, level: BiLevel): string =>
   JSON.stringify([
     String(row.app_id ?? ''),
-    String(row.media_source ?? ''),
+    ...(level === 'products' ? [] : [String(row.media_source ?? '')]),
     ...BI_DIMENSIONS[level]
       .filter((k) => !k.endsWith('_name'))
       .map((k) => row[k] ?? null),
@@ -90,9 +92,13 @@ export function biRows(days: BiDay[]): BiRow[] {
         key,
         appId: Number(raw.app_id),
         appName: String(raw.app_name || '未命名产品'),
-        media: String(raw.media_source || '未归因'),
+        media:
+          day.level === 'products'
+            ? '全部渠道'
+            : String(raw.media_source || '未归因'),
         label: String(
-          raw.adgroup_name ||
+          (day.level === 'channels' ? raw.media_source : '') ||
+            raw.adgroup_name ||
             raw.creative_name ||
             raw.campaign_name ||
             raw.country_code ||

@@ -1,5 +1,6 @@
 import {
   biChannelSpend,
+  biPartChannelSpend,
   biSummary,
   trendTickIndexes,
 } from '@shared/bi-summary';
@@ -42,6 +43,21 @@ test('Facebook and Facebook Web spend remain separate across days', () => {
   expect(biSummary([first, second]).spend).toBe(40);
   second.daily.state = 'missing';
   expect(biChannelSpend([first, second], 'facebook_web')).toBeNull();
+});
+test('adjustment channel spend uses complete daily rows and never treats stale as zero', () => {
+  const daily = {
+    state: 'cached' as const,
+    rows: [
+      { media_source: 'facebook', spend: 10 },
+      { media_source: 'facebook_web', spend: 7 },
+    ],
+  };
+  expect(biPartChannelSpend(daily, 'facebook')).toBe(10);
+  expect(biPartChannelSpend(daily, 'facebook_web')).toBe(7);
+  expect(biPartChannelSpend(daily, 'other')).toBe(0);
+  expect(
+    biPartChannelSpend({ ...daily, state: 'stale' }, 'facebook'),
+  ).toBeNull();
 });
 test('ported trend ticks retain first/last and avoid crowding', () => {
   expect(trendTickIndexes(1)).toEqual([0]);

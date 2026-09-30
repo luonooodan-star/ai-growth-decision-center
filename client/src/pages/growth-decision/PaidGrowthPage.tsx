@@ -86,6 +86,9 @@ const channelLabel = (channel: string) =>
     : channel === 'facebook'
       ? 'Facebook'
       : channel;
+const BI_VIEW_LEVELS = (Object.keys(BI_LEVELS) as BiLevel[]).filter(
+  (key) => key !== 'overall',
+);
 const errorText = (e: unknown) =>
   axios.isAxiosError(e)
     ? String(
@@ -209,7 +212,7 @@ export default function PaidGrowthPage() {
   const [quickPreset, setQuickPreset] = useState<PaidGrowthPreset | null>(
     'today',
   );
-  const [level, setLevel] = useState<BiLevel>('overall');
+  const [level, setLevel] = useState<BiLevel>('products');
   const [days, setDays] = useState<BiDay[]>([]);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -250,7 +253,7 @@ export default function PaidGrowthPage() {
       ].sort(),
     [products, appId],
   );
-  const validSelection = !!appId && !!media && availableMedia.includes(media);
+  const validSelection = !!appId && (!media || availableMedia.includes(media));
   const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${level}`;
   useEffect(() => {
     void getBiProducts()
@@ -272,7 +275,7 @@ export default function PaidGrowthPage() {
     range = { from: start, to: end },
   ) => {
     if (!validSelection) {
-      setError('请先选择一个产品和对应渠道');
+      setError('请先选择一个产品');
       return;
     }
     const dayCount = differenceInCalendarDays(range.to, range.from) + 1;
@@ -320,7 +323,7 @@ export default function PaidGrowthPage() {
       `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
     );
     setLoadedMedia(media);
-    setParams({ appId, media }, { replace: true });
+    setParams({ appId, ...(media ? { media } : {}) }, { replace: true });
     const next: BiDay[] = [];
     try {
       for (let i = 0; i < dayCount; i++) {
@@ -365,8 +368,10 @@ export default function PaidGrowthPage() {
       }
     }
     // One background request at a time. Responses persist on the server, not in browser memory.
-    for (const other of Object.keys(BI_LEVELS) as BiLevel[]) {
+    for (const other of BI_VIEW_LEVELS) {
       if (other === requestedLevel || abort.signal.aborted) continue;
+      // Product-only queries can be broad; keep their eager work at summary level.
+      if (!media && other !== 'products' && other !== 'channels') continue;
       for (let i = 0; i < dayCount; i++) {
         if (abort.signal.aborted) return;
         const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
@@ -399,7 +404,11 @@ export default function PaidGrowthPage() {
       }
     }
     if (!abort.signal.aborted)
-      setWarming('全部维度预取已结束；切换自动读取，缺口可重新拉取。');
+      setWarming(
+        media
+          ? '全部维度预取已结束；切换自动读取，缺口可重新拉取。'
+          : '产品与渠道汇总已缓存；其他维度切换时按需读取。',
+      );
   };
   const rows = useMemo(() => biRows(days), [days]);
   const summary = useMemo(() => biSummary(days), [days]);
@@ -638,13 +647,13 @@ export default function PaidGrowthPage() {
           </div>
           <div className="min-w-40 space-y-1">
             <label className="block text-xs font-medium text-slate-500">
-              渠道（必选）
+              渠道（可选）
             </label>
             <Select
-              value={media}
+              value={media || 'all'}
               onValueChange={(value) => {
                 controller.current?.abort();
-                setMedia(value);
+                setMedia(value === 'all' ? '' : value);
               }}
               disabled={busy || !appId}
             >
@@ -652,6 +661,7 @@ export default function PaidGrowthPage() {
                 <SelectValue placeholder="选择渠道" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">全部渠道</SelectItem>
                 {availableMedia.map((m) => (
                   <SelectItem key={m} value={m}>
                     {channelLabel(m)}
@@ -718,26 +728,26 @@ export default function PaidGrowthPage() {
             </Button>
           ))}
           {!validSelection && (
-            <span className="text-xs text-slate-500">请先选择产品和渠道</span>
+            <span className="text-xs text-slate-500">请先选择产品</span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {Object.entries(BI_LEVELS).map(([key, label]) => (
+          {BI_VIEW_LEVELS.map((key) => (
             <Button
               key={key}
               size="sm"
               disabled={busy || !validSelection}
               variant={level === key ? 'default' : 'ghost'}
               onClick={() => {
-                setLevel(key as BiLevel);
-                void load(false, key as BiLevel);
+                setLevel(key);
+                void load(false, key);
               }}
             >
-              {label}
+              {BI_LEVELS[key]}
             </Button>
           ))}
           <span className="ml-auto self-center text-xs text-slate-500">
-            切换维度自动查询 · 后台预取全部维度 · 缓存 5 分钟 · 最多 31 天
+            切换维度自动查询 · 全渠道仅预取汇总 · 缓存 5 分钟 · 最多 31 天
           </span>
         </div>
       </section>
@@ -762,7 +772,10 @@ export default function PaidGrowthPage() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ['消耗 ($)', loadedMedia ? biChannelSpend(days, loadedMedia) : null],
+          [
+            '消耗 ($)',
+            loadedMedia ? biChannelSpend(days, loadedMedia) : summary.spend,
+          ],
           ['Adjust 安装', total('installs')],
           ['当前 D0 收入 ($)', total('revenue')],
           ['当前 D0 ROAS (%)', summary.d0Roas],
@@ -772,8 +785,8 @@ export default function PaidGrowthPage() {
             className="rounded-2xl border bg-white p-5"
           >
             <p className="text-sm text-slate-500">
-              {label === '消耗 ($)' && loadedMedia
-                ? `${label} · ${channelLabel(loadedMedia)}`
+              {label === '消耗 ($)'
+                ? `${label} · ${loadedMedia ? channelLabel(loadedMedia) : '全部渠道'}`
                 : label}
             </p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">
@@ -819,7 +832,8 @@ export default function PaidGrowthPage() {
                   <TableHead>数据日</TableHead>
                   <TableHead>投放 / D0 收入 / 事件</TableHead>
                   <TableHead className="text-right">
-                    消耗 ($) · {channelLabel(loadedMedia)}
+                    消耗 ($) ·{' '}
+                    {loadedMedia ? channelLabel(loadedMedia) : '全部渠道'}
                   </TableHead>
                   <TableHead className="text-right">Adjust 安装</TableHead>
                   <TableHead className="text-right">Adjust CPI ($)</TableHead>
@@ -833,7 +847,9 @@ export default function PaidGrowthPage() {
                     !daily.length || daily.some((r) => r[key] === null)
                       ? null
                       : daily.reduce((v, r) => v + (r[key] || 0), 0);
-                  const spend = biChannelSpend([day], loadedMedia),
+                  const spend = loadedMedia
+                      ? biChannelSpend([day], loadedMedia)
+                      : biSummary([day]).spend,
                     installs = sum('installs');
                   const states = {
                     fresh: '已更新',
@@ -985,11 +1001,13 @@ export default function PaidGrowthPage() {
                         </button>
                       ) : (
                         <p className="max-w-96 whitespace-normal break-words font-medium">
-                          {row.label}
+                          {level === 'channels'
+                            ? channelLabel(row.label)
+                            : row.label}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-slate-500">
-                        {row.appName} · {row.media}
+                        {row.appName} · {channelLabel(row.media)}
                       </p>
                       {row.campaignName && row.campaignName !== row.label && (
                         <button
@@ -1038,6 +1056,10 @@ export default function PaidGrowthPage() {
                           进入决策中心
                           <ArrowRight className="size-3" />
                         </Link>
+                      ) : level === 'products' ? (
+                        <span className="text-xs text-slate-400">
+                          请切换到渠道或系列维度
+                        </span>
                       ) : (
                         <span className="text-xs text-slate-400">
                           请先同步产品

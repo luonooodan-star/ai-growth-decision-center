@@ -137,6 +137,28 @@ describe('integrated paid growth BI', () => {
     expect(biRows([a]).find((r) => r.media === 'facebook')?.spend).toBe(10);
     expect(biRows([a]).find((r) => r.media === 'facebook_web')?.spend).toBe(7);
   });
+  test('product totals combine channels while channel rows keep them separate', () => {
+    const report = day();
+    report.level = 'products';
+    report.daily.rows.push({
+      ...report.daily.rows[0],
+      media_source: 'facebook_web',
+      spend: 7,
+    });
+    report.revenue.rows.push({
+      ...report.revenue.rows[0],
+      media_source: 'facebook_web',
+      metric_value: 3,
+    });
+    expect(biRows([report])).toMatchObject([
+      { media: '全部渠道', spend: 17, revenue: 8 },
+    ]);
+    report.level = 'channels';
+    expect(biRows([report]).map((row) => [row.media, row.spend])).toEqual([
+      ['facebook', 10],
+      ['facebook_web', 7],
+    ]);
+  });
   test('rejects malformed dates and unsupported dimensions', () => {
     expect(() =>
       validateBiQuery({ date: '2026-99-01', level: 'overall' }),
@@ -232,6 +254,17 @@ describe('BI persistence and product registration', () => {
     query.mockRejectedValue(new Error('connection unavailable'));
     expect((await s.day({ ...q, refresh: '1' })).daily.state).toBe('stale');
   });
+  test('adjustment channel breakdown reuses the BI daily cache without cohort queries', async () => {
+    const query = jest.fn(async () => ({ rows: [] }));
+    const s = service(query);
+    const date = '2026-09-19';
+    await s.day({ date, level: 'channels', appId: '11' });
+    query.mockClear();
+    const part = await s.channelSpend(date, '11');
+    expect(part.state).toBe('cached');
+    expect(query).not.toHaveBeenCalled();
+    expect(() => s.channelSpend(date, '')).toThrow('请先选择产品');
+  });
   test('live BI never filters out unfinished D0 and expires cache after five minutes', async () => {
     const query = jest.fn(async (args: Record<string, unknown>) => {
       expect(JSON.parse(String(args.filters_json))).not.toHaveProperty(
@@ -247,9 +280,17 @@ describe('BI persistence and product registration', () => {
       media: 'facebook',
     };
     await expect(s.day({ date: q.date, level: q.level })).rejects.toThrow(
-      '请先选择产品和渠道',
+      '请先选择产品',
     );
     expect(query).not.toHaveBeenCalled();
+    await s.day({ date: q.date, level: 'channels', appId: '11' });
+    expect(
+      query.mock.calls.every(
+        ([args]) =>
+          !Object.hasOwn(JSON.parse(String(args.filters_json)), 'media_source'),
+      ),
+    ).toBe(true);
+    query.mockClear();
     await s.day(q);
     const calls = query.mock.calls.length;
     await s.day(q);

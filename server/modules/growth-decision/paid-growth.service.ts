@@ -47,11 +47,10 @@ export class PaidGrowthService {
 
   async day(q: BiQuery): Promise<BiDay> {
     validateBiQuery(q);
-    if (!q.appId || !q.media)
-      throw new BadRequestException('请先选择产品和渠道');
+    if (!q.appId) throw new BadRequestException('请先选择产品');
     const filters = {
       app_id: Number(q.appId),
-      media_source: q.media,
+      ...(q.media ? { media_source: q.media } : {}),
     };
     const dimensions = [
       'app_id',
@@ -114,6 +113,43 @@ export class PaidGrowthService {
       q.refresh === '1',
     );
     return { date: q.date, level: q.level, daily, revenue, events };
+  }
+
+  /** Lightweight all-channel spend for the adjustment overview; shares the BI day cache. */
+  channelSpend(date: string, appId: string): Promise<BiPart> {
+    validateBiQuery({ date, appId, level: 'channels' });
+    if (!appId) throw new BadRequestException('请先选择产品');
+    return this.part(
+      {
+        start_date: date,
+        end_date: date,
+        dimensions: ['app_id', 'app_name', 'media_source'],
+        dataset: DAILY,
+        metrics: [
+          'spend',
+          'impressions',
+          'media_clicks',
+          'media_installs',
+          'adjust_installs',
+        ],
+        filters_json: JSON.stringify({ app_id: Number(appId) }),
+      },
+      false,
+    ).then((part) => {
+      const rows = part.rows.filter((row) => String(row.app_id) === appId);
+      return rows.length === part.rows.length
+        ? part
+        : {
+            ...part,
+            rows,
+            message: [
+              part.message,
+              `已排除 ${part.rows.length - rows.length} 条其他产品的数据`,
+            ]
+              .filter(Boolean)
+              .join('；'),
+          };
+    });
   }
 
   part(
