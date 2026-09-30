@@ -14,7 +14,7 @@ import { verifiedNoSpend } from '@shared/campaign-visibility';
 import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import { BiTrend } from './BiTrend';
-import { biSummary } from '@shared/bi-summary';
+import { biChannelSpend, biSummary } from '@shared/bi-summary';
 import {
   biMetricSignal,
   type MetricStandardProduct,
@@ -185,6 +185,7 @@ export default function PaidGrowthPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<BiRow | null>(null);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
+  const [loadedMedia, setLoadedMedia] = useState('');
   const controller = useRef<AbortController | null>(null);
   const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${level}`;
   useEffect(() => {
@@ -244,6 +245,7 @@ export default function PaidGrowthPage() {
     setLoadedScope(
       `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
     );
+    setLoadedMedia(media);
     setParams(
       {
         ...(appId === 'all' ? {} : { appId }),
@@ -635,7 +637,13 @@ export default function PaidGrowthPage() {
             key={String(label)}
             className="rounded-2xl border bg-white p-5"
           >
-            <p className="text-sm text-slate-500">{label}</p>
+            <p className="text-sm text-slate-500">
+              {label === '消耗 ($)' && loadedMedia && loadedMedia !== 'all'
+                ? `${label} · ${loadedMedia === 'facebook_web' ? 'Facebook Web' : loadedMedia === 'facebook' ? 'Facebook' : loadedMedia}`
+                : label === '消耗 ($)' && loadedMedia === 'all'
+                  ? '全部渠道消耗 ($)'
+                  : label}
+            </p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">
               {number(value as number | null)}
             </p>
@@ -644,6 +652,20 @@ export default function PaidGrowthPage() {
                 ? '读取尚未完成，当前为已返回范围'
                 : `${days.length} 天 · ${rows.length} 个对象`}
             </p>
+            {label === '消耗 ($)' &&
+              loadedMedia === 'all' &&
+              days.length > 0 && (
+                <div className="mt-3 space-y-1 border-t pt-3 text-sm tabular-nums">
+                  <p className="flex justify-between gap-3">
+                    <span>Facebook</span>
+                    <span>{number(biChannelSpend(days, 'facebook'))}</span>
+                  </p>
+                  <p className="flex justify-between gap-3">
+                    <span>Facebook Web</span>
+                    <span>{number(biChannelSpend(days, 'facebook_web'))}</span>
+                  </p>
+                </div>
+              )}
           </section>
         ))}
       </div>
@@ -679,6 +701,16 @@ export default function PaidGrowthPage() {
                   <TableHead>数据日</TableHead>
                   <TableHead>投放 / D0 收入 / 事件</TableHead>
                   <TableHead className="text-right">消耗 ($)</TableHead>
+                  {loadedMedia === 'all' && (
+                    <>
+                      <TableHead className="text-right">
+                        Facebook 消耗 ($)
+                      </TableHead>
+                      <TableHead className="text-right">
+                        Facebook Web 消耗 ($)
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead className="text-right">Adjust 安装</TableHead>
                   <TableHead className="text-right">Adjust CPI ($)</TableHead>
                   <TableHead>最近获取</TableHead>
@@ -713,6 +745,16 @@ export default function PaidGrowthPage() {
                       <TableCell className="text-right tabular-nums">
                         {number(spend)}
                       </TableCell>
+                      {loadedMedia === 'all' && (
+                        <>
+                          <TableCell className="text-right tabular-nums">
+                            {number(biChannelSpend([day], 'facebook'))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {number(biChannelSpend([day], 'facebook_web'))}
+                          </TableCell>
+                        </>
+                      )}
                       <TableCell className="text-right tabular-nums">
                         {number(installs, 0)}
                       </TableCell>

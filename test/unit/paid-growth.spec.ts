@@ -128,7 +128,14 @@ describe('integrated paid growth BI', () => {
   test('app and channel identities are isolated', () => {
     const a = day();
     a.daily.rows.push({ ...a.daily.rows[0], app_id: 12 });
-    expect(biRows([a])).toHaveLength(2);
+    a.daily.rows.push({
+      ...a.daily.rows[0],
+      media_source: 'facebook_web',
+      spend: 7,
+    });
+    expect(biRows([a])).toHaveLength(3);
+    expect(biRows([a]).find((r) => r.media === 'facebook')?.spend).toBe(10);
+    expect(biRows([a]).find((r) => r.media === 'facebook_web')?.spend).toBe(7);
   });
   test('rejects malformed dates and unsupported dimensions', () => {
     expect(() =>

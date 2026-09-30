@@ -1,4 +1,4 @@
-import { biRows } from './paid-growth';
+import { biNumber, biRows } from './paid-growth';
 import type { BiDay } from './paid-growth.interface';
 
 /** Ratios of additive totals, never averages of product/campaign percentages. */
@@ -23,6 +23,27 @@ export function biSummary(days: BiDay[]) {
     eventCost:
       spend !== null && events !== null && events > 0 ? spend / events : null,
   };
+}
+
+/** Keep Doris media_source values separate; an incomplete day cannot become zero spend. */
+export function biChannelSpend(days: BiDay[], channel: string): number | null {
+  if (
+    !days.length ||
+    days.some((day) => !['fresh', 'cached'].includes(day.daily.state))
+  )
+    return null;
+  let total = 0;
+  for (const day of days)
+    for (const row of day.daily.rows) {
+      if (
+        String(row.media_source || '').toLowerCase() !== channel.toLowerCase()
+      )
+        continue;
+      const spend = biNumber(row.spend);
+      if (spend === null) return null;
+      total += spend;
+    }
+  return total;
 }
 
 export function trendTickIndexes(length: number): number[] {
