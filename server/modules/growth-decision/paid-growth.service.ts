@@ -47,9 +47,11 @@ export class PaidGrowthService {
 
   async day(q: BiQuery): Promise<BiDay> {
     validateBiQuery(q);
+    if (!q.appId || !q.media)
+      throw new BadRequestException('请先选择产品和渠道');
     const filters = {
-      ...(q.appId ? { app_id: Number(q.appId) } : {}),
-      ...(q.media ? { media_source: q.media } : {}),
+      app_id: Number(q.appId),
+      media_source: q.media,
     };
     const dimensions = [
       'app_id',

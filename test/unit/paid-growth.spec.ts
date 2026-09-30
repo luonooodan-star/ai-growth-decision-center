@@ -221,7 +221,12 @@ describe('BI persistence and product registration', () => {
   test('cached successful data survives source failure and reports stale', async () => {
     const query = jest.fn(async () => ({ rows: [] }));
     const s = service(query);
-    const q = { date: '2026-09-19', level: 'overall' as const };
+    const q = {
+      date: '2026-09-19',
+      level: 'overall' as const,
+      appId: '11',
+      media: 'facebook',
+    };
     expect((await s.day(q)).daily.state).toBe('fresh');
     expect((await s.day(q)).daily.state).toBe('cached');
     query.mockRejectedValue(new Error('connection unavailable'));
@@ -235,7 +240,16 @@ describe('BI persistence and product registration', () => {
       return { rows: [] };
     });
     const s = service(query);
-    const q = { date: '2026-09-20', level: 'overall' as const };
+    const q = {
+      date: '2026-09-20',
+      level: 'overall' as const,
+      appId: '11',
+      media: 'facebook',
+    };
+    await expect(s.day({ date: q.date, level: q.level })).rejects.toThrow(
+      '请先选择产品和渠道',
+    );
+    expect(query).not.toHaveBeenCalled();
     await s.day(q);
     const calls = query.mock.calls.length;
     await s.day(q);

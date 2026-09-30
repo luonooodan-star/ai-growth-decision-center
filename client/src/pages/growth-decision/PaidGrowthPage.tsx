@@ -7,7 +7,8 @@ import {
   ArrowRight,
   CalendarDays,
 } from 'lucide-react';
-import { format, subDays } from 'date-fns';
+import { differenceInCalendarDays, format, subDays } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 import axios from 'axios';
 import { biRows } from '@shared/paid-growth';
 import { verifiedNoSpend } from '@shared/campaign-visibility';
@@ -15,6 +16,11 @@ import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import { BiTrend } from './BiTrend';
 import { biChannelSpend, biSummary } from '@shared/bi-summary';
+import {
+  paidGrowthQuickRange,
+  shanghaiCalendarToday,
+  type PaidGrowthPreset,
+} from '@shared/paid-growth-dates';
 import {
   biMetricSignal,
   type MetricStandardProduct,
@@ -74,6 +80,12 @@ const number = (n: number | null, decimals = 2) =>
   n === null
     ? '—'
     : n.toLocaleString('zh-CN', { maximumFractionDigits: decimals });
+const channelLabel = (channel: string) =>
+  channel === 'facebook_web'
+    ? 'Facebook Web'
+    : channel === 'facebook'
+      ? 'Facebook'
+      : channel;
 const errorText = (e: unknown) =>
   axios.isAxiosError(e)
     ? String(
@@ -98,31 +110,68 @@ const columns: Array<{ key: keyof BiRow; label: string; decimals?: number }> = [
   { key: 'd0Roas', label: 'D0 收入 / 全部消耗 (%)' },
   { key: 'events', label: 'D0 收入事件数', decimals: 0 },
 ];
-function DateFilter({
-  label,
-  value,
+function DateRangeFilter({
+  from,
+  to,
   change,
 }: {
-  label: string;
-  value: Date;
-  change: (date: Date) => void;
+  from: Date;
+  to: Date;
+  change: (range: { from: Date; to: Date }) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<DateRange>();
+  const [rangeError, setRangeError] = useState('');
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setDraft(undefined);
+          setRangeError('');
+        }
+      }}
+    >
       <PopoverTrigger asChild>
-        <Button variant="outline" className="justify-start gap-2">
+        <Button
+          variant="outline"
+          aria-label="日期范围"
+          className="justify-start gap-2"
+        >
           <CalendarDays className="size-4" />
-          <span className="text-slate-500">{label}</span>
-          {format(value, 'yyyy-MM-dd')}
+          {format(from, 'yyyy-MM-dd')} ～ {format(to, 'yyyy-MM-dd')}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0">
+      <PopoverContent className="w-auto max-w-[calc(100vw-2rem)] overflow-x-auto p-2">
+        <p className="px-2 pt-1 text-xs text-slate-500">
+          连续点击开始日期和结束日期；同一天可点两次
+        </p>
         <Calendar
-          mode="single"
-          selected={value}
-          onSelect={(date) => date && change(date)}
-          disabled={{ after: new Date() }}
+          mode="range"
+          numberOfMonths={2}
+          selected={draft}
+          onSelect={(_next, clickedDate) => {
+            setRangeError('');
+            if (!draft?.from || draft.to) {
+              setDraft({ from: clickedDate, to: undefined });
+              return;
+            }
+            const from = clickedDate < draft.from ? clickedDate : draft.from;
+            const to = clickedDate < draft.from ? draft.from : clickedDate;
+            if (differenceInCalendarDays(to, from) > 30) {
+              setRangeError('一次最多查询 31 天，请重新选择');
+              setDraft({ from: clickedDate, to: undefined });
+              return;
+            }
+            change({ from, to });
+            setOpen(false);
+          }}
+          disabled={{ after: shanghaiCalendarToday() }}
         />
+        {rangeError && (
+          <p className="px-2 pb-1 text-xs text-red-600">{rangeError}</p>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -153,10 +202,13 @@ export default function PaidGrowthPage() {
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
   }, []);
-  const [appId, setAppId] = useState(params.get('appId') || 'all');
-  const [media, setMedia] = useState(params.get('media') || 'all');
-  const [start, setStart] = useState(new Date());
-  const [end, setEnd] = useState(new Date());
+  const [appId, setAppId] = useState(params.get('appId') || '');
+  const [media, setMedia] = useState(params.get('media') || '');
+  const [start, setStart] = useState(shanghaiCalendarToday);
+  const [end, setEnd] = useState(shanghaiCalendarToday);
+  const [quickPreset, setQuickPreset] = useState<PaidGrowthPreset | null>(
+    'today',
+  );
   const [level, setLevel] = useState<BiLevel>('overall');
   const [days, setDays] = useState<BiDay[]>([]);
   const [busy, setBusy] = useState(false);
@@ -187,6 +239,18 @@ export default function PaidGrowthPage() {
   const [loadedScope, setLoadedScope] = useState('');
   const [loadedMedia, setLoadedMedia] = useState('');
   const controller = useRef<AbortController | null>(null);
+  const availableMedia = useMemo(
+    () =>
+      [
+        ...new Set(
+          products
+            .filter((p) => String(p.appId) === appId)
+            .map((p) => p.channel),
+        ),
+      ].sort(),
+    [products, appId],
+  );
+  const validSelection = !!appId && !!media && availableMedia.includes(media);
   const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${level}`;
   useEffect(() => {
     void getBiProducts()
@@ -194,22 +258,32 @@ export default function PaidGrowthPage() {
       .catch((e) => setError(errorText(e)));
     return () => controller.current?.abort();
   }, []);
+  useEffect(() => {
+    if (!products.length) return;
+    if (appId && !products.some((p) => String(p.appId) === appId)) {
+      setAppId('');
+      setMedia('');
+    } else if (media && !availableMedia.includes(media)) setMedia('');
+  }, [products, appId, media, availableMedia]);
 
-  const load = async (refresh = false, requestedLevel: BiLevel = level) => {
-    void refreshStandards();
-    void getMetaEntities()
-      .then(setMetaEntities)
-      .catch((e) => setError(errorText(e)));
-    const dayCount =
-      Math.round(
-        (Date.parse(format(end, 'yyyy-MM-dd')) -
-          Date.parse(format(start, 'yyyy-MM-dd'))) /
-          86400000,
-      ) + 1;
+  const load = async (
+    refresh = false,
+    requestedLevel: BiLevel = level,
+    range = { from: start, to: end },
+  ) => {
+    if (!validSelection) {
+      setError('请先选择一个产品和对应渠道');
+      return;
+    }
+    const dayCount = differenceInCalendarDays(range.to, range.from) + 1;
     if (dayCount < 1 || dayCount > 31) {
       setError('请选择 1～31 天；大范围请分月查询。');
       return;
     }
+    void refreshStandards();
+    void getMetaEntities()
+      .then(setMetaEntities)
+      .catch((e) => setError(errorText(e)));
     controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
@@ -220,10 +294,10 @@ export default function PaidGrowthPage() {
     setDays([]);
     setTrendScope((previous) => {
       const next = {
-        start: format(start, 'yyyy-MM-dd'),
-        end: format(end, 'yyyy-MM-dd'),
-        appId: appId === 'all' ? undefined : appId,
-        media: media === 'all' ? undefined : media,
+        start: format(range.from, 'yyyy-MM-dd'),
+        end: format(range.to, 'yyyy-MM-dd'),
+        appId,
+        media,
         refresh,
         revision: Date.now(),
       };
@@ -238,25 +312,19 @@ export default function PaidGrowthPage() {
     });
     setExpectedDates(
       Array.from({ length: dayCount }, (_, i) =>
-        format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd'),
+        format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd'),
       ),
     );
     setSelectedCampaign(null);
     setLoadedScope(
-      `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
+      `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
     );
     setLoadedMedia(media);
-    setParams(
-      {
-        ...(appId === 'all' ? {} : { appId }),
-        ...(media === 'all' ? {} : { media }),
-      },
-      { replace: true },
-    );
+    setParams({ appId, media }, { replace: true });
     const next: BiDay[] = [];
     try {
       for (let i = 0; i < dayCount; i++) {
-        const date = format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd');
+        const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
         setProgress(`读取 ${date} · ${i + 1}/${dayCount} 天`);
         try {
           next.push(
@@ -264,8 +332,8 @@ export default function PaidGrowthPage() {
               {
                 date,
                 level: requestedLevel,
-                appId: appId === 'all' ? undefined : appId,
-                media: media === 'all' ? undefined : media,
+                appId,
+                media,
                 refresh: refresh ? '1' : undefined,
               },
               abort.signal,
@@ -301,15 +369,15 @@ export default function PaidGrowthPage() {
       if (other === requestedLevel || abort.signal.aborted) continue;
       for (let i = 0; i < dayCount; i++) {
         if (abort.signal.aborted) return;
-        const date = format(subDays(end, dayCount - i - 1), 'yyyy-MM-dd');
+        const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
         setWarming(`后台缓存：${BI_LEVELS[other]} · ${date}`);
         try {
           const warmed = await getBiDay(
             {
               date,
               level: other,
-              appId: appId === 'all' ? undefined : appId,
-              media: media === 'all' ? undefined : media,
+              appId,
+              media,
               refresh: refresh ? '1' : undefined,
             },
             abort.signal,
@@ -540,14 +608,24 @@ export default function PaidGrowthPage() {
           展示 Doris 当前已入库数据，源头可能延迟；不是广告平台实时直连。
           {warming}
         </p>
-        <div className="flex flex-wrap gap-3">
-          <div className="min-w-52">
-            <Select value={appId} onValueChange={setAppId} disabled={busy}>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-52 space-y-1">
+            <label className="block text-xs font-medium text-slate-500">
+              产品（必选）
+            </label>
+            <Select
+              value={appId}
+              onValueChange={(value) => {
+                controller.current?.abort();
+                setAppId(value);
+                setMedia('');
+              }}
+              disabled={busy}
+            >
               <SelectTrigger aria-label="产品">
-                <SelectValue />
+                <SelectValue placeholder="选择产品" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部产品</SelectItem>
                 {[...new Map(products.map((p) => [p.appId, p])).values()].map(
                   (p) => (
                     <SelectItem key={p.appId} value={String(p.appId)}>
@@ -558,41 +636,97 @@ export default function PaidGrowthPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-40">
-            <Select value={media} onValueChange={setMedia} disabled={busy}>
+          <div className="min-w-40 space-y-1">
+            <label className="block text-xs font-medium text-slate-500">
+              渠道（必选）
+            </label>
+            <Select
+              value={media}
+              onValueChange={(value) => {
+                controller.current?.abort();
+                setMedia(value);
+              }}
+              disabled={busy || !appId}
+            >
               <SelectTrigger aria-label="渠道">
-                <SelectValue />
+                <SelectValue placeholder="选择渠道" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部渠道</SelectItem>
-                {[...new Set(products.map((p) => p.channel))].map((m) => (
+                {availableMedia.map((m) => (
                   <SelectItem key={m} value={m}>
-                    {m}
+                    {channelLabel(m)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <DateFilter label="从" value={start} change={setStart} />
-          <DateFilter label="至" value={end} change={setEnd} />
-          <Button disabled={busy} onClick={() => void load()}>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-500">
+              日期范围
+            </label>
+            <DateRangeFilter
+              from={start}
+              to={end}
+              change={(range) => {
+                controller.current?.abort();
+                setStart(range.from);
+                setEnd(range.to);
+                setQuickPreset(null);
+              }}
+            />
+          </div>
+          <Button
+            disabled={busy || !validSelection}
+            onClick={() => void load()}
+          >
             {busy ? '读取中…' : '查询数据'}
           </Button>
           <Button
             variant="outline"
-            disabled={busy}
+            disabled={busy || !validSelection}
             onClick={() => void load(true)}
           >
             <RefreshCw className="mr-2 size-4" />
             重新拉取
           </Button>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs text-slate-500">快速查询</span>
+          {(
+            [
+              ['today', '今天'],
+              ['yesterday', '昨天'],
+              ['thisWeek', '本周'],
+              ['lastWeek', '上周'],
+            ] as const
+          ).map(([preset, label]) => (
+            <Button
+              key={preset}
+              size="sm"
+              variant={quickPreset === preset ? 'default' : 'outline'}
+              aria-pressed={quickPreset === preset}
+              disabled={busy || !validSelection}
+              onClick={() => {
+                const range = paidGrowthQuickRange(preset);
+                setStart(range.from);
+                setEnd(range.to);
+                setQuickPreset(preset);
+                void load(false, level, range);
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+          {!validSelection && (
+            <span className="text-xs text-slate-500">请先选择产品和渠道</span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           {Object.entries(BI_LEVELS).map(([key, label]) => (
             <Button
               key={key}
               size="sm"
-              disabled={busy}
+              disabled={busy || !validSelection}
               variant={level === key ? 'default' : 'ghost'}
               onClick={() => {
                 setLevel(key as BiLevel);
@@ -628,7 +762,7 @@ export default function PaidGrowthPage() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ['消耗 ($)', total('spend')],
+          ['消耗 ($)', loadedMedia ? biChannelSpend(days, loadedMedia) : null],
           ['Adjust 安装', total('installs')],
           ['当前 D0 收入 ($)', total('revenue')],
           ['当前 D0 ROAS (%)', summary.d0Roas],
@@ -638,11 +772,9 @@ export default function PaidGrowthPage() {
             className="rounded-2xl border bg-white p-5"
           >
             <p className="text-sm text-slate-500">
-              {label === '消耗 ($)' && loadedMedia && loadedMedia !== 'all'
-                ? `${label} · ${loadedMedia === 'facebook_web' ? 'Facebook Web' : loadedMedia === 'facebook' ? 'Facebook' : loadedMedia}`
-                : label === '消耗 ($)' && loadedMedia === 'all'
-                  ? '全部渠道消耗 ($)'
-                  : label}
+              {label === '消耗 ($)' && loadedMedia
+                ? `${label} · ${channelLabel(loadedMedia)}`
+                : label}
             </p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">
               {number(value as number | null)}
@@ -652,20 +784,6 @@ export default function PaidGrowthPage() {
                 ? '读取尚未完成，当前为已返回范围'
                 : `${days.length} 天 · ${rows.length} 个对象`}
             </p>
-            {label === '消耗 ($)' &&
-              loadedMedia === 'all' &&
-              days.length > 0 && (
-                <div className="mt-3 space-y-1 border-t pt-3 text-sm tabular-nums">
-                  <p className="flex justify-between gap-3">
-                    <span>Facebook</span>
-                    <span>{number(biChannelSpend(days, 'facebook'))}</span>
-                  </p>
-                  <p className="flex justify-between gap-3">
-                    <span>Facebook Web</span>
-                    <span>{number(biChannelSpend(days, 'facebook_web'))}</span>
-                  </p>
-                </div>
-              )}
           </section>
         ))}
       </div>
@@ -700,17 +818,9 @@ export default function PaidGrowthPage() {
                 <TableRow>
                   <TableHead>数据日</TableHead>
                   <TableHead>投放 / D0 收入 / 事件</TableHead>
-                  <TableHead className="text-right">消耗 ($)</TableHead>
-                  {loadedMedia === 'all' && (
-                    <>
-                      <TableHead className="text-right">
-                        Facebook 消耗 ($)
-                      </TableHead>
-                      <TableHead className="text-right">
-                        Facebook Web 消耗 ($)
-                      </TableHead>
-                    </>
-                  )}
+                  <TableHead className="text-right">
+                    消耗 ($) · {channelLabel(loadedMedia)}
+                  </TableHead>
                   <TableHead className="text-right">Adjust 安装</TableHead>
                   <TableHead className="text-right">Adjust CPI ($)</TableHead>
                   <TableHead>最近获取</TableHead>
@@ -723,7 +833,7 @@ export default function PaidGrowthPage() {
                     !daily.length || daily.some((r) => r[key] === null)
                       ? null
                       : daily.reduce((v, r) => v + (r[key] || 0), 0);
-                  const spend = sum('spend'),
+                  const spend = biChannelSpend([day], loadedMedia),
                     installs = sum('installs');
                   const states = {
                     fresh: '已更新',
@@ -745,16 +855,6 @@ export default function PaidGrowthPage() {
                       <TableCell className="text-right tabular-nums">
                         {number(spend)}
                       </TableCell>
-                      {loadedMedia === 'all' && (
-                        <>
-                          <TableCell className="text-right tabular-nums">
-                            {number(biChannelSpend([day], 'facebook'))}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {number(biChannelSpend([day], 'facebook_web'))}
-                          </TableCell>
-                        </>
-                      )}
                       <TableCell className="text-right tabular-nums">
                         {number(installs, 0)}
                       </TableCell>

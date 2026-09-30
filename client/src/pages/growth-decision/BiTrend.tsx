@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 type Scope = {
   start: string;
   end: string;
-  appId?: string;
-  media?: string;
+  appId: string;
+  media: string;
   refresh: boolean;
   revision: number;
 };
