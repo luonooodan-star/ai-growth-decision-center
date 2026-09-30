@@ -2,6 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { BI_DIMENSIONS } from '@shared/paid-growth';
 import {
+  campaignMediaById,
+  classifiedMediaPart,
+  isFacebookMedia,
+  normalizePaidMedia,
+} from '@shared/paid-media-channel';
+import {
   BI_LEVELS,
   type BiDay,
   type BiPart,
@@ -15,6 +21,16 @@ import { personalScopeKey } from '../../common/utils/personal-doris';
 
 const DAILY = 'bi_ads.ads_paid_acquisition_daily';
 const COHORT = 'bi_ads.ads_paid_acquisition_cohort_metric';
+const namedDimensions = (level: BiQuery['level']) => [
+  ...new Set([
+    'app_id',
+    'app_name',
+    'media_source',
+    'campaign_id',
+    'campaign_name',
+    ...BI_DIMENSIONS[level],
+  ]),
+];
 export function validateBiQuery(q: BiQuery): void {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(q.date || '') ||
@@ -49,16 +65,13 @@ export class PaidGrowthService {
     validateBiQuery(q);
     const filters = {
       ...(q.appId ? { app_id: Number(q.appId) } : {}),
-      ...(q.media ? { media_source: q.media } : {}),
+      ...(q.media && !isFacebookMedia(q.media)
+        ? { media_source: q.media }
+        : {}),
     };
-    const dimensions = [
-      'app_id',
-      'app_name',
-      'media_source',
-      ...BI_DIMENSIONS[q.level],
-    ];
+    const dimensions = namedDimensions(q.level);
     const base = { start_date: q.date, end_date: q.date, dimensions };
-    const daily = await this.part(
+    const dailyRaw = await this.part(
       {
         ...base,
         dataset: DAILY,
@@ -73,6 +86,10 @@ export class PaidGrowthService {
       },
       q.refresh === '1',
     );
+    const daily = classifiedMediaPart(dailyRaw, q.media);
+    const campaignChannels = ['fresh', 'cached'].includes(dailyRaw.state)
+      ? campaignMediaById(dailyRaw.rows)
+      : undefined;
     // Cohort source has no adgroup dimension: never allocate campaign revenue to adgroups.
     if (q.level === 'adgroups') {
       const unsupported: BiPart = {
@@ -95,22 +112,30 @@ export class PaidGrowthService {
       cohort_index: 0,
       cohort_unit: 'D',
     };
-    const revenue = await this.part(
-      {
-        ...cohort,
-        filters_json: JSON.stringify({ ...mature, metric_id: 'revenue' }),
-      },
-      q.refresh === '1',
+    const revenue = classifiedMediaPart(
+      await this.part(
+        {
+          ...cohort,
+          filters_json: JSON.stringify({ ...mature, metric_id: 'revenue' }),
+        },
+        q.refresh === '1',
+      ),
+      q.media,
+      campaignChannels,
     );
-    const events = await this.part(
-      {
-        ...cohort,
-        filters_json: JSON.stringify({
-          ...mature,
-          metric_id: 'revenue_events',
-        }),
-      },
-      q.refresh === '1',
+    const events = classifiedMediaPart(
+      await this.part(
+        {
+          ...cohort,
+          filters_json: JSON.stringify({
+            ...mature,
+            metric_id: 'revenue_events',
+          }),
+        },
+        q.refresh === '1',
+      ),
+      q.media,
+      campaignChannels,
     );
     return {
       date: q.date,
@@ -130,7 +155,7 @@ export class PaidGrowthService {
       {
         start_date: date,
         end_date: date,
-        dimensions: ['app_id', 'app_name', 'media_source'],
+        dimensions: namedDimensions('channels'),
         dataset: DAILY,
         metrics: [
           'spend',
@@ -142,7 +167,8 @@ export class PaidGrowthService {
         filters_json: JSON.stringify({ app_id: Number(appId) }),
       },
       false,
-    ).then((part) => {
+    ).then((raw) => {
+      const part = classifiedMediaPart(raw);
       const rows = part.rows.filter((row) => String(row.app_id) === appId);
       return rows.length === part.rows.length
         ? part
@@ -235,23 +261,22 @@ export class PaidGrowthService {
     );
     if (part.state === 'missing' || part.state === 'stale')
       throw new BadRequestException(part.message || '产品发现失败，请稍后重试');
-    return part.rows
+    const catalog = this.database.listProducts();
+    const products = part.rows
       .filter((r) => Number(r.app_id) > 0 && r.app_name && r.media_source)
       .map((row) => {
         const appId = Number(row.app_id),
           name = String(row.app_name),
-          channel = String(row.media_source);
-        const product = this.database
-          .listProducts()
-          .find(
-            (p) =>
-              p.channel.toLowerCase() === channel.toLowerCase() &&
-              (p.dorisAppId === appId ||
-                (!p.dorisAppId &&
-                  (p.name === name ||
-                    (p.name.toLowerCase() === 'wingslite' &&
-                      name === 'WingsLite(Android)')))),
-          );
+          channel = normalizePaidMedia(String(row.media_source));
+        const product = catalog.find(
+          (p) =>
+            p.channel.toLowerCase() === channel.toLowerCase() &&
+            (p.dorisAppId === appId ||
+              (!p.dorisAppId &&
+                (p.name === name ||
+                  (p.name.toLowerCase() === 'wingslite' &&
+                    name === 'WingsLite(Android)')))),
+        );
         return {
           appId,
           name,
@@ -260,6 +285,28 @@ export class PaidGrowthService {
           productId: product?.id,
         };
       });
+    // The discovery query has no campaign name, so it cannot allocate W2A
+    // spend. Expose Web as a selectable scope without inventing a spend value.
+    const result = new Map<string, BiProduct>();
+    for (const product of products)
+      result.set(`${product.appId}:${product.channel}`, product);
+    for (const product of products) {
+      if (product.channel !== 'facebook') continue;
+      const key = `${product.appId}:facebook_web`;
+      if (result.has(key)) continue;
+      const web = catalog.find(
+        (p) =>
+          p.dorisAppId === product.appId &&
+          p.channel.toLowerCase() === 'facebook_web',
+      );
+      result.set(key, {
+        ...product,
+        channel: 'facebook_web',
+        spend: 0,
+        productId: web?.id,
+      });
+    }
+    return [...result.values()];
   }
 
   syncProducts(): Promise<BiProduct[]> {

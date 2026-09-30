@@ -73,7 +73,7 @@ describe('advertising adjustment workbench', () => {
     const web = adjustmentChannelPart(part, '11', 'facebook_web');
     expect(facebook.rows.map((row) => row.campaign_id)).toEqual(['1']);
     expect(web.rows.map((row) => row.campaign_id)).toEqual(['2']);
-    expect(facebook.message).toContain('已排除 2 条');
+    expect(facebook.message).toContain('已排除 1 条其他产品');
     expect(adjustmentChannelPart(part, '11', 'facebook').state).toBe('cached');
   });
   test('the adjustment endpoint only returns the requested channel for spend and D0', async () => {
@@ -81,8 +81,20 @@ describe('advertising adjustment workbench', () => {
       part: jest.fn().mockImplementation(async (args: { dataset: string }) => ({
         state: 'cached',
         rows: [
-          { ...raw, media_source: 'facebook', spend: 10, metric_value: 11 },
-          { ...raw, media_source: 'facebook_web', spend: 20, metric_value: 22 },
+          {
+            ...raw,
+            campaign_id: '1',
+            media_source: 'facebook',
+            spend: 10,
+            metric_value: 11,
+          },
+          {
+            ...raw,
+            campaign_id: '2',
+            media_source: 'facebook_web',
+            spend: 20,
+            metric_value: 22,
+          },
         ],
       })),
     };
@@ -102,9 +114,47 @@ describe('advertising adjustment workbench', () => {
     expect(
       bi.part.mock.calls.every(
         ([args]) =>
-          JSON.parse(args.filters_json).media_source === 'facebook_web',
+          !Object.hasOwn(JSON.parse(args.filters_json), 'media_source'),
       ),
     ).toBe(true);
+  });
+  test('W2A campaign from raw Facebook is shown only under Facebook Web', async () => {
+    const bi = {
+      part: jest.fn().mockImplementation(async (args: { dataset: string }) => ({
+        state: 'fresh',
+        rows: [
+          {
+            ...raw,
+            campaign_id: '1',
+            campaign_name: 'normal',
+            spend: 10,
+            metric_value: 5,
+          },
+          {
+            ...raw,
+            campaign_id: '2',
+            campaign_name:
+              args.dataset === 'bi_ads.ads_paid_acquisition_cohort_metric'
+                ? 'previous_name'
+                : 'test_w2a_purchase',
+            spend: 20,
+            metric_value: 8,
+          },
+        ],
+      })),
+    };
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const result = await new AdAdjustmentService(bi as never).day({
+      date: today,
+      appId: '11',
+      media: 'facebook_web',
+    });
+    expect(
+      result.daily.rows.map((row) => [row.campaign_id, row.media_source]),
+    ).toEqual([['2', 'facebook_web']]);
+    expect(result.revenue.rows[0].metric_value).toBe(8);
   });
   test('personal ownership reads a lightweight campaign manifest, independent of local filter slices', async () => {
     const bi = {
@@ -255,7 +305,6 @@ describe('advertising adjustment workbench', () => {
     expect(bi.part).toHaveBeenCalledTimes(1);
     expect(JSON.parse(bi.part.mock.calls[0][0].filters_json)).toEqual({
       app_id: 11,
-      media_source: 'facebook',
       buyer_alias: 'Alice',
       country_code: 'IN',
     });
@@ -270,12 +319,15 @@ describe('advertising adjustment workbench', () => {
     });
     expect(bi.part).toHaveBeenCalledTimes(1);
     expect(bi.part.mock.calls[0][0].dimensions).toEqual([
+      'app_id',
+      'media_source',
+      'campaign_id',
+      'campaign_name',
       'buyer_alias',
       'country_code',
     ]);
     expect(JSON.parse(bi.part.mock.calls[0][0].filters_json)).toEqual({
       app_id: 11,
-      media_source: 'facebook',
     });
     bi.part.mockClear();
     await service.day({ ...q, part: 'daily', cacheOnly: '1' });
@@ -589,7 +641,6 @@ describe('advertising adjustment workbench', () => {
     expect(args.dimensions).not.toContain('adgroup_id');
     expect(JSON.parse(args.filters_json)).toEqual({
       app_id: 11,
-      media_source: 'facebook',
       cohort_index: 0,
       cohort_unit: 'D',
       metric_id: 'revenue',

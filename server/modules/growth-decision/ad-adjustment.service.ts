@@ -9,6 +9,11 @@ import type { BiPart } from '@shared/paid-growth.interface';
 import { personalScopeKey } from '../../common/utils/personal-doris';
 import { MetaAdjustmentService } from './meta-adjustment.service';
 import { biNumber } from '@shared/paid-growth';
+import {
+  campaignMediaById,
+  classifiedMediaPart,
+  isFacebookMedia,
+} from '@shared/paid-media-channel';
 import { randomUUID } from 'node:crypto';
 
 export function accountVerificationIds(rows: BiPart['rows']): string[] {
@@ -33,19 +38,17 @@ export function adjustmentChannelPart(
   part: BiPart,
   appId: string,
   media: string,
+  campaignChannels?: Map<string, string>,
 ): BiPart {
-  const rows = part.rows.filter(
-    (row) =>
-      String(row.app_id) === appId &&
-      String(row.media_source || '').toLowerCase() === media.toLowerCase(),
-  );
-  if (rows.length === part.rows.length) return part;
+  const classified = classifiedMediaPart(part, media, campaignChannels);
+  const rows = classified.rows.filter((row) => String(row.app_id) === appId);
+  if (rows.length === classified.rows.length) return classified;
   return {
-    ...part,
+    ...classified,
     rows,
     message: [
-      part.message,
-      `已排除 ${part.rows.length - rows.length} 条非 ${media} 渠道或其他产品的数据`,
+      classified.message,
+      `已排除 ${classified.rows.length - rows.length} 条其他产品的数据`,
     ]
       .filter(Boolean)
       .join('；'),
@@ -148,7 +151,9 @@ export class AdAdjustmentService {
         throw new BadRequestException('筛选条件无效');
     const filters = {
       ...(q.appId ? { app_id: Number(q.appId) } : {}),
-      ...(q.media ? { media_source: q.media } : {}),
+      ...(q.media && !isFacebookMedia(q.media)
+        ? { media_source: q.media }
+        : {}),
       ...(q.campaignId ? { campaign_id: q.campaignId } : {}),
       ...(q.optimizer ? { buyer_alias: q.optimizer } : {}),
       ...(q.country ? { country_code: q.country } : {}),
@@ -193,9 +198,7 @@ export class AdAdjustmentService {
       ],
       filters_json: JSON.stringify(filters),
     };
-    const dailyTask = read('daily', dailyArgs).then((part) =>
-      adjustmentChannelPart(part, q.appId!, q.media!),
-    );
+    const dailyTask = read('daily', dailyArgs);
     const revenueTask = read('revenue', {
       ...base,
       dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
@@ -206,7 +209,7 @@ export class AdAdjustmentService {
         cohort_unit: 'D',
         metric_id: 'revenue',
       }),
-    }).then((part) => adjustmentChannelPart(part, q.appId!, q.media!));
+    });
     const accountsTask =
       q.date < today
         ? Promise.resolve({
@@ -236,22 +239,39 @@ export class AdAdjustmentService {
               dataset: 'bi_ads.ads_paid_acquisition_daily',
               start_date: q.date,
               end_date: q.date,
-              dimensions: ['buyer_alias', 'country_code'],
+              dimensions: [
+                'app_id',
+                'media_source',
+                'campaign_id',
+                'campaign_name',
+                'buyer_alias',
+                'country_code',
+              ],
               metrics: ['spend'],
               filters_json: JSON.stringify({
                 app_id: Number(q.appId),
-                media_source: q.media,
+                ...(isFacebookMedia(q.media) ? {} : { media_source: q.media }),
               }),
             },
             false,
-          )
+          ).then((part) => adjustmentChannelPart(part, q.appId!, q.media!))
         : Promise.resolve(undefined);
-    const [daily, revenue, accounts, options] = await Promise.all([
+    const [dailyRaw, revenueRaw, accounts, options] = await Promise.all([
       dailyTask,
       revenueTask,
       accountsTask,
       optionsTask,
     ]);
+    const campaignChannels = ['fresh', 'cached'].includes(dailyRaw.state)
+      ? campaignMediaById(dailyRaw.rows)
+      : undefined;
+    const daily = adjustmentChannelPart(dailyRaw, q.appId!, q.media!);
+    const revenue = adjustmentChannelPart(
+      revenueRaw,
+      q.appId!,
+      q.media!,
+      campaignChannels,
+    );
     return {
       date: q.date,
       daily,

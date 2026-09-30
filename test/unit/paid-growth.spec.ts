@@ -294,6 +294,74 @@ describe('BI persistence and product registration', () => {
     expect(query).not.toHaveBeenCalled();
     expect(() => s.channelSpend(date, '')).toThrow('请先选择产品');
   });
+  test('W2A campaign names split Facebook spend and D0 even when Doris labels both Facebook', async () => {
+    const s = service(jest.fn());
+    const read = jest.spyOn(s, 'part').mockImplementation(async (args) => {
+      const revenue =
+        args.dataset === 'bi_ads.ads_paid_acquisition_cohort_metric';
+      return {
+        state: 'fresh',
+        rows: [
+          {
+            ...dimension,
+            campaign_id: '1',
+            campaign_name: 'regular_install',
+            ...(revenue ? { metric_value: 5 } : { spend: 10 }),
+          },
+          {
+            ...dimension,
+            campaign_id: '2',
+            campaign_name: revenue ? 'previous_name' : 'launch_W2A_purchase',
+            ...(revenue ? { metric_value: 8 } : { spend: 20 }),
+          },
+        ],
+      };
+    });
+    const date = '2026-09-19';
+    const web = await s.day({
+      date,
+      level: 'channels',
+      appId: '11',
+      media: 'facebook_web',
+    });
+    expect(web.daily.rows.map((row) => row.campaign_id)).toEqual(['2']);
+    expect(web.revenue.rows.map((row) => row.campaign_id)).toEqual(['2']);
+    expect(biRows([web])[0]).toMatchObject({
+      media: 'facebook_web',
+      spend: 20,
+      revenue: 8,
+    });
+    const facebook = await s.day({
+      date,
+      level: 'channels',
+      appId: '11',
+      media: 'facebook',
+    });
+    expect(biRows([facebook])[0]).toMatchObject({
+      media: 'facebook',
+      spend: 10,
+      revenue: 5,
+    });
+    expect(
+      read.mock.calls.every(
+        ([args]) =>
+          (args.dimensions as string[]).includes('campaign_name') &&
+          !Object.hasOwn(JSON.parse(String(args.filters_json)), 'media_source'),
+      ),
+    ).toBe(true);
+  });
+  test('product discovery exposes a Web option without inventing W2A spend', async () => {
+    const s = service(jest.fn());
+    jest.spyOn(s, 'part').mockResolvedValue({
+      state: 'fresh',
+      rows: [{ ...dimension, spend: 40 }],
+    });
+    const products = await s.products();
+    expect(products.map((p) => [p.channel, p.spend])).toEqual([
+      ['facebook', 40],
+      ['facebook_web', 0],
+    ]);
+  });
   test('live BI never filters out unfinished D0 and expires cache after five minutes', async () => {
     const query = jest.fn(async (args: Record<string, unknown>) => {
       expect(JSON.parse(String(args.filters_json))).not.toHaveProperty(
