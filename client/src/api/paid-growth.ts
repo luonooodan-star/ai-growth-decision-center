@@ -53,6 +53,9 @@ export const getBiProducts = async (): Promise<BiProduct[]> =>
       timeout: 120000,
     })
   ).data;
+export const getBiProductOptions = async (): Promise<BiProduct[]> =>
+  (await axios.get<BiProduct[]>('/api/growth-decision/bi/products/options'))
+    .data;
 export const syncBiProducts = async (): Promise<BiProduct[]> =>
   (
     await axios.post<BiProduct[]>(

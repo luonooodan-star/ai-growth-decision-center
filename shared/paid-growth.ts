@@ -36,6 +36,37 @@ const identity = (row: BiRawRow, level: BiLevel): string =>
       .filter((k) => k.endsWith('_name') && !row[k.replace('_name', '_id')])
       .map((k) => row[k] ?? null),
   ]);
+const groupedIdentity = (row: BiRawRow, levels: BiLevel[]): string =>
+  JSON.stringify(
+    levels.flatMap((level) =>
+      level === 'products'
+        ? [row.app_id ?? null]
+        : level === 'channels'
+          ? [row.media_source ?? null]
+          : BI_DIMENSIONS[level]
+              .filter(
+                (key) =>
+                  !key.endsWith('_name') || !row[key.replace('_name', '_id')],
+              )
+              .map((key) => row[key] ?? null),
+    ),
+  );
+const groupedLabel = (raw: BiRawRow, levels: BiLevel[]): string =>
+  levels
+    .map((level) =>
+      String(
+        (level === 'products' && raw.app_name) ||
+          (level === 'channels' && raw.media_source) ||
+          (level === 'campaigns' && raw.campaign_name) ||
+          (level === 'adgroups' && raw.adgroup_name) ||
+          (level === 'creatives' && raw.creative_name) ||
+          (level === 'countries' && raw.country_code) ||
+          (level === 'designers' && raw.producer_alias) ||
+          (level === 'optimizers' && raw.buyer_alias) ||
+          '未命名',
+      ),
+    )
+    .join(' / ');
 const fields = [
   'spend',
   'impressions',
@@ -57,7 +88,9 @@ export function biRows(days: BiDay[]): BiRow[] {
       [day.events, 'events'],
     ] as const) {
       for (const raw of part.rows) {
-        const key = identity(raw, day.level);
+        const key = day.levels
+          ? groupedIdentity(raw, day.levels)
+          : identity(raw, day.level);
         const item = joined.get(key) || { raw };
         if (field === 'daily') {
           const values = {
@@ -90,33 +123,61 @@ export function biRows(days: BiDay[]): BiRow[] {
       const raw = item.raw;
       const row = result.get(key) || {
         key,
-        appId:
-          day.level === 'channels' && !day.scopeAppId
+        appId: day.levels
+          ? day.levels.includes('products') ||
+            day.levels.some((level) =>
+              ['campaigns', 'adgroups', 'creatives'].includes(level),
+            )
+            ? Number(day.scopeAppId || raw.app_id)
+            : 0
+          : day.level === 'channels' && !day.scopeAppId
             ? 0
             : Number(day.scopeAppId || raw.app_id),
-        appName:
-          day.level === 'channels' && !day.scopeAppId
+        appName: day.levels
+          ? day.levels.includes('products') ||
+            day.levels.some((level) =>
+              ['campaigns', 'adgroups', 'creatives'].includes(level),
+            )
+            ? String(raw.app_name || '未命名产品')
+            : '全部产品'
+          : day.level === 'channels' && !day.scopeAppId
             ? '全部产品'
             : String(raw.app_name || '未命名产品'),
-        media:
-          day.level === 'products'
+        media: day.levels
+          ? day.levels.includes('channels') ||
+            day.levels.some((level) =>
+              ['campaigns', 'adgroups', 'creatives'].includes(level),
+            )
+            ? String(raw.media_source || '未归因')
+            : '全部渠道'
+          : day.level === 'products'
             ? '全部渠道'
             : String(raw.media_source || '未归因'),
-        label: String(
-          (day.level === 'channels' ? raw.media_source : '') ||
-            raw.adgroup_name ||
-            raw.creative_name ||
-            raw.campaign_name ||
-            raw.country_code ||
-            raw.producer_alias ||
-            raw.buyer_alias ||
-            raw.app_name ||
-            '未命名',
-        ),
+        label: day.levels
+          ? groupedLabel(raw, day.levels)
+          : String(
+              (day.level === 'channels' ? raw.media_source : '') ||
+                raw.adgroup_name ||
+                raw.creative_name ||
+                raw.campaign_name ||
+                raw.country_code ||
+                raw.producer_alias ||
+                raw.buyer_alias ||
+                raw.app_name ||
+                '未命名',
+            ),
         campaignId:
-          raw.campaign_id == null ? undefined : String(raw.campaign_id),
+          day.levels && !day.levels.includes('campaigns')
+            ? undefined
+            : raw.campaign_id == null
+              ? undefined
+              : String(raw.campaign_id),
         campaignName:
-          raw.campaign_name == null ? undefined : String(raw.campaign_name),
+          day.levels && !day.levels.includes('campaigns')
+            ? undefined
+            : raw.campaign_name == null
+              ? undefined
+              : String(raw.campaign_name),
         spend: 0,
         impressions: 0,
         clicks: 0,

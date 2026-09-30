@@ -31,6 +31,23 @@ const namedDimensions = (level: BiQuery['level']) => [
     ...BI_DIMENSIONS[level],
   ]),
 ];
+export function biQueryLevels(q: BiQuery): BiQuery['level'][] {
+  if (!q.levels) return [q.level];
+  if (typeof q.levels !== 'string')
+    throw new BadRequestException('查看维度无效');
+  const levels = q.levels.split(',');
+  if (
+    !levels.length ||
+    levels.length > 8 ||
+    levels.some(
+      (level) => !Object.hasOwn(BI_LEVELS, level) || level === 'overall',
+    ) ||
+    new Set(levels).size !== levels.length
+  )
+    throw new BadRequestException('查看维度无效');
+  if (levels[0] !== q.level) throw new BadRequestException('查看维度无效');
+  return levels as BiQuery['level'][];
+}
 export function validateBiQuery(q: BiQuery): void {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(q.date || '') ||
@@ -40,6 +57,7 @@ export function validateBiQuery(q: BiQuery): void {
     throw new BadRequestException('日期无效');
   if (!Object.hasOwn(BI_LEVELS, q.level))
     throw new BadRequestException('不支持的查看维度');
+  biQueryLevels(q);
   if (q.appId && (!/^\d+$/.test(q.appId) || Number(q.appId) <= 0))
     throw new BadRequestException('产品 ID 无效');
   if (q.media && (typeof q.media !== 'string' || q.media.length > 100))
@@ -63,13 +81,16 @@ export class PaidGrowthService {
 
   async day(q: BiQuery): Promise<BiDay> {
     validateBiQuery(q);
+    const levels = biQueryLevels(q);
     const filters = {
       ...(q.appId ? { app_id: Number(q.appId) } : {}),
       ...(q.media && !isFacebookMedia(q.media)
         ? { media_source: q.media }
         : {}),
     };
-    const dimensions = namedDimensions(q.level);
+    const dimensions = [
+      ...new Set(levels.flatMap((level) => namedDimensions(level))),
+    ];
     const base = { start_date: q.date, end_date: q.date, dimensions };
     const dailyRaw = await this.part(
       {
@@ -91,7 +112,7 @@ export class PaidGrowthService {
       ? campaignMediaById(dailyRaw.rows)
       : undefined;
     // Cohort source has no adgroup dimension: never allocate campaign revenue to adgroups.
-    if (q.level === 'adgroups') {
+    if (levels.includes('adgroups')) {
       const unsupported: BiPart = {
         rows: [],
         state: 'unsupported',
@@ -100,6 +121,7 @@ export class PaidGrowthService {
       return {
         date: q.date,
         level: q.level,
+        ...(q.levels ? { levels } : {}),
         scopeAppId: q.appId ? Number(q.appId) : undefined,
         daily,
         revenue: unsupported,
@@ -140,6 +162,7 @@ export class PaidGrowthService {
     return {
       date: q.date,
       level: q.level,
+      ...(q.levels ? { levels } : {}),
       scopeAppId: q.appId ? Number(q.appId) : undefined,
       daily,
       revenue,
@@ -305,6 +328,64 @@ export class PaidGrowthService {
         spend: 0,
         productId: web?.id,
       });
+    }
+    return [...result.values()];
+  }
+
+  /** Dropdown metadata is local/cached; opening the page never starts Doris work. */
+  async productOptions(): Promise<BiProduct[]> {
+    const catalog = this.database.listProducts();
+    const result = new Map<string, BiProduct>();
+    for (const product of catalog) {
+      if (!product.dorisAppId) continue;
+      const channel = normalizePaidMedia(product.channel);
+      result.set(`${product.dorisAppId}:${channel}`, {
+        appId: product.dorisAppId,
+        name: product.name,
+        channel,
+        spend: 0,
+        productId: product.id,
+      });
+    }
+    const end = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const start = new Date(Date.parse(end) - 29 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    const cached = await this.part(
+      {
+        dataset: DAILY,
+        start_date: start,
+        end_date: end,
+        dimensions: ['app_id', 'app_name', 'media_source'],
+        metrics: ['spend'],
+        filters_json: '{}',
+      },
+      false,
+      300000,
+      '',
+      true,
+    );
+    for (const row of cached.rows) {
+      const appId = Number(row.app_id);
+      if (!Number.isFinite(appId) || appId <= 0 || !row.app_name) continue;
+      const channel = normalizePaidMedia(String(row.media_source || ''));
+      if (!channel) continue;
+      const key = `${appId}:${channel}`;
+      result.set(key, {
+        appId,
+        name: String(row.app_name),
+        channel,
+        spend: Number(row.spend || 0),
+        productId: result.get(key)?.productId,
+      });
+    }
+    for (const product of [...result.values()]) {
+      if (product.channel !== 'facebook') continue;
+      const key = `${product.appId}:facebook_web`;
+      if (!result.has(key))
+        result.set(key, { ...product, channel: 'facebook_web', spend: 0 });
     }
     return [...result.values()];
   }

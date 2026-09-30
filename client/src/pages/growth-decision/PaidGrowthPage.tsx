@@ -32,7 +32,11 @@ import {
   type BiProduct,
   type BiRow,
 } from '@shared/paid-growth.interface';
-import { getBiDay, getBiProducts, syncBiProducts } from '@/api/paid-growth';
+import {
+  getBiDay,
+  getBiProductOptions,
+  syncBiProducts,
+} from '@/api/paid-growth';
 import type { MetaAdEntity } from '@shared/api.interface';
 import { getMetaEntities } from '@/api/meta-operations';
 import {
@@ -117,10 +121,12 @@ function DateRangeFilter({
   from,
   to,
   change,
+  disabled,
 }: {
   from: Date;
   to: Date;
   change: (range: { from: Date; to: Date }) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange>();
@@ -140,6 +146,7 @@ function DateRangeFilter({
         <Button
           variant="outline"
           aria-label="日期范围"
+          disabled={disabled}
           className="justify-start gap-2"
         >
           <CalendarDays className="size-4" />
@@ -212,14 +219,13 @@ export default function PaidGrowthPage() {
   const [quickPreset, setQuickPreset] = useState<PaidGrowthPreset | null>(
     'today',
   );
-  const [level, setLevel] = useState<BiLevel>('products');
+  const [levels, setLevels] = useState<BiLevel[]>(['products']);
   const [days, setDays] = useState<BiDay[]>([]);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [progress, setProgress] = useState('');
-  const [warming, setWarming] = useState('');
   const [search, setSearch] = useState('');
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
@@ -254,9 +260,9 @@ export default function PaidGrowthPage() {
     [products, appId],
   );
   const validSelection = !media || availableMedia.includes(media);
-  const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${level}`;
+  const queryScope = `${format(start, 'yyyy-MM-dd')} ～ ${format(end, 'yyyy-MM-dd')} / ${appId} / ${media} / ${levels.join(',')}`;
   useEffect(() => {
-    void getBiProducts()
+    void getBiProductOptions()
       .then(setProducts)
       .catch((e) => setError(errorText(e)));
     return () => controller.current?.abort();
@@ -271,7 +277,7 @@ export default function PaidGrowthPage() {
 
   const load = async (
     refresh = false,
-    requestedLevel: BiLevel = level,
+    requestedLevels: BiLevel[] = levels,
     range = { from: start, to: end },
   ) => {
     if (!validSelection) {
@@ -293,7 +299,6 @@ export default function PaidGrowthPage() {
     setBusy(true);
     setError('');
     setNotice('');
-    setWarming('');
     setDays([]);
     setTrendScope((previous) => {
       const next = {
@@ -320,7 +325,7 @@ export default function PaidGrowthPage() {
     );
     setSelectedCampaign(null);
     setLoadedScope(
-      `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevel}`,
+      `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevels.join(',')}`,
     );
     setLoadedMedia(media);
     setParams(
@@ -337,7 +342,8 @@ export default function PaidGrowthPage() {
             await getBiDay(
               {
                 date,
-                level: requestedLevel,
+                level: requestedLevels[0],
+                levels: requestedLevels.join(','),
                 appId,
                 media,
                 refresh: refresh ? '1' : undefined,
@@ -354,7 +360,8 @@ export default function PaidGrowthPage() {
           };
           next.push({
             date,
-            level: requestedLevel,
+            level: requestedLevels[0],
+            levels: requestedLevels,
             daily: part,
             revenue: part,
             events: part,
@@ -370,50 +377,11 @@ export default function PaidGrowthPage() {
         setProgress('');
       }
     }
-    // One background request at a time. Responses persist on the server, not in browser memory.
-    for (const other of BI_VIEW_LEVELS) {
-      if (other === requestedLevel || abort.signal.aborted) continue;
-      // Broad queries only prefetch summaries; detailed dimensions stay on demand.
-      if ((!appId || !media) && other !== 'products' && other !== 'channels')
-        continue;
-      for (let i = 0; i < dayCount; i++) {
-        if (abort.signal.aborted) return;
-        const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
-        setWarming(`后台缓存：${BI_LEVELS[other]} · ${date}`);
-        try {
-          const warmed = await getBiDay(
-            {
-              date,
-              level: other,
-              appId,
-              media,
-              refresh: refresh ? '1' : undefined,
-            },
-            abort.signal,
-          );
-          if (
-            [warmed.daily, warmed.revenue, warmed.events].some(
-              (p) => p.state === 'missing' || p.state === 'stale',
-            )
-          ) {
-            if (!abort.signal.aborted)
-              setNotice(
-                '部分维度预取失败，切换到该维度后将自动重试并展示具体原因。',
-              );
-          }
-        } catch (e) {
-          if (abort.signal.aborted) return;
-          setNotice(`后台缓存未完成：${errorText(e)}；切换维度会自动重试。`);
-        }
-      }
-    }
-    if (!abort.signal.aborted)
-      setWarming(
-        appId && media
-          ? '全部维度预取已结束；切换自动读取，缺口可重新拉取。'
-          : '产品与渠道汇总已缓存；其他维度切换时按需读取。',
-      );
   };
+  const reportLevels = useMemo(
+    () => days[0]?.levels || (days[0] ? [days[0].level] : levels),
+    [days, levels],
+  );
   const rows = useMemo(() => biRows(days), [days]);
   const summary = useMemo(() => biSummary(days), [days]);
   const trendStandards = standards.filter(
@@ -429,10 +397,10 @@ export default function PaidGrowthPage() {
       : undefined;
   const noSpend = useMemo(
     () =>
-      days[0]?.level === 'campaigns'
+      reportLevels.includes('campaigns')
         ? verifiedNoSpend(days, expectedDates)
         : () => false,
-    [days, expectedDates],
+    [days, expectedDates, reportLevels],
   );
   const hiddenCount = rows.filter(noSpend).length;
   const hasBad = (row: BiRow) =>
@@ -471,7 +439,7 @@ export default function PaidGrowthPage() {
         .filter((r) => !badOnly || hasBad(r))
         .filter(
           (r) =>
-            level !== 'campaigns' ||
+            !reportLevels.includes('campaigns') ||
             !metaFilter ||
             (metaFilter.value === '__missing'
               ? !rowMeta.get(r.key)?.[metaFilter.key]?.length
@@ -494,7 +462,7 @@ export default function PaidGrowthPage() {
       rows,
       search,
       sort,
-      level,
+      reportLevels,
       metaFilter,
       rowMeta,
       badOnly,
@@ -619,7 +587,6 @@ export default function PaidGrowthPage() {
       <section className="space-y-4 rounded-2xl border bg-white p-5">
         <p className="text-xs text-slate-500">
           展示 Doris 当前已入库数据，源头可能延迟；不是广告平台实时直连。
-          {warming}
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-52 space-y-1">
@@ -629,7 +596,6 @@ export default function PaidGrowthPage() {
             <Select
               value={appId || 'all'}
               onValueChange={(value) => {
-                controller.current?.abort();
                 const nextAppId = value === 'all' ? '' : value;
                 setAppId(nextAppId);
                 setMedia((current) =>
@@ -667,7 +633,6 @@ export default function PaidGrowthPage() {
             <Select
               value={media || 'all'}
               onValueChange={(value) => {
-                controller.current?.abort();
                 setMedia(value === 'all' ? '' : value);
               }}
               disabled={busy}
@@ -692,8 +657,8 @@ export default function PaidGrowthPage() {
             <DateRangeFilter
               from={start}
               to={end}
+              disabled={busy}
               change={(range) => {
-                controller.current?.abort();
                 setStart(range.from);
                 setEnd(range.to);
                 setQuickPreset(null);
@@ -736,7 +701,6 @@ export default function PaidGrowthPage() {
                 setStart(range.from);
                 setEnd(range.to);
                 setQuickPreset(preset);
-                void load(false, level, range);
               }}
             >
               {label}
@@ -754,22 +718,29 @@ export default function PaidGrowthPage() {
               key={key}
               size="sm"
               disabled={busy || !validSelection}
-              variant={level === key ? 'default' : 'ghost'}
+              variant={levels.includes(key) ? 'default' : 'ghost'}
+              aria-pressed={levels.includes(key)}
               onClick={() => {
-                setLevel(key);
-                void load(false, key);
+                setLevels((current) =>
+                  current.includes(key)
+                    ? current.length === 1
+                      ? current
+                      : current.filter((item) => item !== key)
+                    : BI_VIEW_LEVELS.filter(
+                        (item) => current.includes(item) || item === key,
+                      ),
+                );
               }}
             >
               {BI_LEVELS[key]}
             </Button>
           ))}
           <span className="ml-auto self-center text-xs text-slate-500">
-            切换维度自动查询 · 全产品或全渠道仅预取汇总 · 缓存 5 分钟 · 最多 31
-            天
+            可组合多个维度；确认后点击查询数据 · 不自动预取其他维度 · 最多 31 天
           </span>
         </div>
       </section>
-      {level === 'campaigns' && (
+      {reportLevels.includes('campaigns') && (
         <CampaignMetaFilters
           items={[...rowMeta.values()]}
           value={metaFilter}
@@ -917,7 +888,7 @@ export default function PaidGrowthPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
           <div>
             <h2 className="font-semibold">
-              {BI_LEVELS[days[0]?.level || level]}明细
+              {reportLevels.map((item) => BI_LEVELS[item]).join(' / ')}明细
             </h2>
             <p className="mt-1 text-xs text-slate-500">
               {days[0]?.date || '尚未查询'}{' '}
@@ -1010,7 +981,7 @@ export default function PaidGrowthPage() {
                     <TableCell
                       className={`sticky left-0 z-10 min-w-72 max-w-96 border-r ${hasBad(row) ? 'bg-red-50' : 'bg-white'}`}
                     >
-                      {row.campaignId && days[0]?.level === 'campaigns' ? (
+                      {row.campaignId && reportLevels.includes('campaigns') ? (
                         <button
                           className="max-w-96 whitespace-normal break-words text-left font-medium text-blue-700 hover:underline"
                           onClick={() => setSelectedCampaign(row)}
@@ -1019,7 +990,8 @@ export default function PaidGrowthPage() {
                         </button>
                       ) : (
                         <p className="max-w-96 whitespace-normal break-words font-medium">
-                          {level === 'channels'
+                          {reportLevels.length === 1 &&
+                          reportLevels[0] === 'channels'
                             ? channelLabel(row.label)
                             : row.label}
                         </p>
@@ -1042,7 +1014,7 @@ export default function PaidGrowthPage() {
                         >
                           {row.spend === null
                             ? '投放数据未返回'
-                            : level === 'adgroups'
+                            : reportLevels.includes('adgroups')
                               ? '广告组不支持 D0'
                               : '当前 D0 未返回'}
                         </Badge>
@@ -1074,11 +1046,14 @@ export default function PaidGrowthPage() {
                           进入决策中心
                           <ArrowRight className="size-3" />
                         </Link>
-                      ) : level === 'products' ? (
+                      ) : reportLevels.length === 1 &&
+                        reportLevels[0] === 'products' ? (
                         <span className="text-xs text-slate-400">
                           请切换到渠道或系列维度
                         </span>
-                      ) : level === 'channels' && !appId ? (
+                      ) : reportLevels.length === 1 &&
+                        reportLevels[0] === 'channels' &&
+                        !appId ? (
                         <span className="text-xs text-slate-400">
                           选择产品后查看决策
                         </span>

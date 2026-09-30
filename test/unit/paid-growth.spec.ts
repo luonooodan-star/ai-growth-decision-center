@@ -3,6 +3,7 @@ import type { BiDay } from '@shared/paid-growth.interface';
 import { completeBiQuery } from '@server/modules/growth-decision/paid-growth-query';
 import {
   PaidGrowthService,
+  biQueryLevels,
   validateBiQuery,
 } from '@server/modules/growth-decision/paid-growth.service';
 import { LocalDatabaseService } from '@server/database/local-database.service';
@@ -159,6 +160,26 @@ describe('integrated paid growth BI', () => {
       ['facebook_web', 7],
     ]);
   });
+  test('selected dimensions form one combined grouping, not separate reports', () => {
+    const report = day();
+    report.level = 'products';
+    report.levels = ['products', 'channels'];
+    report.daily.rows.push({
+      ...report.daily.rows[0],
+      media_source: 'facebook_web',
+      spend: 7,
+    });
+    report.revenue.rows.push({
+      ...report.revenue.rows[0],
+      media_source: 'facebook_web',
+      metric_value: 3,
+    });
+    const rows = biRows([report]);
+    expect(rows.map((row) => [row.label, row.spend, row.revenue])).toEqual([
+      ['WingsLite(Android) / facebook', 10, 5],
+      ['WingsLite(Android) / facebook_web', 7, 3],
+    ]);
+  });
   test('all-product channel view groups the same channel across products', () => {
     const report = day();
     report.level = 'channels';
@@ -189,6 +210,27 @@ describe('integrated paid growth BI', () => {
     expect(biRows([report])[0]).toMatchObject({ appId: 11, spend: 10 });
   });
   test('rejects malformed dates and unsupported dimensions', () => {
+    expect(
+      biQueryLevels({
+        date: '2026-09-19',
+        level: 'products',
+        levels: 'products,channels,countries',
+      }),
+    ).toEqual(['products', 'channels', 'countries']);
+    expect(() =>
+      validateBiQuery({
+        date: '2026-09-19',
+        level: 'products',
+        levels: 'products,invalid',
+      }),
+    ).toThrow('查看维度无效');
+    expect(() =>
+      validateBiQuery({
+        date: '2026-09-19',
+        level: 'products',
+        levels: 'products,products',
+      }),
+    ).toThrow('查看维度无效');
     expect(() =>
       validateBiQuery({ date: '2026-99-01', level: 'overall' }),
     ).toThrow('日期无效');
@@ -282,6 +324,41 @@ describe('BI persistence and product registration', () => {
     expect((await s.day(q)).daily.state).toBe('cached');
     query.mockRejectedValue(new Error('connection unavailable'));
     expect((await s.day({ ...q, refresh: '1' })).daily.state).toBe('stale');
+  });
+  test('opening product options does not query Doris', async () => {
+    const query = jest.fn();
+    expect(await service(query).productOptions()).toEqual([]);
+    expect(query).not.toHaveBeenCalled();
+  });
+  test('product options use cached discovery and expose Web without a new Doris query', async () => {
+    const query = jest.fn();
+    const s = service(query);
+    jest.spyOn(s, 'part').mockResolvedValue({
+      state: 'cached',
+      rows: [{ ...dimension, spend: 40 }],
+    });
+    expect((await s.productOptions()).map((p) => p.channel)).toEqual([
+      'facebook',
+      'facebook_web',
+    ]);
+    expect(query).not.toHaveBeenCalled();
+  });
+  test('combined levels request all selected grouping dimensions', async () => {
+    const query = jest.fn(async () => ({ rows: [] }));
+    const result = await service(query).day({
+      date: '2026-09-19',
+      level: 'products',
+      levels: 'products,channels,countries',
+    });
+    expect(result.levels).toEqual(['products', 'channels', 'countries']);
+    expect(
+      query.mock.calls.some(
+        ([args]) =>
+          (args.dimensions as string[]).includes('country_code') &&
+          (args.dimensions as string[]).includes('media_source') &&
+          (args.dimensions as string[]).includes('app_id'),
+      ),
+    ).toBe(true);
   });
   test('adjustment channel breakdown reuses the BI daily cache without cohort queries', async () => {
     const query = jest.fn(async () => ({ rows: [] }));

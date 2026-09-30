@@ -25,6 +25,8 @@ export interface BiPart {
 export interface BiDay {
   date: string;
   level: BiLevel;
+  /** Optional multi-dimension grouping; absent for legacy single-level queries. */
+  levels?: BiLevel[];
   /** Present when the source query is narrowed to one product. */
   scopeAppId?: number;
   daily: BiPart;
@@ -41,6 +43,8 @@ export interface BiProduct {
 export interface BiQuery {
   date: string;
   level: BiLevel;
+  /** Comma-separated, allowlisted dimensions selected before querying. */
+  levels?: string;
   appId?: string;
   media?: string;
   refresh?: string;

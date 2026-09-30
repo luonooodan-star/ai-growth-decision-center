@@ -39,6 +39,9 @@ export class PaidGrowthController {
   @Get('products') products() {
     return this.service.products();
   }
+  @Get('products/options') productOptions() {
+    return this.service.productOptions();
+  }
   @Post('products/sync') sync() {
     return this.service.syncProducts();
   }
