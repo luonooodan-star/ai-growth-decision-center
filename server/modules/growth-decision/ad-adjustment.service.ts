@@ -28,6 +28,30 @@ export function accountVerificationIds(rows: BiPart['rows']): string[] {
     .map(([id]) => id);
 }
 
+/** Never let an unexpected mixed-source response inflate the selected channel. */
+export function adjustmentChannelPart(
+  part: BiPart,
+  appId: string,
+  media: string,
+): BiPart {
+  const rows = part.rows.filter(
+    (row) =>
+      String(row.app_id) === appId &&
+      String(row.media_source || '').toLowerCase() === media.toLowerCase(),
+  );
+  if (rows.length === part.rows.length) return part;
+  return {
+    ...part,
+    rows,
+    message: [
+      part.message,
+      `已排除 ${part.rows.length - rows.length} 条非 ${media} 渠道或其他产品的数据`,
+    ]
+      .filter(Boolean)
+      .join('；'),
+  };
+}
+
 // Verified against Doris list_datasets: both sources expose the same hierarchy.
 export const ADJUSTMENT_DIMENSIONS = [
   'app_id',
@@ -169,7 +193,9 @@ export class AdAdjustmentService {
       ],
       filters_json: JSON.stringify(filters),
     };
-    const dailyTask = read('daily', dailyArgs);
+    const dailyTask = read('daily', dailyArgs).then((part) =>
+      adjustmentChannelPart(part, q.appId!, q.media!),
+    );
     const revenueTask = read('revenue', {
       ...base,
       dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
@@ -180,7 +206,7 @@ export class AdAdjustmentService {
         cohort_unit: 'D',
         metric_id: 'revenue',
       }),
-    });
+    }).then((part) => adjustmentChannelPart(part, q.appId!, q.media!));
     const accountsTask =
       q.date < today
         ? Promise.resolve({
@@ -272,7 +298,11 @@ export class AdAdjustmentService {
         ids = saved.ids;
       } else {
         // Only resolve IDs visible through this user's Doris key. No DWD/admin key fallback.
-        const daily = await this.read(args, false);
+        const daily = adjustmentChannelPart(
+          await this.read(args, false),
+          q.appId!,
+          q.media!,
+        );
         if (!['fresh', 'cached'].includes(daily.state))
           return {
             rows: [],

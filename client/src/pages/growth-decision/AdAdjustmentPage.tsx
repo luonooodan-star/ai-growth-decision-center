@@ -182,7 +182,12 @@ export default function AdAdjustmentPage() {
     ...new Set(
       days.flatMap((d) =>
         [d.daily, d.revenue, d.accounts]
-          .filter((p) => p.state === 'missing' || p.state === 'stale')
+          .filter(
+            (p) =>
+              p.state === 'missing' ||
+              p.state === 'stale' ||
+              p.message?.includes('已排除'),
+          )
           .map((p) => `${d.date}：${p.message || '数据未返回'}`),
       ),
     ),
@@ -207,12 +212,23 @@ export default function AdAdjustmentPage() {
     ),
   ]
     .sort()
-    .map((value) => ({ value, label: value }));
+    .map((value) => ({
+      value,
+      label:
+        value === 'facebook_web'
+          ? 'Facebook Web'
+          : value === 'facebook'
+            ? 'Facebook'
+            : value,
+    }));
+  const mediaLabel = mediaOptions.find(
+    (option) => option.value === media,
+  )?.label;
   const cards = [
     [
-      '媒体消耗',
+      mediaLabel ? `${mediaLabel} 消耗` : '媒体消耗',
       adjustmentMoney(total.spend),
-      `${tree.length} 个系列 · 以下搜索与筛选后的汇总`,
+      `${tree.length} 个系列 · 仅统计所选渠道，以下搜索与筛选后的汇总`,
     ],
     [
       'D0 收入',
@@ -368,7 +384,7 @@ export default function AdAdjustmentPage() {
       <section>
         <h2 className="mb-3 text-lg font-semibold">
           {appOptions.find((o) => o.value === appId)?.label || '全部产品'} ·{' '}
-          {media || '全部渠道'}
+          {mediaLabel || '未选择渠道'}
         </h2>
         <div
           data-ai-section-type="card-stat"

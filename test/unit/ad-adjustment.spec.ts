@@ -12,7 +12,10 @@ import type {
   AdjustmentFilters,
 } from '@shared/ad-adjustment.interface';
 import { ADJUSTMENT_REFRESH_MS } from '@shared/ad-adjustment.interface';
-import { AdAdjustmentService } from '@server/modules/growth-decision/ad-adjustment.service';
+import {
+  AdAdjustmentService,
+  adjustmentChannelPart,
+} from '@server/modules/growth-decision/ad-adjustment.service';
 import { PaidGrowthService } from '@server/modules/growth-decision/paid-growth.service';
 import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-data-fetch.service';
 import type { BiRawRow } from '@shared/paid-growth.interface';
@@ -57,11 +60,64 @@ const day = (date = '2026-09-21'): AdjustmentDay => ({
   },
 });
 describe('advertising adjustment workbench', () => {
+  test('Facebook and Facebook Web remain separate even if a cached response contains both', () => {
+    const part = {
+      state: 'cached' as const,
+      rows: [
+        { ...raw, campaign_id: '1', spend: 10 },
+        { ...raw, campaign_id: '2', media_source: 'facebook_web', spend: 20 },
+        { ...raw, campaign_id: '3', app_id: 12, spend: 30 },
+      ],
+    };
+    const facebook = adjustmentChannelPart(part, '11', 'facebook');
+    const web = adjustmentChannelPart(part, '11', 'facebook_web');
+    expect(facebook.rows.map((row) => row.campaign_id)).toEqual(['1']);
+    expect(web.rows.map((row) => row.campaign_id)).toEqual(['2']);
+    expect(facebook.message).toContain('已排除 2 条');
+    expect(adjustmentChannelPart(part, '11', 'facebook').state).toBe('cached');
+  });
+  test('the adjustment endpoint only returns the requested channel for spend and D0', async () => {
+    const bi = {
+      part: jest.fn().mockImplementation(async (args: { dataset: string }) => ({
+        state: 'cached',
+        rows: [
+          { ...raw, media_source: 'facebook', spend: 10, metric_value: 11 },
+          { ...raw, media_source: 'facebook_web', spend: 20, metric_value: 22 },
+        ],
+      })),
+    };
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'Asia/Shanghai',
+    });
+    const result = await new AdAdjustmentService(bi as never).day({
+      date: today,
+      appId: '11',
+      media: 'facebook_web',
+    });
+    expect(result.daily.rows).toHaveLength(1);
+    expect(result.daily.rows[0].spend).toBe(20);
+    expect(result.revenue.rows).toHaveLength(1);
+    expect(result.revenue.rows[0].metric_value).toBe(22);
+    expect(result.accounts.state).toBe('unsupported');
+    expect(
+      bi.part.mock.calls.every(
+        ([args]) =>
+          JSON.parse(args.filters_json).media_source === 'facebook_web',
+      ),
+    ).toBe(true);
+  });
   test('personal ownership reads a lightweight campaign manifest, independent of local filter slices', async () => {
     const bi = {
       part: jest.fn().mockResolvedValue({
         state: 'cached',
-        rows: [{ campaign_id: '123', spend: 10 }],
+        rows: [
+          {
+            app_id: 11,
+            media_source: 'facebook',
+            campaign_id: '123',
+            spend: 10,
+          },
+        ],
       }),
     };
     const meta = {
