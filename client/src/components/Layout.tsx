@@ -5,6 +5,7 @@ import {
   Gauge,
   Sparkles,
   SlidersHorizontal,
+  ChartNoAxesCombined,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -154,6 +155,10 @@ const Layout = () => {
               <NavLink to="/operations" className={navClass}>
                 <Activity className="size-3.5" />
                 操作复盘
+              </NavLink>
+              <NavLink to="/analysis" className={navClass}>
+                <ChartNoAxesCombined className="size-4" />
+                分析中心
               </NavLink>
               <NavLink to="/metrics" className={navClass}>
                 <Gauge className="size-3.5" />

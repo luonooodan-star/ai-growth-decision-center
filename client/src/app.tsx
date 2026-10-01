@@ -11,6 +11,7 @@ import SkillIterationPage from './pages/growth-decision/SkillIterationPage';
 import PaidGrowthPage from './pages/growth-decision/PaidGrowthPage';
 import MetaOperationsPage from './pages/growth-decision/MetaOperationsPage';
 import AdAdjustmentPage from './pages/growth-decision/AdAdjustmentPage';
+import CreativeAnalysisPage from './pages/growth-decision/CreativeAnalysisPage';
 
 const RoutesComponent = () => {
   return (
@@ -19,6 +20,7 @@ const RoutesComponent = () => {
         <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" element={<PaidGrowthPage />} />
+        <Route path="analysis" element={<CreativeAnalysisPage />} />
         <Route path="adjustments" element={<AdAdjustmentPage />} />
         <Route path="operations" element={<MetaOperationsPage />} />
         <Route path="products/:productId" element={<GrowthDecisionPage />} />

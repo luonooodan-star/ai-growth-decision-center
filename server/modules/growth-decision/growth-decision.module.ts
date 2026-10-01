@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { CreativeAnalysisController } from './creative-analysis.controller';
+import { CreativeAnalysisService } from './creative-analysis.service';
 import { PersonalDorisController } from './personal-doris.controller';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
@@ -25,6 +27,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
 
 @Module({
   controllers: [
+    CreativeAnalysisController,
     PersonalDorisController,
     MetaAdjustmentController,
     MetaWorkspaceController,
@@ -36,6 +39,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    CreativeAnalysisService,
     MetaAdjustmentService,
     SkillReviewService,
     MetaOperationsService,
