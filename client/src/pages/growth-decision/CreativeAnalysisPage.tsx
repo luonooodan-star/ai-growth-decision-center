@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { MellowSharedRoas } from './MellowSharedRoas';
 import {
   ArrowRight,
   CalendarDays,
@@ -606,12 +605,6 @@ export default function CreativeAnalysisPage() {
             </p>
           )}
         </section>
-        {sharing?.enabled && (
-          <MellowSharedRoas
-            start={format(from, 'yyyy-MM-dd')}
-            end={format(to, 'yyyy-MM-dd')}
-          />
-        )}
         {!report ? (
           <section className={`${box} px-6 py-16 text-center`}>
             <Filter className="mx-auto size-8 text-blue-500" />

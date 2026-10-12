@@ -45,6 +45,6 @@ V2 来源：ChatGPT 对话 `6ab224e1-f230-83ea-8d07-e54eec630aa1`「广告标签
 - 授权名单在服务端 `mellow-sharing.ts` 固定为 fjx、jsa；只共享 Mellow iOS、Android 的现有分析中心聚合报告（包含自然量），以及 Mellow iOS 含自然量 D0 ROAS。其他账号、其他产品、通用投放数据与 Meta 广告权限均不改变。
 - 部署后两人登录「分析中心」，查询数据会按指定日期/平台读取 growth 缓存；缺失或过期才以 growth 的本机加密凭据按固定合同同步。浏览器不会得到 growth Key，也不能自定义数据集、数据所有者或任意查询。共享读取不需要两人另配高权限 Key。
 - 共享者最多查询最近 90 天中的 31 天；不能强制绕过有效缓存。今日缓存 5 分钟、历史 24 小时，保留期沿用 90 天清理。没有增加后台定时全量抓取；两人同口径请求复用源任务。停止等待不取消其他人的任务。任务句柄按查看者隔离，growth 更换/撤销 Key 后旧句柄失效。
-- 页面单独提供「读取 / 同步 iOS ROAS」。固定 app_id=3，分母为 `ads_paid_acquisition_daily.spend` 的全渠道之和；分子为 `ads_paid_acquisition_cohort_metric` 中 `metric_id=revenue, cohort_index=0, cohort_unit=D` 的全渠道之和，包含 organic 与 Web。ROAS 为总收入 / 总消耗，不平均各渠道比率。此安装 cohort 口径独立于事件表的首开漏斗口径，不受下方标签/国家筛选影响。
+- 含自然量 ROAS 已移至「投放数据」首页的汇总卡片下方，不再放在分析中心。growth、fjx、jsa 选择 Mellow iOS（app_id=3），点击首页「查询数据」或「重新拉取」后随已提交的日期范围自动加载，无需单独同步。修改尚未提交的日期/渠道不会触发读取，切换其他产品隐藏该卡片；失败保留带日期的旧结果。分母为 `ads_paid_acquisition_daily.spend` 的全渠道之和；分子为 `ads_paid_acquisition_cohort_metric` 中 `metric_id=revenue, cohort_index=0, cohort_unit=D` 的全渠道之和，包含 organic 与 Web。ROAS 为总收入 / 总消耗，不平均各渠道比率。该卡片固定为全渠道产品口径，不跟随渠道或明细维度筛选，仍使用共享缓存和原有后端白名单。
 - 空数据、来源失败、产品不符不补零；零消耗不计算 ROAS。显示查询日期和源数据时间。无权访问共享接口时直接拒绝，而不是将同一共享例外扩展到通用 BI 或广告写入接口。
 - 公司 Mac 仍需部署构建、重启决策中心并保留 growth 已配置的个人 Doris Key；首次由 growth / fjx / jsa 在上述入口手动查询完成同步。不需要给 fjx、jsa 复制 Key，不需要重新安装 Meta 桥。

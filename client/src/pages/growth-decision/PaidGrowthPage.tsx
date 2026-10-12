@@ -15,6 +15,7 @@ import { verifiedNoSpend } from '@shared/campaign-visibility';
 import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import { BiTrend } from './BiTrend';
+import { MellowSharedRoas } from './MellowSharedRoas';
 import { biChannelSpend, biSummary } from '@shared/bi-summary';
 import {
   paidGrowthQuickRange,
@@ -188,6 +189,23 @@ function DateRangeFilter({
 }
 
 export default function PaidGrowthPage() {
+  const [mellowSharing, setMellowSharing] = useState(false);
+  const [mellowScope, setMellowScope] = useState<{
+    start: string;
+    end: string;
+    revision: number;
+  } | null>(null);
+  useEffect(() => {
+    const abort = new AbortController();
+    void axios
+      .get('/api/growth-decision/analysis/sharing', {
+        signal: abort.signal,
+        timeout: 15000,
+      })
+      .then((r) => setMellowSharing(r.data.enabled === true))
+      .catch(() => {});
+    return () => abort.abort();
+  }, []);
   const [trendScope, setTrendScope] =
     useState<Parameters<typeof BiTrend>[0]['scope']>(null);
   const [expectedDates, setExpectedDates] = useState<string[]>([]);
@@ -300,6 +318,15 @@ export default function PaidGrowthPage() {
     setError('');
     setNotice('');
     setDays([]);
+    setMellowScope(
+      appId === '3'
+        ? {
+            start: format(range.from, 'yyyy-MM-dd'),
+            end: format(range.to, 'yyyy-MM-dd'),
+            revision: Date.now(),
+          }
+        : null,
+    );
     setTrendScope((previous) => {
       const next = {
         start: format(range.from, 'yyyy-MM-dd'),
@@ -597,6 +624,7 @@ export default function PaidGrowthPage() {
               value={appId || 'all'}
               onValueChange={(value) => {
                 const nextAppId = value === 'all' ? '' : value;
+                if (nextAppId !== appId) setMellowScope(null);
                 setAppId(nextAppId);
                 setMedia((current) =>
                   !current ||
@@ -789,6 +817,18 @@ export default function PaidGrowthPage() {
           </section>
         ))}
       </div>
+      {mellowSharing &&
+        appId === '3' &&
+        (mellowScope ? (
+          <MellowSharedRoas {...mellowScope} />
+        ) : (
+          <section className="rounded-2xl border bg-white p-5">
+            <h2 className="font-semibold">Mellow iOS · 含自然量 D0 ROAS</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              点击上方查询数据后自动加载，包含自然量与全部渠道；无需单独同步。
+            </p>
+          </section>
+        ))}
       <BiTrend
         scope={trendScope}
         target={trendTarget === undefined ? null : trendTarget * 100}
