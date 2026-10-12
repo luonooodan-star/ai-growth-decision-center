@@ -61,6 +61,7 @@ for (const [group, , entries] of CREATIVE_TAG_GROUPS) {
 
 export function parseCreativeTags(name: string): CreativeTagParse {
   const tokens = name
+    .replace(/\s+\(\d{5,}\)\s*$/, '')
     .split(/[\\/]/)
     .at(-1)!
     .replace(/\.[a-z0-9]{2,5}$/i, '')
@@ -118,4 +119,18 @@ export const isMetaAttribution = (channel: string) =>
     'instagram installs',
     'off-facebook installs',
     'facebook_web',
+    'xiye_milo_ios_web_pruchase',
   ].includes(channel.trim().toLowerCase());
+
+/** iOS stores a filename followed by the Meta ad ID; never use ad_id (device ID). */
+export function iosCreative(raw: unknown) {
+  const text = raw == null ? '' : String(raw).trim();
+  if (['', 'null', 'undefined', 'unknown', '0'].includes(text.toLowerCase()))
+    return { name: '', id: '' };
+  if (/^\d+$/.test(text)) return { name: '', id: text };
+  const match = text.match(/\s+\((\d{5,})\)\s*$/);
+  return {
+    name: match ? text.slice(0, match.index).trim() : text,
+    id: match?.[1] || '',
+  };
+}

@@ -92,7 +92,11 @@ test('resolves only personal Doris visible campaign IDs, never queries forbidden
   const bi = {
     part: jest.fn().mockResolvedValue({
       state: 'fresh',
-      rows: [{ campaign_id: '1' }, { campaign_id: '2' }],
+      // Ownership reads now require the same app/channel columns as Doris returns.
+      rows: [
+        { campaign_id: '1', app_id: 11, media_source: 'facebook' },
+        { campaign_id: '2', app_id: 11, media_source: 'facebook' },
+      ],
     }),
   };
   const meta = {
@@ -118,7 +122,10 @@ test('no credential/permission fallback when personal Meta fails or Doris is inc
   const bi = {
     part: jest
       .fn()
-      .mockResolvedValue({ state: 'fresh', rows: [{ campaign_id: '1' }] }),
+      .mockResolvedValue({
+        state: 'fresh',
+        rows: [{ campaign_id: '1', app_id: 11, media_source: 'facebook' }],
+      }),
   };
   const meta = {
     campaignAccounts: jest.fn().mockRejectedValue(new Error('个人授权已失效')),
@@ -129,7 +136,10 @@ test('no credential/permission fallback when personal Meta fails or Doris is inc
     state: 'missing',
     rows: [],
   });
-  bi.part.mockResolvedValue({ state: 'stale', rows: [{ campaign_id: '1' }] });
+  bi.part.mockResolvedValue({
+    state: 'stale',
+    rows: [{ campaign_id: '1', app_id: 11, media_source: 'facebook' }],
+  });
   meta.campaignAccounts.mockClear();
   expect((await service.day(q)).accounts.state).toBe('missing');
   expect(meta.campaignAccounts).not.toHaveBeenCalled();
@@ -142,6 +152,8 @@ test('ownership is paginated and includes identity for client-side switch detect
       state: 'fresh',
       rows: Array.from({ length: 11 }, (_, i) => ({
         campaign_id: String(i + 1),
+        app_id: 11,
+        media_source: 'facebook',
       })),
     }),
   };

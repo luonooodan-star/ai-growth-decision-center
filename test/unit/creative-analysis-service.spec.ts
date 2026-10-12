@@ -41,6 +41,39 @@ function setup() {
   return { service, bi, db, cache };
 }
 describe('creative analysis jobs', () => {
+  it('loads iOS orders and long-lookback attribution with platform isolation and v2 cache keys', async () => {
+    const { service, bi, db } = setup();
+    bi.part.mockImplementation(async (args) => {
+      const filters = JSON.parse(String(args.filters_json));
+      if (filters.event_name === 'first_open')
+        return { state: 'fresh', rows: [{ ...first(1), app_id: 3 }] };
+      return { state: 'fresh', rows: [] };
+    });
+    const job = asUser('ios', () => service.start({ ...q, platform: 'ios' }));
+    await tick();
+    const result = asUser('ios', () => service.status(job.id));
+    expect(result.state).toBe('completed');
+    expect(result.report?.schemaVersion).toBe(2);
+    expect(result.report?.rows[0].orders).toBe(0);
+    const orderArgs = bi.part.mock.calls.find(
+      ([args]) => args.dataset === 'xy_online_data.tbl_user_order',
+    )![0];
+    expect(JSON.parse(String(orderArgs.filters_json))).toMatchObject({
+      platform: 2,
+      env: 'Production',
+      action_desc: 'PURCHASED',
+    });
+    const attrArgs = bi.part.mock.calls.find(
+      ([args]) =>
+        args.dataset === 'xy_online_data.tbl_user_access_permissions_all',
+    )![0];
+    expect(attrArgs.start_date).toBe('2026-06-28');
+    expect(JSON.parse(String(attrArgs.filters_json))).toMatchObject({
+      platform: 2,
+      user_id: ['1'],
+    });
+    expect(db.saveBiCache.mock.calls[0][0]).toContain('creative-funnel:v2:');
+  });
   it('validates date bounds and fixed product contracts', () => {
     expect(() => validateCreativeAnalysisQuery(q)).not.toThrow();
     for (const invalid of [

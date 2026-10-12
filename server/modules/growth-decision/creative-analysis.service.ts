@@ -79,7 +79,7 @@ export class CreativeAnalysisService {
       refresh: !!query.refresh,
     };
     const scope = personalScopeKey();
-    const key = `${scope}:creative-funnel:v1:${JSON.stringify([q.start, q.end, q.platform])}`;
+    const key = `${scope}:creative-funnel:v2:${JSON.stringify([q.start, q.end, q.platform])}`;
     const active = this.active.get(scope);
     if (active) {
       if (active.key === key && !active.cancelled) return active.job;
@@ -110,7 +110,7 @@ export class CreativeAnalysisService {
         const report = JSON.parse(cached) as CreativeAnalysisReport;
         const ttl = q.end < today() ? 86400000 : 300000;
         if (
-          report.schemaVersion === 1 &&
+          report.schemaVersion === 2 &&
           Date.now() - Date.parse(report.generatedAt) < ttl
         ) {
           work.job = {
@@ -183,7 +183,7 @@ export class CreativeAnalysisService {
         },
         !!q.refresh,
         end < today() ? 86400000 : 300000,
-        'creative-funnel:v1',
+        'creative-funnel:v2',
       );
       checkpoint();
       if (!['fresh', 'cached'].includes(part.state))
@@ -196,6 +196,8 @@ export class CreativeAnalysisService {
           throw new Error('数据产品与查询范围不一致');
         if (filters.bundle_id && row.bundle_id !== filters.bundle_id)
           throw new Error('归因产品与查询范围不一致');
+        if (filters.platform && Number(row.platform) !== filters.platform)
+          throw new Error('业务数据平台与查询范围不一致');
       }
       return part.rows;
     };
@@ -255,9 +257,17 @@ export class CreativeAnalysisService {
                   ORDERS,
                   date,
                   date,
-                  ['event_date', 'user_id', 'bundle_id', 'action_desc', 'env'],
+                  [
+                    'event_date',
+                    'user_id',
+                    'bundle_id',
+                    'platform',
+                    'action_desc',
+                    'env',
+                  ],
                   {
                     bundle_id: app.bundle,
+                    ...(app.platform === 'ios' ? { platform: 2 } : {}),
                     action_desc: 'PURCHASED',
                     env: 'Production',
                   },
@@ -293,18 +303,23 @@ export class CreativeAnalysisService {
             const attribution = await optional(`${label} 素材归因`, () =>
               read(
                 ATTRIBUTION,
-                shift(date, -7),
+                shift(date, app.platform === 'ios' ? -89 : -7),
                 shift(date, 1) > today() ? today() : shift(date, 1),
                 [
                   'event_date',
                   'user_id',
                   'bundle_id',
+                  'platform',
                   'channel',
                   'campaign',
                   'adgroup',
                   'creative',
                 ],
-                { bundle_id: app.bundle, user_id: ids },
+                {
+                  bundle_id: app.bundle,
+                  user_id: ids,
+                  ...(app.platform === 'ios' ? { platform: 2 } : {}),
+                },
                 'user_count',
               ),
             );
@@ -328,13 +343,9 @@ export class CreativeAnalysisService {
           }
         }
       checkpoint();
-      if (apps.some((app) => !app.orders))
-        issues.add(
-          'iOS 暂无已核实的同口径订单接入；订单人数显示为空，付费成功埋点可正常分析。',
-        );
       if (q.end === today()) issues.add('包含今天，D0 行为和归因仍在回传。');
       const report: CreativeAnalysisReport = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         scope: { ...q, refresh: false },
         generatedAt: new Date().toISOString(),
         cache: false,

@@ -5,6 +5,17 @@ import {
 } from './creative-analysis.interface';
 import { isMetaAttribution } from './creative-tags';
 
+export function creativeCoverage(row: CreativeFunnelRow): string {
+  if (row.attribution === 'unavailable') return '归因读取失败';
+  if (row.attribution === 'ambiguous') return '归因冲突';
+  if (row.attribution !== 'matched' || (!row.creativeName && !row.creativeId))
+    return '无素材归因';
+  if (!row.creativeName) return '有素材 ID，名称缺失';
+  if (row.tags.version !== 'v2') return '有素材，无 V2 标签';
+  if (!row.tags.codes.length) return '有 V2 标记，标签未解析';
+  return '可解析 V2';
+}
+
 export function sumFunnel(rows: FunnelCounts[]): FunnelCounts {
   const result: FunnelCounts = {
     users: 0,
@@ -78,7 +89,7 @@ export function groupCreativeFunnel(
 ) {
   const groups = new Map<string, CreativeFunnelRow[]>();
   for (const row of rows) {
-    const label = row[dimension] || '未关联素材';
+    const label = row[dimension] || creativeCoverage(row);
     const key = JSON.stringify([row.platform, label]);
     const group = groups.get(key) || [];
     group.push(row);
@@ -87,7 +98,7 @@ export function groupCreativeFunnel(
   return [...groups]
     .map(([key, group]) => ({
       key,
-      label: group[0][dimension] || '未关联素材',
+      label: group[0][dimension] || creativeCoverage(group[0]),
       platform: group[0].platform,
       ...sumFunnel(group),
     }))

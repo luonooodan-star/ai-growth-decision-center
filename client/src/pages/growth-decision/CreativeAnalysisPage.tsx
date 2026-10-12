@@ -30,6 +30,7 @@ import type {
   FunnelMetric,
 } from '@shared/creative-analysis.interface';
 import {
+  creativeCoverage,
   funnelRate,
   groupCreativeFunnel,
   matchFunnelRows,
@@ -460,9 +461,6 @@ export default function CreativeAnalysisPage() {
   );
   const rootUsers = sumFunnel(scoped).users;
   const unknown = rows.filter((row) => row.attribution !== 'matched');
-  const orderAndroid = sumFunnel(
-    selected.filter((row) => row.platform === 'android'),
-  );
   const copyEvidence = async () => {
     if (!report) return;
     const evidence = {
@@ -699,10 +697,34 @@ export default function CreativeAnalysisPage() {
                     `覆盖当前范围 ${rate(sumFunnel(v2).users, rootUsers)}`,
                   ],
                   [
-                    '旧命名 / 未解析用户',
-                    count(rootUsers - sumFunnel(v2).users),
-                    '进入标签交叉后不参与，但保留覆盖率',
+                    '有素材，无 V2 标签',
+                    count(
+                      sumFunnel(
+                        scoped.filter(
+                          (row) =>
+                            creativeCoverage(row) === '有素材，无 V2 标签',
+                        ),
+                      ).users,
+                    ),
+                    '素材已归因，可看漏斗；不能参与 V2 标签交叉',
                   ],
+                  ...[
+                    '无素材归因',
+                    '有素材 ID，名称缺失',
+                    '有 V2 标记，标签未解析',
+                    '归因冲突',
+                    '归因读取失败',
+                  ].map((status) => [
+                    status,
+                    count(
+                      sumFunnel(
+                        scoped.filter(
+                          (row) => creativeCoverage(row) === status,
+                        ),
+                      ).users,
+                    ),
+                    '缺失与命名问题分开统计，不强行分配素材',
+                  ]),
                   [
                     '包含词表外代码',
                     count(
@@ -956,17 +978,17 @@ export default function CreativeAnalysisPage() {
                 </div>
                 <div className={`${box} p-4`}>
                   <p className="text-xs text-slate-500">
-                    Android · D0 订单确认用户
+                    当前人群 · D0 订单确认用户（iOS / Android）
                   </p>
                   <p className="mt-2 text-xl font-semibold">
-                    {orderAndroid.users ? count(orderAndroid.orders) : '—'}{' '}
+                    {totals.users ? count(totals.orders) : '—'}{' '}
                     <span className="text-sm font-normal text-slate-500">
-                      / {count(orderAndroid.users)} 人 ·{' '}
-                      {rate(orderAndroid.orders, orderAndroid.users)}
+                      / {count(totals.users)} 人 ·{' '}
+                      {rate(totals.orders, totals.users)}
                     </span>
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
-                    Production / PURCHASED；iOS 订单口径待接入
+                    Production / PURCHASED；仅计首开同日订单，按用户去重
                   </p>
                 </div>
                 <div className={`${box} p-4`}>

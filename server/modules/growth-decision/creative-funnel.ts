@@ -3,7 +3,7 @@ import type {
   CreativeFunnelRow,
   FunnelPlatform,
 } from '@shared/creative-analysis.interface';
-import { parseCreativeTags } from '@shared/creative-tags';
+import { parseCreativeTags, iosCreative } from '@shared/creative-tags';
 
 export const FUNNEL_APPS = [
   {
@@ -16,7 +16,7 @@ export const FUNNEL_APPS = [
     appId: 3,
     platform: 'ios' as const,
     bundle: 'com.pixelflyapp.milo',
-    orders: false,
+    orders: true,
   },
 ];
 export const FUNNEL_EVENTS = [
@@ -93,6 +93,8 @@ export function buildCreativeFunnelRows(
     attribution.set(key, group);
   }
   for (const row of input.orders || []) {
+    if (row.bundle_id === 'com.pixelflyapp.milo' && Number(row.platform) !== 2)
+      continue;
     if (
       value(row.action_desc) !== 'PURCHASED' ||
       value(row.env).toLowerCase() !== 'production' ||
@@ -135,6 +137,7 @@ export function buildCreativeFunnelRows(
     const success = has('sub_success', 'pur_succ');
     const identities = new Map<string, BiRawRow>();
     for (const row of attribution.get(`${user.bundle}:${user.userId}`) || []) {
+      if (user.platform === 'ios' && Number(row.platform) !== 2) continue;
       const key = JSON.stringify([
         value(row.channel).toLowerCase(),
         value(row.creative),
@@ -154,8 +157,15 @@ export function buildCreativeFunnelRows(
             ? 'matched'
             : 'unattributed';
     const channel = attributed ? value(attributed.channel).toLowerCase() : '';
-    const creativeName = attributed ? value(attributed.adgroup) : '';
-    const creativeId = attributed ? value(attributed.creative) : '';
+    const creative =
+      user.platform === 'ios'
+        ? iosCreative(attributed?.creative)
+        : {
+            name: attributed ? value(attributed.adgroup) : '',
+            id: attributed ? value(attributed.creative) : '',
+          };
+    const creativeName = creative.name;
+    const creativeId = creative.id;
     const campaignName = attributed ? value(attributed.campaign) : '';
     const key = JSON.stringify([
       user.date,

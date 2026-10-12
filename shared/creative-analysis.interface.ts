@@ -39,7 +39,7 @@ export interface CreativeFunnelRow extends FunnelCounts {
   tags: CreativeTagParse;
 }
 export interface CreativeAnalysisReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   scope: CreativeAnalysisQuery;
   generatedAt: string;
   cache: boolean;

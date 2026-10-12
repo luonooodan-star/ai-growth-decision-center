@@ -20,8 +20,10 @@ V2 来源：ChatGPT 对话 `6ab224e1-f230-83ea-8d07-e54eec630aa1`「广告标签
 - 首开：`bi_dwd.dwd_app_event`，`first_open`，按 app_id + resolved_user_id 去重；取所选范围内最早首开日。无有效 ID 的事件单列排除。这不是跨全历史去重的新注册定义。
 - 聊天：首开同日 `chat_page_send_message_success`；5/20 深度按**同一 character_id**，不跨角色累计。缺少角色 ID 且无法确认阈值时显示缺失，不补零。
 - 付费展示：`sub_show` 或 `purchase_page_view`；点击：`sub_click` 或 `pur_click`；成功：`sub_success` 或 `pur_succ`。嵌套用户交集，不声称已验证事件的时间顺序。另展示独立的任意成功埋点人数。
-- 归因：`xy_online_data.tbl_user_access_permissions_all`，bundle_id + user_id，回看首开前 7 天，允许首开后 1 天的回传，且不超过今天。`adgroup` 是参考样本的素材名字段，`creative` 是素材 ID。完整性检查使用可加总的 `user_count`，不是不可加总的 distinct 指标。多条相同归因去重；多个不同归因不任取其一，单列冲突并不分配标签。
-- 订单：Android 的 `xy_online_data.tbl_user_order`，bundle_id + user_id + 首开日，`PURCHASED` / `Production`，使用 `order_count` 检查完整性，最终按用户去重。独立于埋点成功。iOS 无已核实的同口径接入，订单为 null；双平台汇总不能把缺失当 0，明细按平台分列。
+- 归因：`xy_online_data.tbl_user_access_permissions_all`，bundle_id + user_id。iOS 回看首开前 89 天（含首开日为 90 天），Android 保留原有 7 天回看；均允许首开后 1 天回传，且不超过今天。查询仍限制为当前批次用户 ID，不扫描返回全量历史用户。Android 保留 `adgroup` 素材名、`creative` 素材 ID 的原合同；iOS 额外限定 platform=2，从 `creative` 的“文件名（数字广告 ID）”拆出名称和 ID，不把广告组名称或设备 `ad_id` 当作素材。完整性检查使用可加总的 `user_count`。多个不同归因仍单列冲突，不任取其一。
+- Meta 来源包含已核实的 iOS Web 别名 `xiye_Milo_ios_web_pruchase`；保留原始渠道名，不把未知 Web 来源一概归为 Meta。
+- 订单：双平台均读取 `xy_online_data.tbl_user_order`，bundle_id + user_id + 首开日，`PURCHASED` / `Production`；iOS 必须 platform=2。使用 `order_count` 检查完整性，最终按用户去重，不累计重复订单人数。独立于成功埋点；读取失败为 null，不补零。仅计首开人群 D0 订单，不代表当天全部付费用户。
+- 覆盖状态分别显示：可解析 V2、有素材但无 V2、无素材归因、只有素材 ID、有 V2 标记但无法解析、归因冲突、读取失败。旧素材仍参与无标签条件下的行为/订单统计，不硬生成标签。
 - 日期按 Doris `event_date` 对齐，不把业务表 app_id 与事件 app_id 直接等同。
 
 ## 权限、缓存与负载
@@ -32,6 +34,7 @@ V2 来源：ChatGPT 对话 `6ab224e1-f230-83ea-8d07-e54eec630aa1`「广告标签
 - 任务每个阶段检查八分钟上限；已发出的单次读取需结束后才能停止。前端轮询只读任务状态，不重新查询 Doris。取消后不再发起后续读取；离开页面仅停止浏览器轮询，后台任务受上述上限约束。
 - 首开读取最多 50,000 行；行为与归因按 200 用户分批。同一日期/平台的一项来源读取失败后，后续批次不重复轰炸该来源。缺失来源不补零，部分报告不进入完整报告缓存。
 - 已结束日期缓存有效期 24 小时；含当天的报告 5 分钟。仅「重新抓取」显式绕过有效缓存。读取存储沿用项目 90 天清理；有效期不是保留期限。
+- iOS 修复使用 schemaVersion=2 和 creative-funnel:v2 缓存空间，旧映射缓存不会被复用。
 
 ## 验证边界
 
