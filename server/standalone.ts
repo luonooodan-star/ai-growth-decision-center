@@ -4,6 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { json } from 'express';
 import { isMellowSharedRoute } from './common/utils/mellow-sharing';
+import { readCenterRole, designerApiAllowed } from './common/utils/center-role';
 import {
   CenterSessions,
   centerLoginPage,
@@ -190,10 +191,22 @@ async function bootstrap(): Promise<void> {
             .json({ message: '登录身份已变化，请刷新页面后重试' });
           return;
         }
+        const role = await readCenterRole(username);
+        if (
+          role === 'designer' &&
+          /^\/(api|mcp|openapi)(\/|$)/i.test(request.path) &&
+          !designerApiAllowed(request.method, request.path)
+        ) {
+          response
+            .status(403)
+            .json({ message: '设计只读账号仅开放投放数据与本人 Doris 授权' });
+          return;
+        }
         if (request.path === '/api/center/me') {
           response.setHeader('Cache-Control', 'no-store');
           response.json({
             username,
+            role,
             sessionId: session?.sessionId,
             doris: personalDorisStatus(username),
           });

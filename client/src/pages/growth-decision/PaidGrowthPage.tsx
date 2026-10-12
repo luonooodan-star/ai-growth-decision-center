@@ -16,6 +16,7 @@ import { metaTargets } from '@shared/meta-targets';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import { BiTrend } from './BiTrend';
 import { MellowSharedRoas } from './MellowSharedRoas';
+import { useAuthorization } from '@/components/AuthorizationContext';
 import { biChannelSpend, biSummary } from '@shared/bi-summary';
 import {
   paidGrowthQuickRange,
@@ -189,6 +190,8 @@ function DateRangeFilter({
 }
 
 export default function PaidGrowthPage() {
+  const { role } = useAuthorization();
+  const designer = role === 'designer';
   const [mellowSharing, setMellowSharing] = useState(false);
   const [mellowScope, setMellowScope] = useState<{
     start: string;
@@ -196,6 +199,7 @@ export default function PaidGrowthPage() {
     revision: number;
   } | null>(null);
   useEffect(() => {
+    if (designer) return;
     const abort = new AbortController();
     void axios
       .get('/api/growth-decision/analysis/sharing', {
@@ -205,7 +209,7 @@ export default function PaidGrowthPage() {
       .then((r) => setMellowSharing(r.data.enabled === true))
       .catch(() => {});
     return () => abort.abort();
-  }, []);
+  }, [designer]);
   const [trendScope, setTrendScope] =
     useState<Parameters<typeof BiTrend>[0]['scope']>(null);
   const [expectedDates, setExpectedDates] = useState<string[]>([]);
@@ -248,6 +252,7 @@ export default function PaidGrowthPage() {
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
   useEffect(() => {
+    if (designer) return;
     const refresh = () => {
       void getMetaEntities()
         .then(setMetaEntities)
@@ -260,7 +265,7 @@ export default function PaidGrowthPage() {
       window.removeEventListener('focus', refresh);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [designer]);
   const [selectedCampaign, setSelectedCampaign] = useState<BiRow | null>(null);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
@@ -308,9 +313,10 @@ export default function PaidGrowthPage() {
       return;
     }
     void refreshStandards();
-    void getMetaEntities()
-      .then(setMetaEntities)
-      .catch((e) => setError(errorText(e)));
+    if (!designer)
+      void getMetaEntities()
+        .then(setMetaEntities)
+        .catch((e) => setError(errorText(e)));
     controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
@@ -556,44 +562,46 @@ export default function PaidGrowthPage() {
             与现有登录；此页只读，不修改广告。
           </p>
         </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" disabled={syncing}>
-              同步有投放的产品
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                将最近 30 天有消耗的产品接入决策中心？
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                按 Doris 产品 ID
-                和渠道分别建档，保留现有产品、规则及历史。不复制 Wingslite
-                达标线；新产品需在指标库配置标准，再抓取决策快照。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  setSyncing(true);
-                  void syncBiProducts()
-                    .then((p) => {
-                      setProducts(p);
-                      setNotice(
-                        '产品已同步。新产品共用完整决策功能，请先配置各自指标标准。',
-                      );
-                    })
-                    .catch((e) => setError(errorText(e)))
-                    .finally(() => setSyncing(false));
-                }}
-              >
-                确认同步
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {!designer && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={syncing}>
+                同步有投放的产品
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  将最近 30 天有消耗的产品接入决策中心？
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  按 Doris 产品 ID
+                  和渠道分别建档，保留现有产品、规则及历史。不复制 Wingslite
+                  达标线；新产品需在指标库配置标准，再抓取决策快照。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setSyncing(true);
+                    void syncBiProducts()
+                      .then((p) => {
+                        setProducts(p);
+                        setNotice(
+                          '产品已同步。新产品共用完整决策功能，请先配置各自指标标准。',
+                        );
+                      })
+                      .catch((e) => setError(errorText(e)))
+                      .finally(() => setSyncing(false));
+                  }}
+                >
+                  确认同步
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </header>
       {error && (
         <div
@@ -768,7 +776,7 @@ export default function PaidGrowthPage() {
           </span>
         </div>
       </section>
-      {reportLevels.includes('campaigns') && (
+      {!designer && reportLevels.includes('campaigns') && (
         <CampaignMetaFilters
           items={[...rowMeta.values()]}
           value={metaFilter}
@@ -1005,7 +1013,9 @@ export default function PaidGrowthPage() {
                     </button>
                   </TableHead>
                 ))}
-                <TableHead className="min-w-32">决策入口</TableHead>
+                <TableHead className="min-w-32">
+                  {designer ? '访问模式' : '决策入口'}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1078,7 +1088,9 @@ export default function PaidGrowthPage() {
                       );
                     })}
                     <TableCell>
-                      {product?.productId ? (
+                      {designer ? (
+                        <span className="text-xs text-slate-400">只读</span>
+                      ) : product?.productId ? (
                         <Link
                           className="inline-flex items-center gap-1 whitespace-nowrap text-blue-600"
                           to={`/products/${product.productId}${row.campaignId ? `?campaignId=${encodeURIComponent(row.campaignId)}` : ''}`}
@@ -1137,11 +1149,13 @@ export default function PaidGrowthPage() {
           entities={metaEntities}
           endDate={days.at(-1)?.date || format(end, 'yyyy-MM-dd')}
           productId={
-            products.find(
-              (p) =>
-                p.appId === selectedCampaign.appId &&
-                p.channel === selectedCampaign.media,
-            )?.productId
+            designer
+              ? undefined
+              : products.find(
+                  (p) =>
+                    p.appId === selectedCampaign.appId &&
+                    p.channel === selectedCampaign.media,
+                )?.productId
           }
           onClose={() => setSelectedCampaign(null)}
         />

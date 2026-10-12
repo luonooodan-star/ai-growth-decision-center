@@ -8,6 +8,7 @@ import { useAuthorization } from '@/components/AuthorizationContext';
 export default function AuthorizationPage() {
   const {
     username,
+    role,
     dorisConfigured,
     meta,
     ownerId,
@@ -67,8 +68,10 @@ export default function AuthorizationPage() {
           </p>
           <h1 className="mt-2 text-2xl font-bold">授权与连接</h1>
           <p className="mt-2 text-sm text-slate-500">
-            当前决策中心用户：{username || '身份待确认'}。Doris 与 Meta
-            分别授权；产品目录、指标标准和 Skill 知识由团队共用。
+            当前决策中心用户：{username || '身份待确认'}。
+            {role === 'designer'
+              ? '设计只读账号，仅需配置本人 Doris Key，无需 Meta 授权。'
+              : 'Doris 与 Meta 分别授权；产品目录、指标标准和 Skill 知识由团队共用。'}
           </p>
         </div>
         <Button
@@ -80,7 +83,9 @@ export default function AuthorizationPage() {
           重新检测
         </Button>
       </div>
-      <div className="grid gap-6 md:grid-cols-2">
+      <div
+        className={`grid gap-6 ${role === 'designer' ? '' : 'md:grid-cols-2'}`}
+      >
         <section className="space-y-5 rounded-2xl border bg-white p-6">
           <Database className="size-6 text-blue-600" />
           <h2 className="text-lg font-semibold">Doris 数据授权</h2>
@@ -90,59 +95,64 @@ export default function AuthorizationPage() {
             {dorisConfigured ? '已配置个人 Key' : '尚未配置个人 Key'}
           </p>
           <p className="text-sm leading-6 text-slate-600">
-            配置自己的 Doris
-            Key，用于投放数据、产品决策和复盘。请向数据管理员获取属于本人权限范围的
-            Key；不同 Key 的可见范围由 Doris 源端权限决定。
+            配置自己的 Doris Key，
+            {role === 'designer'
+              ? '用于只读查询投放数据。'
+              : '用于投放数据、产品决策和复盘。'}
+            请向数据管理员获取属于本人权限范围的 Key；不同 Key 的可见范围由
+            Doris 源端权限决定。
           </p>
           <PersonalDorisSettings username={username} />
           <p className="text-xs leading-5 text-slate-500">
-            已配置仅代表凭据已保存，不代表数据连接已验证。保存后前往投放数据页查询并同步产品；更新或撤销
+            已配置仅代表凭据已保存，不代表数据连接已验证。保存后前往投放数据页查询；更新或撤销
             Key 会切换本人的数据缓存空间。
           </p>
         </section>
-        <section className="space-y-5 rounded-2xl border bg-white p-6">
-          <Link2 className="size-6 text-blue-600" />
-          <h2 className="text-lg font-semibold">Meta 桥接授权</h2>
-          <p
-            className={`text-sm ${meta === 'authorized' ? 'text-emerald-700' : 'text-amber-700'}`}
-          >
-            {meta === 'authorized'
-              ? '已授权 · Meta 身份读取成功'
-              : meta === 'checking'
-                ? '正在检测个人桥接'
-                : meta === 'unauthorized'
-                  ? '未授权或授权已失效'
-                  : '暂时无法验证，请检查桥接服务'}
-          </p>
-          {ownerId && (
-            <p className="text-xs text-slate-500">Meta 用户 ID：{ownerId}</p>
-          )}
-          <p className="text-sm leading-6 text-slate-600">
-            打开个人授权页，先确认原广告工具登录的是你自己的 Facebook
-            身份，再授权给当前决策中心用户。也可在该页面撤销本人授权。
-          </p>
-          <Button disabled={!username || opening} onClick={openMeta}>
-            {opening ? '正在打开…' : '新窗口打开 Meta 授权 / 撤销页面'}
-          </Button>
-          <p className="text-xs leading-5 text-slate-500">
-            授权页在新窗口打开，当前页面保留。授权后切回本页将重新检测，也可点击“重新检测”。检测只读取身份，不修改广告；已授权不代表拥有全部广告账户的操作权限。
-          </p>
-          {meta !== 'authorized' && reason && (
-            <p className="text-sm text-amber-700">
-              {reason} {diagnostic && <span>（{diagnostic}）</span>}
+        {role !== 'designer' && (
+          <section className="space-y-5 rounded-2xl border bg-white p-6">
+            <Link2 className="size-6 text-blue-600" />
+            <h2 className="text-lg font-semibold">Meta 桥接授权</h2>
+            <p
+              className={`text-sm ${meta === 'authorized' ? 'text-emerald-700' : 'text-amber-700'}`}
+            >
+              {meta === 'authorized'
+                ? '已授权 · Meta 身份读取成功'
+                : meta === 'checking'
+                  ? '正在检测个人桥接'
+                  : meta === 'unauthorized'
+                    ? '未授权或授权已失效'
+                    : '暂时无法验证，请检查桥接服务'}
             </p>
-          )}
-          {checkedAt && (
-            <p className="text-xs text-slate-400">
-              最近检测：{new Date(checkedAt).toLocaleString()}
+            {ownerId && (
+              <p className="text-xs text-slate-500">Meta 用户 ID：{ownerId}</p>
+            )}
+            <p className="text-sm leading-6 text-slate-600">
+              打开个人授权页，先确认原广告工具登录的是你自己的 Facebook
+              身份，再授权给当前决策中心用户。也可在该页面撤销本人授权。
             </p>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-red-600">
-              {error}
+            <Button disabled={!username || opening} onClick={openMeta}>
+              {opening ? '正在打开…' : '新窗口打开 Meta 授权 / 撤销页面'}
+            </Button>
+            <p className="text-xs leading-5 text-slate-500">
+              授权页在新窗口打开，当前页面保留。授权后切回本页将重新检测，也可点击“重新检测”。检测只读取身份，不修改广告；已授权不代表拥有全部广告账户的操作权限。
             </p>
-          )}
-        </section>
+            {meta !== 'authorized' && reason && (
+              <p className="text-sm text-amber-700">
+                {reason} {diagnostic && <span>（{diagnostic}）</span>}
+              </p>
+            )}
+            {checkedAt && (
+              <p className="text-xs text-slate-400">
+                最近检测：{new Date(checkedAt).toLocaleString()}
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="text-sm text-red-600">
+                {error}
+              </p>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );

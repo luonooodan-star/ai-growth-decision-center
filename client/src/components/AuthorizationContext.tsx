@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 
 export type Connections = {
   username: string;
+  role?: 'operator' | 'designer';
   dorisConfigured: boolean;
   meta: 'checking' | 'authorized' | 'unauthorized' | 'unavailable';
   ownerId?: string;

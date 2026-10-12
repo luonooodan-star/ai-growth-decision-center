@@ -30,8 +30,8 @@ const RoutesComponent = () => {
           element={<Navigate to="/operations" replace />}
         />
         <Route path="skills" element={<SkillIterationPage />} />
+        <Route path="*" element={<Navigate to="/data" replace />} />
       </Route>
-      <Route path="*" element={<ProductOverviewPage />} />
     </Routes>
   );
 };

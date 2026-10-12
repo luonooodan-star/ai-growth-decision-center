@@ -150,7 +150,9 @@ export function configuredDorisUsers(): string[] {
       const active =
         record.username === 'growth' ||
         (Object.hasOwn(accounts, record.username) &&
-          !accounts[record.username].disabled);
+          !accounts[record.username].disabled &&
+          (accounts[record.username].role === undefined ||
+            accounts[record.username].role === 'operator'));
       return active && personalDorisStatus(record.username).configured
         ? [record.username]
         : [];

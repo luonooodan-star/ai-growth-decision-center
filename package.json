@@ -198,6 +198,7 @@
     "dayjs": "^1.11.15"
   },
   "jest": {
+    "modulePathIgnorePatterns": ["<rootDir>/runtime/"],
     "preset": "ts-jest",
     "testEnvironment": "node",
     "testMatch": [

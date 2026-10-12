@@ -7,13 +7,14 @@ import {
   SlidersHorizontal,
   ChartNoAxesCombined,
 } from 'lucide-react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { isCenterSessionError } from '@shared/center-session-error';
 import { AuthorizationContext, type Connections } from './AuthorizationContext';
 
 const Layout = () => {
+  const location = useLocation();
   const [username, setUsername] = useState('');
   const [authError, setAuthError] = useState('');
   const [connection, setConnection] = useState<
@@ -71,8 +72,19 @@ const Layout = () => {
       setUsername(data.username || '');
       setConnection((old) => ({
         ...old,
+        role: data.role === 'designer' ? 'designer' : 'operator',
         dorisConfigured: data.doris?.configured === true,
       }));
+      if (data.role === 'designer') {
+        setConnection((old) => ({
+          ...old,
+          meta: 'unavailable',
+          ownerId: undefined,
+          reason: undefined,
+          diagnostic: undefined,
+        }));
+        return;
+      }
       const result = await axios.get(
         '/api/growth-decision/adjustments/authorization-status',
         { timeout: 50000 },
@@ -144,30 +156,34 @@ const Layout = () => {
                 <Database className="size-3.5" />
                 投放数据
               </NavLink>
-              <NavLink to="/" className={navClass} end>
-                <Activity className="size-3.5" />
-                产品中心
-              </NavLink>
-              <NavLink to="/adjustments" className={navClass}>
-                <SlidersHorizontal className="size-3.5" />
-                广告调整
-              </NavLink>
-              <NavLink to="/operations" className={navClass}>
-                <Activity className="size-3.5" />
-                操作复盘
-              </NavLink>
-              <NavLink to="/analysis" className={navClass}>
-                <ChartNoAxesCombined className="size-4" />
-                分析中心
-              </NavLink>
-              <NavLink to="/metrics" className={navClass}>
-                <Gauge className="size-3.5" />
-                指标库
-              </NavLink>
-              <NavLink to="/skills" className={navClass}>
-                <FlaskConical className="size-3.5" />
-                Skill 迭代
-              </NavLink>
+              {username && connection.role !== 'designer' && (
+                <>
+                  <NavLink to="/" className={navClass} end>
+                    <Activity className="size-3.5" />
+                    产品中心
+                  </NavLink>
+                  <NavLink to="/adjustments" className={navClass}>
+                    <SlidersHorizontal className="size-3.5" />
+                    广告调整
+                  </NavLink>
+                  <NavLink to="/operations" className={navClass}>
+                    <Activity className="size-3.5" />
+                    操作复盘
+                  </NavLink>
+                  <NavLink to="/analysis" className={navClass}>
+                    <ChartNoAxesCombined className="size-4" />
+                    分析中心
+                  </NavLink>
+                  <NavLink to="/metrics" className={navClass}>
+                    <Gauge className="size-3.5" />
+                    指标库
+                  </NavLink>
+                  <NavLink to="/skills" className={navClass}>
+                    <FlaskConical className="size-3.5" />
+                    Skill 迭代
+                  </NavLink>
+                </>
+              )}
             </nav>
             <div className="text-right">
               <p className="text-xs font-medium text-slate-800">当前用户</p>
@@ -184,17 +200,27 @@ const Layout = () => {
               </div>
               <NavLink
                 to="/authorization"
-                className={`mt-1 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${connection.meta === 'authorized' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
+                className={`mt-1 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${(connection.role === 'designer' ? connection.dorisConfigured : connection.meta === 'authorized') ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
               >
-                桥接 ·{' '}
-                {connection.meta === 'checking'
-                  ? '检测中'
-                  : connection.meta === 'authorized'
-                    ? '已授权'
-                    : connection.meta === 'unauthorized'
-                      ? '待授权'
-                      : '连接异常'}
-                {!connection.dorisConfigured && ' · Doris 待配置'}
+                {connection.role === 'designer' ? (
+                  connection.dorisConfigured ? (
+                    'Doris · 已配置'
+                  ) : (
+                    'Doris · 待配置'
+                  )
+                ) : (
+                  <>
+                    桥接 ·{' '}
+                    {connection.meta === 'checking'
+                      ? '检测中'
+                      : connection.meta === 'authorized'
+                        ? '已授权'
+                        : connection.meta === 'unauthorized'
+                          ? '待授权'
+                          : '连接异常'}
+                    {!connection.dorisConfigured && ' · Doris 待配置'}
+                  </>
+                )}
               </NavLink>
               {authError && (
                 <p className="max-w-64 text-xs text-red-600">{authError}</p>
@@ -203,7 +229,14 @@ const Layout = () => {
           </div>
         </header>
         <main>
-          <Outlet />
+          {!username ? (
+            <p className="p-6 text-sm text-slate-500">正在确认访问权限…</p>
+          ) : connection.role === 'designer' &&
+            !['/data', '/authorization'].includes(location.pathname) ? (
+            <Navigate to="/data" replace />
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </AuthorizationContext.Provider>

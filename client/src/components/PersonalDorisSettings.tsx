@@ -74,7 +74,7 @@ export function PersonalDorisSettings({ username }: { username: string }) {
             {configured
               ? '已保存个人凭据；实际数据范围由 Doris 服务端权限决定。'
               : '尚未配置，无法读取业务数据；不会使用管理员凭据。'}{' '}
-            新账号保存后，请在投放数据页查询并同步产品。
+            新账号保存后，请在投放数据页查询数据。
           </p>
           <p className="text-xs text-amber-700">
             请使用本人获授权的 Key，而非管理员全量 Key。Key
