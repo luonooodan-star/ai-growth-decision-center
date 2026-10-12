@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { json } from 'express';
+import { isMellowSharedRoute } from './common/utils/mellow-sharing';
 import {
   CenterSessions,
   centerLoginPage,
@@ -197,6 +198,11 @@ async function bootstrap(): Promise<void> {
         response.setHeader('Cache-Control', 'no-store');
         if (
           request.path.startsWith('/api/growth-decision') &&
+          !(
+            request.method === 'GET' &&
+            request.path === '/api/growth-decision/analysis/sharing'
+          ) &&
+          !isMellowSharedRoute(request.method, request.path, username) &&
           request.path !==
             '/api/growth-decision/adjustments/authorization-link' &&
           request.path !==

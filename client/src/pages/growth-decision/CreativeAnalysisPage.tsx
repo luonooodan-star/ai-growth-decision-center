@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import { MellowSharedRoas } from './MellowSharedRoas';
 import {
   ArrowRight,
   CalendarDays,
@@ -306,6 +307,24 @@ function PromptPanel() {
 }
 
 export default function CreativeAnalysisPage() {
+  const [sharing, setSharing] = useState<{
+    enabled: boolean;
+    recipient: boolean;
+  }>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void axios
+      .get('/api/growth-decision/analysis/sharing', {
+        signal: controller.signal,
+        timeout: 15000,
+      })
+      .then((r) => {
+        setSharing(r.data);
+        if (r.data.recipient) setSource('all');
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [tab, setTab] = useState<'analysis' | 'prompt'>('analysis');
   const [from, setFrom] = useState(() => subDays(shanghaiCalendarToday(), 3));
   const [to, setTo] = useState(() => subDays(shanghaiCalendarToday(), 1));
@@ -558,7 +577,7 @@ export default function CreativeAnalysisPage() {
               disabled={busy}
               onClick={() => void query(true)}
             >
-              重新抓取
+              {sharing?.recipient ? '同步共享数据（缓存优先）' : '重新抓取'}
             </button>
             {busy && job && (
               <button className={button} onClick={() => void stop()}>
@@ -567,8 +586,10 @@ export default function CreativeAnalysisPage() {
             )}
           </div>
           <p className="mt-3 text-xs leading-6 text-slate-500">
-            仅点击查询后读取 Doris，按个人 Key
-            权限取数；历史有效缓存优先。下方标签、国家和平台交叉筛选不发起新查询。不会执行广告调整。
+            {sharing?.recipient
+              ? '定向共享：growth 的 Mellow iOS / Android 全量分析数据（含自然量），不共享 Key，不改变个人广告权限。仅查询时按需同步，缓存优先。'
+              : '仅点击查询后读取 Doris，按个人 Key 权限取数；历史有效缓存优先。'}
+            下方标签、国家和平台交叉筛选不发起新查询。不会执行广告调整。
           </p>
           {job && (
             <p role="status" className="mt-2 text-sm text-blue-700">
@@ -585,6 +606,12 @@ export default function CreativeAnalysisPage() {
             </p>
           )}
         </section>
+        {sharing?.enabled && (
+          <MellowSharedRoas
+            start={format(from, 'yyyy-MM-dd')}
+            end={format(to, 'yyyy-MM-dd')}
+          />
+        )}
         {!report ? (
           <section className={`${box} px-6 py-16 text-center`}>
             <Filter className="mx-auto size-8 text-blue-500" />
@@ -605,6 +632,7 @@ export default function CreativeAnalysisPage() {
             <div className="flex flex-wrap justify-between gap-3 text-xs text-slate-500">
               <p>
                 当前结果：{report.scope.start} ～ {report.scope.end} ·{' '}
+                {report.sharedOwner ? 'growth 定向共享 · ' : ''}
                 {report.scope.platform} ·{' '}
                 {report.cache ? '有效缓存' : '本次读取'} ·{' '}
                 {new Date(report.generatedAt).toLocaleString('zh-CN')}

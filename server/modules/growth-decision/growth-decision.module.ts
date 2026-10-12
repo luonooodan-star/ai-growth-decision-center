@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CreativeAnalysisController } from './creative-analysis.controller';
 import { CreativeAnalysisService } from './creative-analysis.service';
+import { MellowSharingService } from './mellow-sharing.service';
 import { PersonalDorisController } from './personal-doris.controller';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 
@@ -39,6 +40,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    MellowSharingService,
     CreativeAnalysisService,
     MetaAdjustmentService,
     SkillReviewService,
