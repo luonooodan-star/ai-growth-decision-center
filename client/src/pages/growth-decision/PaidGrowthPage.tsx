@@ -105,7 +105,11 @@ const errorText = (e: unknown) =>
     : e instanceof Error
       ? e.message
       : '请求失败';
-const columns: Array<{ key: keyof BiRow; label: string; decimals?: number }> = [
+const allColumns: Array<{
+  key: keyof BiRow;
+  label: string;
+  decimals?: number;
+}> = [
   { key: 'spend', label: '消耗 ($)' },
   { key: 'impressions', label: '展示', decimals: 0 },
   { key: 'clicks', label: '点击', decimals: 0 },
@@ -192,6 +196,9 @@ function DateRangeFilter({
 export default function PaidGrowthPage() {
   const { role } = useAuthorization();
   const designer = role === 'designer';
+  const columns = designer
+    ? allColumns.filter((c) => !['revenue', 'd0Roas', 'events'].includes(c.key))
+    : allColumns;
   const [mellowSharing, setMellowSharing] = useState(false);
   const [mellowScope, setMellowScope] = useState<{
     start: string;
@@ -227,6 +234,7 @@ export default function PaidGrowthPage() {
         setError(`指标标准读取失败：${errorText(e)}`);
       });
   useEffect(() => {
+    if (designer) return;
     void refreshStandards();
     const refresh = () => {
       void refreshStandards();
@@ -504,7 +512,10 @@ export default function PaidGrowthPage() {
     ],
   );
   const issues = days.flatMap((day) =>
-    (['daily', 'revenue', 'events'] as const).flatMap((key) =>
+    (designer
+      ? (['daily'] as const)
+      : (['daily', 'revenue', 'events'] as const)
+    ).flatMap((key) =>
       day[key].message
         ? [
             `${day.date} · ${{ daily: '投放', revenue: 'D0 收入', events: 'D0 事件' }[key]}：${day[key].message}`,
@@ -804,26 +815,28 @@ export default function PaidGrowthPage() {
           ['Adjust 安装', total('installs')],
           ['当前 D0 收入 ($)', total('revenue')],
           ['当前 D0 ROAS (%)', summary.d0Roas],
-        ].map(([label, value]) => (
-          <section
-            key={String(label)}
-            className="rounded-2xl border bg-white p-5"
-          >
-            <p className="text-sm text-slate-500">
-              {label === '消耗 ($)'
-                ? `${label} · ${loadedMedia ? channelLabel(loadedMedia) : '全部渠道'}`
-                : label}
-            </p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums">
-              {number(value as number | null)}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {busy
-                ? '读取尚未完成，当前为已返回范围'
-                : `${days.length} 天 · ${rows.length} 个对象`}
-            </p>
-          </section>
-        ))}
+        ]
+          .filter((_, index) => !designer || index < 2)
+          .map(([label, value]) => (
+            <section
+              key={String(label)}
+              className="rounded-2xl border bg-white p-5"
+            >
+              <p className="text-sm text-slate-500">
+                {label === '消耗 ($)'
+                  ? `${label} · ${loadedMedia ? channelLabel(loadedMedia) : '全部渠道'}`
+                  : label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums">
+                {number(value as number | null)}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {busy
+                  ? '读取尚未完成，当前为已返回范围'
+                  : `${days.length} 天 · ${rows.length} 个对象`}
+              </p>
+            </section>
+          ))}
       </div>
       {mellowSharing &&
         appId === '3' &&
@@ -867,7 +880,9 @@ export default function PaidGrowthPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>数据日</TableHead>
-                  <TableHead>投放 / D0 收入 / 事件</TableHead>
+                  <TableHead>
+                    {designer ? '投放数据' : '投放 / D0 收入 / 事件'}
+                  </TableHead>
                   <TableHead className="text-right">
                     消耗 ($) ·{' '}
                     {loadedMedia ? channelLabel(loadedMedia) : '全部渠道'}
@@ -901,7 +916,10 @@ export default function PaidGrowthPage() {
                         {day.date}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {[day.daily, day.revenue, day.events]
+                        {(designer
+                          ? [day.daily]
+                          : [day.daily, day.revenue, day.events]
+                        )
                           .map((p) => states[p.state])
                           .join(' / ')}
                       </TableCell>
@@ -966,32 +984,40 @@ export default function PaidGrowthPage() {
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 text-xs">
-          <Button
-            variant={badFirst ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              setBadFirst(!badFirst);
-            }}
-          >
-            不达标优先
-          </Button>
-          <Button
-            variant={badOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              setBadOnly(!badOnly);
-            }}
-          >
-            仅看不达标（{rows.filter(hasBad).length}）
-          </Button>
-          <span className="text-red-700">红：未达产品标准</span>
-          <span className="text-emerald-700">绿：达到标准（含等于）</span>
-          <span className="text-slate-500">
-            灰：未设标准/缺数。当前 D0
-            为抓取时数据，非成熟结论；筛选仅影响明细。
-          </span>
-        </div>
+        {designer && (
+          <p className="border-t px-5 py-3 text-xs text-slate-500">
+            设计只读：仅展示本人 Doris Key
+            授权范围内的投放数据；不查询或展示收入、D0 ROAS 和收入事件。
+          </p>
+        )}
+        {!designer && (
+          <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3 text-xs">
+            <Button
+              variant={badFirst ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setBadFirst(!badFirst);
+              }}
+            >
+              不达标优先
+            </Button>
+            <Button
+              variant={badOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setBadOnly(!badOnly);
+              }}
+            >
+              仅看不达标（{rows.filter(hasBad).length}）
+            </Button>
+            <span className="text-red-700">红：未达产品标准</span>
+            <span className="text-emerald-700">绿：达到标准（含等于）</span>
+            <span className="text-slate-500">
+              灰：未设标准/缺数。当前 D0
+              为抓取时数据，非成熟结论；筛选仅影响明细。
+            </span>
+          </div>
+        )}
         <div>
           <Table
             containerClassName="max-h-[65vh] overflow-auto"
@@ -1057,18 +1083,19 @@ export default function PaidGrowthPage() {
                           {row.campaignName}
                         </button>
                       )}
-                      {row.missingDays > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="mt-2 text-amber-700"
-                        >
-                          {row.spend === null
-                            ? '投放数据未返回'
-                            : reportLevels.includes('adgroups')
-                              ? '广告组不支持 D0'
-                              : '当前 D0 未返回'}
-                        </Badge>
-                      )}
+                      {row.missingDays > 0 &&
+                        (!designer || row.spend === null) && (
+                          <Badge
+                            variant="outline"
+                            className="mt-2 text-amber-700"
+                          >
+                            {row.spend === null
+                              ? '投放数据未返回'
+                              : reportLevels.includes('adgroups')
+                                ? '广告组不支持 D0'
+                                : '当前 D0 未返回'}
+                          </Badge>
+                        )}
                     </TableCell>
                     {columns.map((c) => {
                       const signal = biMetricSignal(row, c.key, standards);
@@ -1160,32 +1187,34 @@ export default function PaidGrowthPage() {
           onClose={() => setSelectedCampaign(null)}
         />
       )}
-      <details className="rounded-xl border bg-white p-4 text-sm text-slate-600">
-        <summary className="cursor-pointer font-medium">
-          指标口径与决策页的关系
-        </summary>
-        <div className="mt-3 space-y-2">
-          <p>
-            Adjust CPI = 消耗 / Adjust 安装，与决策页一致。媒体 CPI
-            单独展示，不能混用。买量 CPM = 消耗 / 展示 × 1000，不是产品变现
-            eCPM。
-          </p>
-          <p>
-            本页 D0 = 查询时已入库 D0 收入 /
-            全部媒体消耗（含未完成观察期的数据）；决策页 cohort D0 可能使用匹配
-            cohort 消耗，分母不同，不应直接判定为数据错误。今日
-            数据可能继续回补，不用于直接判定达标。未返回保持空值，不当作零。
-          </p>
-          <p>
-            收入事件数不是付费人数；广告组不具备 cohort 归因，故不展示推算
-            D0。CPA、次留、IPU 和变现 eCPM
-            需独立可靠数据源，不能从现有字段强行计算。
-          </p>
-          <p>
-            此页查询缓存不会替代决策快照。进入产品页按原流程抓取、分析、人工确认；不同产品不共享达标线。
-          </p>
-        </div>
-      </details>
+      {!designer && (
+        <details className="rounded-xl border bg-white p-4 text-sm text-slate-600">
+          <summary className="cursor-pointer font-medium">
+            指标口径与决策页的关系
+          </summary>
+          <div className="mt-3 space-y-2">
+            <p>
+              Adjust CPI = 消耗 / Adjust 安装，与决策页一致。媒体 CPI
+              单独展示，不能混用。买量 CPM = 消耗 / 展示 × 1000，不是产品变现
+              eCPM。
+            </p>
+            <p>
+              本页 D0 = 查询时已入库 D0 收入 /
+              全部媒体消耗（含未完成观察期的数据）；决策页 cohort D0
+              可能使用匹配 cohort 消耗，分母不同，不应直接判定为数据错误。今日
+              数据可能继续回补，不用于直接判定达标。未返回保持空值，不当作零。
+            </p>
+            <p>
+              收入事件数不是付费人数；广告组不具备 cohort 归因，故不展示推算
+              D0。CPA、次留、IPU 和变现 eCPM
+              需独立可靠数据源，不能从现有字段强行计算。
+            </p>
+            <p>
+              此页查询缓存不会替代决策快照。进入产品页按原流程抓取、分析、人工确认；不同产品不共享达标线。
+            </p>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

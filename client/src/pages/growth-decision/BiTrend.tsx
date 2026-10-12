@@ -3,6 +3,7 @@ import { getBiDay } from '@/api/paid-growth';
 import type { BiDay } from '@shared/paid-growth.interface';
 import { biSummary, trendTickIndexes } from '@shared/bi-summary';
 import { Button } from '@/components/ui/button';
+import { useAuthorization } from '@/components/AuthorizationContext';
 
 type Scope = {
   start: string;
@@ -29,8 +30,12 @@ export function BiTrend({
   target: number | null;
   wings: boolean;
 }) {
+  const { role } = useAuthorization();
+  const designer = role === 'designer';
   const [range, setRange] = useState<'period' | 'seven'>('period');
-  const [metric, setMetric] = useState<'roas' | 'spend' | 'cost'>('roas');
+  const [metric, setMetric] = useState<'roas' | 'spend' | 'cost'>(
+    designer ? 'spend' : 'roas',
+  );
   const [excludeToday, setExcludeToday] = useState(false);
   const [days, setDays] = useState<Record<string, BiDay>>({});
   const [loading, setLoading] = useState(false);
@@ -181,17 +186,19 @@ export function BiTrend({
             ['spend', '媒体消耗'],
             ['cost', wings ? 'eCPM' : 'D0 事件成本'],
           ] as const
-        ).map(([k, l]) => (
-          <Button
-            key={k}
-            size="sm"
-            variant={metric === k ? 'default' : 'ghost'}
-            aria-pressed={metric === k}
-            onClick={() => setMetric(k)}
-          >
-            {l}
-          </Button>
-        ))}
+        )
+          .filter(([k]) => !designer || k === 'spend')
+          .map(([k, l]) => (
+            <Button
+              key={k}
+              size="sm"
+              variant={metric === k ? 'default' : 'ghost'}
+              aria-pressed={metric === k}
+              onClick={() => setMetric(k)}
+            >
+              {l}
+            </Button>
+          ))}
       </div>
       {points.some((p) => p.date === today) && (
         <div className="my-2 flex flex-wrap items-center gap-2">

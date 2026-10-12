@@ -12,6 +12,8 @@ import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-d
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { centerIdentity } from '@server/common/utils/center-identity';
+import * as centerRoles from '@server/common/utils/center-role';
 
 const dimension = {
   app_id: 11,
@@ -311,6 +313,37 @@ describe('BI persistence and product registration', () => {
       { queryMetric } as unknown as GrowthDataFetchService,
       new GrowthDecisionService(db),
     );
+  test.each(['zxy', 'cz'])(
+    'designer %s never queries cohort or returns cached revenue',
+    async (username) => {
+      const role = jest
+        .spyOn(centerRoles, 'readCenterRole')
+        .mockResolvedValue('designer');
+      try {
+        const query = jest.fn(async () => ({ rows: [] }));
+        const s = service(query);
+        const q = { date: '2026-10-12', level: 'creatives' as const };
+        // Seed a revenue cache through the legacy operator path first.
+        await s.day(q);
+        query.mockClear();
+        const result = await centerIdentity.run(username, () =>
+          s.day({ ...q, refresh: '1' }),
+        );
+        expect(result.revenue).toEqual({ state: 'unsupported', rows: [] });
+        expect(result.events).toEqual({ state: 'unsupported', rows: [] });
+        expect(query).toHaveBeenCalled();
+        for (const [args] of query.mock.calls as unknown as [
+          Record<string, unknown>,
+        ][]) {
+          expect(args.dataset).toBe('bi_ads.ads_paid_acquisition_daily');
+          expect(args.metrics).not.toContain('adjust_revenue');
+          expect(args.metrics).not.toContain('adjust_revenue_events');
+        }
+      } finally {
+        role.mockRestore();
+      }
+    },
+  );
   test('cached successful data survives source failure and reports stale', async () => {
     const query = jest.fn(async () => ({ rows: [] }));
     const s = service(query);

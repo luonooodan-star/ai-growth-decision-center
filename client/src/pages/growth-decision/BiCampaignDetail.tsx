@@ -5,6 +5,7 @@ import type { MetaAdEntity } from '@shared/api.interface';
 import { biRows } from '@shared/paid-growth';
 import { adsetEvent } from '@shared/meta-targets';
 import { getBiDay } from '@/api/paid-growth';
+import { useAuthorization } from '@/components/AuthorizationContext';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,8 @@ export function BiCampaignDetail({
   productId?: string;
   onClose: () => void;
 }) {
+  const { role } = useAuthorization();
+  const designer = role === 'designer';
   const [trend, setTrend] = useState<TrendDay[]>([]);
   const [loading, setLoading] = useState(true);
   const matching = useMemo(
@@ -148,8 +151,8 @@ export function BiCampaignDetail({
           </div>
         )}
         <p className="text-xs text-slate-500">
-          截止 {endDate} 的近 7 天，按日串行读取并复用服务端缓存。空值不当作
-          0；D0 为抓取时已入库数据。
+          截止 {endDate} 的近 7 天，按日串行读取并复用服务端缓存。空值不当作 0。
+          {!designer && 'D0 为抓取时已入库数据。'}
           {loading ? `已返回 ${trend.length}/7 天…` : ''}
         </p>
         <Table containerClassName="max-h-80 overflow-auto">
@@ -164,29 +167,35 @@ export function BiCampaignDetail({
                 'CPM ($)',
                 'D0 ROAS (%)',
                 '状态',
-              ].map((h) => (
-                <TableHead key={h}>{h}</TableHead>
-              ))}
+              ]
+                .filter((h) => !designer || h !== 'D0 ROAS (%)')
+                .map((h) => (
+                  <TableHead key={h}>{h}</TableHead>
+                ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {trend.map((d) => (
               <TableRow key={d.date}>
                 <TableCell>{d.date}</TableCell>
-                {(
-                  ['spend', 'installs', 'cpi', 'ctr', 'cpm', 'd0Roas'] as const
-                ).map((k) => (
-                  <TableCell key={k} className="tabular-nums">
-                    {display(d.row?.[k])}
-                  </TableCell>
-                ))}
+                {(['spend', 'installs', 'cpi', 'ctr', 'cpm', 'd0Roas'] as const)
+                  .filter((k) => !designer || k !== 'd0Roas')
+                  .map((k) => (
+                    <TableCell key={k} className="tabular-nums">
+                      {display(d.row?.[k])}
+                    </TableCell>
+                  ))}
                 <TableCell className="max-w-56 whitespace-normal text-xs text-slate-500">
                   {d.error ||
                     (!d.row
                       ? '当日未返回该系列记录'
-                      : d.row.missingDays
-                        ? '部分指标未返回'
-                        : '已返回')}
+                      : designer
+                        ? d.row.spend === null
+                          ? '投放数据未返回'
+                          : '已返回'
+                        : d.row.missingDays
+                          ? '部分指标未返回'
+                          : '已返回')}
                   {d.updatedAt && (
                     <span className="block">
                       {new Date(d.updatedAt).toLocaleString('zh-CN')}

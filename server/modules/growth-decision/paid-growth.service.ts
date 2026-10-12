@@ -18,6 +18,8 @@ import { GrowthDataFetchService } from './growth-data-fetch.service';
 import { GrowthDecisionService } from './growth-decision.service';
 import { completeBiQuery } from './paid-growth-query';
 import { personalScopeKey } from '../../common/utils/personal-doris';
+import { centerIdentity } from '../../common/utils/center-identity';
+import { readCenterRole } from '../../common/utils/center-role';
 
 const DAILY = 'bi_ads.ads_paid_acquisition_daily';
 const COHORT = 'bi_ads.ads_paid_acquisition_cohort_metric';
@@ -81,6 +83,10 @@ export class PaidGrowthService {
 
   async day(q: BiQuery): Promise<BiDay> {
     validateBiQuery(q);
+    const username = centerIdentity.getStore();
+    const designer = username
+      ? (await readCenterRole(username)) === 'designer'
+      : false;
     const levels = biQueryLevels(q);
     const filters = {
       ...(q.appId ? { app_id: Number(q.appId) } : {}),
@@ -112,11 +118,15 @@ export class PaidGrowthService {
       ? campaignMediaById(dailyRaw.rows)
       : undefined;
     // Cohort source has no adgroup dimension: never allocate campaign revenue to adgroups.
-    if (levels.includes('adgroups')) {
+    if (designer || levels.includes('adgroups')) {
       const unsupported: BiPart = {
         rows: [],
         state: 'unsupported',
-        message: 'cohort 数据源不提供广告组维度；D0 指标请在系列级查看',
+        ...(designer
+          ? {}
+          : {
+              message: 'cohort 数据源不提供广告组维度；D0 指标请在系列级查看',
+            }),
       };
       return {
         date: q.date,
