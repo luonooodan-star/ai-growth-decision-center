@@ -22,6 +22,7 @@
     "start": "NODE_ENV=production node dist/server/standalone.js",
     "start:standalone": "NODE_ENV=production node dist/server/standalone.js",
     "test": "jest",
+    "test:company-release": "node --test test/company-release.test.mjs",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js",
     "eslint": "eslint . --quiet",

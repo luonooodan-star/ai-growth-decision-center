@@ -51,4 +51,4 @@ export SERVER_HOST="0.0.0.0"
 export SERVER_PORT="8081"
 export GROWTH_DATABASE_PATH="$project_dir/runtime/ai-growth.sqlite"
 
-exec env NODE_ENV=production node "$project_dir/dist/server/standalone.js"
+exec env NODE_ENV=production node "$project_dir/scripts/company-mac/run-release.mjs"

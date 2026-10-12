@@ -40,7 +40,7 @@ import { MetaOperationsService } from './meta-operations.service';
 import { buildCampaignSnapshots } from './campaign-snapshots';
 import { campaignFetchQuality } from './campaign-fetch-quality';
 import { DorisCompleteReader } from './doris-complete-reader';
-import { DorisQueryGate } from './doris-query-gate';
+import { DorisQueryGate, dorisWorkPriority } from './doris-query-gate';
 import { campaignMetric } from './campaign-decision-engine';
 import {
   dorisNumber,
@@ -52,6 +52,18 @@ import {
 } from './doris-result-normalizer';
 
 const FETCH_INTERVAL_MS = 60 * 60 * 1000;
+const SCHEDULE_CHECK_MS = 5 * 60 * 1000;
+export function productSyncDue(
+  product: Pick<GrowthProduct, 'status' | 'lastSyncAt'>,
+  now = Date.now(),
+) {
+  return (
+    product.status === 'active' &&
+    (!product.lastSyncAt ||
+      !Number.isFinite(Date.parse(product.lastSyncAt)) ||
+      now - Date.parse(product.lastSyncAt) >= FETCH_INTERVAL_MS)
+  );
+}
 const MCP_URL = process.env.DORIS_MCP_URL || 'http://192.168.3.102:8766/mcp';
 const KEYCHAIN_SERVICE = 'ai-growth-doris-superset-mcp';
 const DELIVERY_METRIC_KEYS: GrowthDeliveryMetricKey[] = [
@@ -73,7 +85,6 @@ const DELIVERY_METRIC_KEYS: GrowthDeliveryMetricKey[] = [
 export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(GrowthDataFetchService.name);
   private timer?: NodeJS.Timeout;
-  private startupTimer?: NodeJS.Timeout;
   private observationTimer?: NodeJS.Timeout;
   private observationCheckRunning = false;
   private scheduledPass?: Promise<unknown>;
@@ -114,57 +125,35 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         });
     }
     this.database.pruneFetchCheckpoints();
-    this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
+    this.nextScheduledAt = new Date(Date.now() + SCHEDULE_CHECK_MS);
     this.timer = setInterval(() => {
-      this.nextScheduledAt = new Date(Date.now() + FETCH_INTERVAL_MS);
+      this.nextScheduledAt = new Date(Date.now() + SCHEDULE_CHECK_MS);
       void this.scheduledPersonalFetch().catch((error: unknown) => {
         this.logger.error(
           error instanceof Error ? error.message : String(error),
         );
       });
-    }, FETCH_INTERVAL_MS);
+    }, SCHEDULE_CHECK_MS);
     this.timer.unref();
     this.observationTimer = setInterval(() => {
       void this.fetchDueObservations();
     }, 5 * 60000);
     this.observationTimer.unref();
-    // A deployment/restart must not keep postponing the first sync by another hour.
-    this.startupTimer = setTimeout(() => {
-      if (process.env.GROWTH_PERSONAL_DATA === '1') {
-        void this.scheduledPersonalFetch().catch(() =>
-          this.logger.error('个人启动同步失败'),
-        );
-        return;
-      }
-      const overdue = this.database
-        .listProducts()
-        .some(
-          (p) =>
-            p.status === 'active' &&
-            (!p.lastSyncAt ||
-              !Number.isFinite(Date.parse(p.lastSyncAt)) ||
-              Date.now() - Date.parse(p.lastSyncAt) >= FETCH_INTERVAL_MS),
-        );
-      if (overdue)
-        void this.trigger('scheduled').catch((error) =>
-          this.logger.error(String(error)),
-        );
-    }, 60_000);
-    this.startupTimer.unref();
+    // First check after five minutes; a restart never forces fresh data to refetch.
   }
 
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
-    if (this.startupTimer) clearTimeout(this.startupTimer);
     if (this.observationTimer) clearInterval(this.observationTimer);
   }
   private async fetchDueObservations() {
-    if (this.observationCheckRunning) return;
+    if (this.observationCheckRunning || this.queryGate.isInteractiveBusy())
+      return;
     this.observationCheckRunning = true;
     const capture = async () => {
       if (this.activeRun) return;
       for (const productId of this.metaOperations.trackingDueProducts()) {
-        if (this.activeRun) break;
+        if (this.activeRun || this.queryGate.isInteractiveBusy()) break;
         await this.trigger('scheduled', productId, 1);
       }
     };
@@ -195,12 +184,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     return task;
   }
   private async runScheduledPersonalFetch() {
+    if (this.queryGate.isInteractiveBusy()) return;
     if (process.env.GROWTH_PERSONAL_DATA !== '1')
       return this.trigger('scheduled');
     for (const username of configuredDorisUsers()) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (this.queryGate.isInteractiveBusy()) break;
       try {
         await runPersonalData(username, async () => {
-          if (this.database.listProducts().some((p) => p.status === 'active'))
+          if (
+            !this.activeRun &&
+            this.database.listProducts().some((p) => productSyncDue(p))
+          )
             await this.trigger('scheduled');
         });
       } catch {
@@ -235,12 +230,12 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException('其他产品正在抓取，请稍后重试');
       return this.activeRun;
     }
-    this.activeRun = this.runProducts(
-      trigger,
-      productId,
-      historyDays,
-      resumeMissing,
-    );
+    const run = () =>
+      this.runProducts(trigger, productId, historyDays, resumeMissing);
+    this.activeRun =
+      trigger === 'scheduled'
+        ? dorisWorkPriority.run('background', run)
+        : run();
     try {
       return await this.activeRun;
     } finally {
@@ -261,11 +256,18 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
         ) as GrowthProduct[])
       : this.database
           .listProducts()
-          .filter((product) => product.status === 'active');
-    if (!products.length) throw new Error('没有可抓取的产品');
+          .filter((product) =>
+            trigger === 'scheduled'
+              ? productSyncDue(product)
+              : product.status === 'active',
+          );
+    if (!products.length && trigger !== 'scheduled')
+      throw new Error('没有可抓取的产品');
 
     const results: GrowthFetchRun[] = [];
     for (const product of products) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (trigger === 'scheduled' && this.queryGate.isInteractiveBusy()) break;
       results.push(
         await this.fetchProduct(product, trigger, historyDays, resumeMissing),
       );
@@ -321,10 +323,9 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
       const degradationNotes: string[] = [];
       const endDate = this.dateString(new Date());
       const start = new Date();
-      const requestedHistoryDays: number =
-        trigger === 'manual' && historyDays
-          ? Math.min(30, Math.max(1, Math.round(historyDays)))
-          : 8;
+      const requestedHistoryDays: number = historyDays
+        ? Math.min(30, Math.max(1, Math.round(historyDays)))
+        : 8;
       // 包含今天在内恰好 N 天，避免“补近 7 天”实际查询 8 天。
       start.setDate(start.getDate() - (requestedHistoryDays - 1));
       const defaultStartDate: string = this.dateString(start);
@@ -2401,7 +2402,11 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
   async queryMetric(
     argumentsValue: Record<string, unknown>,
   ): Promise<DorisQueryResult> {
-    const key = JSON.stringify([personalScopeKey(), argumentsValue]);
+    const key = JSON.stringify([
+      personalScopeKey(),
+      dorisWorkPriority.getStore() || 'interactive',
+      argumentsValue,
+    ]);
     const existing = this.metricPending.get(key);
     if (existing) return existing;
     if (this.metricPending.size >= 128)
@@ -2422,6 +2427,7 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
           limit: Math.min(1000, Number(argumentsValue.limit) || 1000),
         }),
       personalScopeKey(),
+      dorisWorkPriority.getStore() === 'background',
     );
     const object: Record<string, unknown> | undefined =
       typeof result === 'object' && result !== null

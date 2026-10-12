@@ -53,7 +53,8 @@ async function bootstrap(): Promise<void> {
   const host: string = process.env.SERVER_HOST || '127.0.0.1';
   const port: number = Number(process.env.SERVER_PORT || '8081');
   const accessPassword: string = process.env.GROWTH_BASIC_AUTH_PASSWORD || '';
-  const clientDirectory: string = join(process.cwd(), 'dist/client');
+  const clientDirectory: string =
+    process.env.GROWTH_CLIENT_DIRECTORY || join(process.cwd(), 'dist/client');
 
   if (accessPassword.length < 12) {
     throw new Error('GROWTH_BASIC_AUTH_PASSWORD 至少需要 12 位');
@@ -78,7 +79,10 @@ async function bootstrap(): Promise<void> {
     ): Promise<void> => {
       try {
         if (request.path === '/health/live') {
-          response.json({ ok: true });
+          response.json({
+            ok: true,
+            releaseId: process.env.GROWTH_RELEASE_ID || 'legacy',
+          });
           return;
         }
         response.setHeader('Cache-Control', 'no-store');
