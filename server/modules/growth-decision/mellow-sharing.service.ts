@@ -123,7 +123,7 @@ export class MellowSharingService {
   roas(query: CreativeAnalysisQuery): Promise<MellowSharedRoas> {
     const revision = this.grant();
     this.validate(query);
-    const key = `${revision}:${query.start}:${query.end}`;
+    const key = `${revision}:${query.start}:${query.end}:${query.refresh === true ? 'refresh' : 'cached'}`;
     const active = this.roasPending.get(key);
     if (active) return active;
     if (this.roasPending.size >= 2)
@@ -148,7 +148,12 @@ export class MellowSharingService {
     const today = new Date().toLocaleDateString('en-CA', {
       timeZone: 'Asia/Shanghai',
     });
-    const ttl = q.end < today ? 86400000 : 300000;
+    // Recent cohorts are backfilled after the calendar day closes. Keep the
+    // short TTL for the last three days; an explicit refresh bypasses all TTLs.
+    const recentStart = new Date(Date.parse(today) - 3 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    const ttl = q.end >= recentStart ? 300000 : 86400000;
     const [daily, cohort] = await Promise.all([
       this.bi.part(
         {
@@ -157,7 +162,7 @@ export class MellowSharingService {
           metrics: ['spend'],
           filters_json: JSON.stringify({ app_id: 3 }),
         },
-        false,
+        q.refresh === true,
         ttl,
       ),
       this.bi.part(
@@ -172,7 +177,7 @@ export class MellowSharingService {
             cohort_unit: 'D',
           }),
         },
-        false,
+        q.refresh === true,
         ttl,
       ),
     ]);

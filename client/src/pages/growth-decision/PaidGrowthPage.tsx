@@ -203,6 +203,7 @@ export default function PaidGrowthPage() {
   const [mellowScope, setMellowScope] = useState<{
     start: string;
     end: string;
+    refresh: boolean;
     revision: number;
   } | null>(null);
   useEffect(() => {
@@ -337,6 +338,7 @@ export default function PaidGrowthPage() {
         ? {
             start: format(range.from, 'yyyy-MM-dd'),
             end: format(range.to, 'yyyy-MM-dd'),
+            refresh,
             revision: Date.now(),
           }
         : null,

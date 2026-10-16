@@ -5,10 +5,12 @@ import type { MellowSharedRoas as Report } from '@shared/mellow-sharing.interfac
 export function MellowSharedRoas({
   start,
   end,
+  refresh,
   revision,
 }: {
   start: string;
   end: string;
+  refresh: boolean;
   revision: number;
 }) {
   const [report, setReport] = useState<Report>();
@@ -22,7 +24,7 @@ export function MellowSharedRoas({
       try {
         const { data } = await axios.post<Report>(
           '/api/growth-decision/analysis/mellow-roas',
-          { start, end, platform: 'ios' },
+          { start, end, platform: 'ios', refresh },
           { signal: controller.signal, timeout: 150000 },
         );
         if (!controller.signal.aborted) setReport(data);
@@ -39,7 +41,7 @@ export function MellowSharedRoas({
     };
     void sync();
     return () => controller.abort();
-  }, [start, end, revision]);
+  }, [start, end, refresh, revision]);
   const value = (n: number | null | undefined, suffix = '') =>
     n == null ? '—' : `${n.toFixed(2)}${suffix}`;
   return (

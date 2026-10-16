@@ -51,13 +51,11 @@ function setup() {
   return { service, analysis, bi };
 }
 beforeEach(() =>
-  jest
-    .mocked(personalDorisStatus)
-    .mockReturnValue({
-      configured: true,
-      revision: 'owner-r1',
-      updatedAt: undefined,
-    }),
+  jest.mocked(personalDorisStatus).mockReturnValue({
+    configured: true,
+    revision: 'owner-r1',
+    updatedAt: undefined,
+  }),
 );
 it('grants only the requested users and fixed analysis routes, not ad writes or generic BI', () => {
   const { service, analysis } = setup();
@@ -116,24 +114,20 @@ it('isolates viewer handles; stopping one viewer does not cancel the shared sour
   expect(asUser('fjx', () => service.cancel(a.id)).state).toBe('cancelled');
   expect(asUser('jsa', () => service.status(b.id)).state).toBe('running');
   expect(analysis.cancel).not.toHaveBeenCalled();
-  jest
-    .mocked(personalDorisStatus)
-    .mockReturnValue({
-      configured: true,
-      revision: 'changed',
-      updatedAt: undefined,
-    });
+  jest.mocked(personalDorisStatus).mockReturnValue({
+    configured: true,
+    revision: 'changed',
+    updatedAt: undefined,
+  });
   expect(() => asUser('jsa', () => service.status(b.id))).toThrow('失效');
 });
 it('fails closed when growth credentials are revoked', () => {
   const { service, bi } = setup();
-  jest
-    .mocked(personalDorisStatus)
-    .mockReturnValue({
-      configured: false,
-      revision: 'revoked',
-      updatedAt: undefined,
-    });
+  jest.mocked(personalDorisStatus).mockReturnValue({
+    configured: false,
+    revision: 'revoked',
+    updatedAt: undefined,
+  });
   expect(() => asUser('fjx', () => service.roas(query))).toThrow('未配置');
   expect(bi.part).not.toHaveBeenCalled();
 });
@@ -167,6 +161,42 @@ it('coalesces ROAS reads across viewers and includes organic plus Web revenue wi
   for (const [args, force] of bi.part.mock.calls) {
     expect(JSON.parse(String(args.filters_json)).app_id).toBe(3);
     expect(force).toBe(false);
+  }
+});
+it("refreshes yesterday's backfilled ROAS and bypasses both source caches on manual refresh", async () => {
+  const { service, bi } = setup();
+  bi.part.mockResolvedValue({
+    state: 'fresh',
+    updatedAt: new Date().toISOString(),
+    rows: [{ app_id: 3, media_source: 'organic', spend: 10, metric_value: 5 }],
+  });
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Shanghai',
+  });
+  const yesterday = new Date(Date.parse(today) - 86400000)
+    .toISOString()
+    .slice(0, 10);
+  await asUser('fjx', () =>
+    service.roas({ start: yesterday, end: yesterday, platform: 'ios' }),
+  );
+  expect(bi.part).toHaveBeenCalledTimes(2);
+  for (const [, force, ttl] of bi.part.mock.calls) {
+    expect(force).toBe(false);
+    expect(ttl).toBe(300000);
+  }
+  bi.part.mockClear();
+  await asUser('jsa', () =>
+    service.roas({
+      start: yesterday,
+      end: yesterday,
+      platform: 'ios',
+      refresh: true,
+    }),
+  );
+  expect(bi.part).toHaveBeenCalledTimes(2);
+  for (const [, force, ttl] of bi.part.mock.calls) {
+    expect(force).toBe(true);
+    expect(ttl).toBe(300000);
   }
 });
 it('does not present missing data or zero spend as a zero ROAS', async () => {
