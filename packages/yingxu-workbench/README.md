@@ -20,7 +20,7 @@ python3 server.py
 
 - 素材库：列表、卡片、搜索、脚本/制作人/分类筛选、CSV 导出、视频详情。
 - 上传：MP4/MOV、批量/文件夹、每条 500 MB、每批 200 条、流式落盘、SHA-256 产品内去重、批次封存。
-- 视频：FFmpeg 元数据、首帧封面、5 个采样关键帧、HTTP Range 播放；封存后后台处理，重启恢复排队。
+- 视频：FFmpeg 元数据、首帧封面、覆盖开头至结尾的 5–40 个采样关键帧、HTTP Range 播放；封存后后台处理，重启恢复排队。
 - 复核：受控标签、主脚本/来源确认、较早批次来源约束、版本冲突检测、人工锁定、审计与最新复核撤销。
 - 脚本：创建、按脚本浏览；从未归组素材创建独立候选、编辑、移动、拆组、逐条核对后确认入库。默认不凭文件名合并剧情。
 - 日报与周报：北京时间入库日期、分类、脚本与内容方向下钻、测试覆盖、花费和成熟 D0/D7 回收。
@@ -36,7 +36,7 @@ python3 server.py
 
 ## 内容分析适配器（可选）
 
-设置 `YINGXU_ANALYSIS_URL` 和可选 `YINGXU_ANALYSIS_TOKEN` 后重启服务。服务 POST JSON，包含 `asset_id`、`name`、`duration`、`taxonomy`、`frames: [{at, jpeg_base64}]`。授权放在 Bearer 请求头；只发送采样画面，不发送整个视频或音轨。
+设置 `YINGXU_ANALYSIS_URL` 和可选 `YINGXU_ANALYSIS_TOKEN` 后重启服务。服务 POST JSON，包含 `asset_id`、`name`、`duration`、`taxonomy`、`frames: [{at, jpeg_base64}]`。授权放在 Bearer 请求头；发送采样画面与单声道 16 kHz WAV 音轨，不发送整个视频。
 
 适配器必须返回 JSON：
 
@@ -76,4 +76,31 @@ npm run check
 
 ## 范围
 
-这是依据原前端契约重建的独立实现，不是原后端源码恢复。三方 AI/Doris 需配置适配器；没有原站历史媒体与数据。暂不提供音轨转写、断点续传、自动质量判定、多人权限或生产公网部署。原前端采集指纹见 capture-manifest.json（记录采集时文件，后续修改后哈希会不同）。
+这是依据原前端契约重建的独立实现，不是原后端源码恢复。三方 AI/Doris 需配置适配器；没有原站历史媒体与数据。音轨转写与交叉核对由配置的分析适配器提供；暂不提供断点续传、自动质量判定、多人权限或生产公网部署。原前端采集指纹见 capture-manifest.json（记录采集时文件，后续修改后哈希会不同）。
+
+
+## V6 修订3：上传识别与自动命名
+
+原规则、200 码字典和校验器随项目保存在 v6/；命名为 24 个固定字段，15 类标签。自动命名保留从原名明确解析出的日期、渠道、人员与语言，不采纳模型猜测的元数据。缺失元数据在详情“核对标签与命名”中填写。旧名中的剧情码不自动迁移；TMM 不作为制作人。
+
+配置的分析适配器现在收到 `v6_dictionary`、`v6_rules`、`v6_metadata`、覆盖视频全段的 `frames`、`has_audio` 和 `audio_wav_base64`。需在原输出中增加 `v6` 对象：
+
+```json
+{
+  "tags": {"一级分类":["sr"],"其余14类":"按字典提供完整短码数组"},
+  "na_reasons": {"职业与身份":"主体剧情未提供职业"},
+  "evidence": {"sr":{"source":"dialogue","at":2.0,"observation":"已核验的主体对白依据"}},
+  "story_segments":[{"start":0,"end":18}],
+  "visual_reviewed":true,
+  "subtitle_reviewed":true,
+  "audio_review":{"status":"reviewed","note":"核对角色对白与剧情字幕；忽略背景歌声","segments":[{"start":1,"end":3,"text":"角色对白原文"}]}
+}
+```
+
+上述为字段说明片段，完整 tags 示例在 v6/references/example.json。每个正式短码都必须有证据；非用户说明的证据须带主体剧情范围内时间戳。`na` 逐类填写原因、`unk` 仅草稿。音轨必须完成核验（reviewed 或检查后 no_dialogue）；没有音轨的文件记录 no_audio。未通过检查、超过长度上限或重名时仅保存待核对项，不改成正式名称。
+
+通过后自动更新展示名并提供“下载 V6 命名副本”；原名、物理视频与审计保留。页面大类、标签和筛选显示中文及英文全称（如 AI photorealistic portrait，而非 air），文件名使用原字典短码。V6 大类分析仅统计完成命名的素材；多标签组可能重叠，禁止相加。周报优先使用已完成 V6 的一级分类。
+
+真实多模态模型服务尚需按契约配置；测试适配器只验证数据传递和流水线，不代表模型识别准确率。无服务时上传仍可采样并人工核对，不会冒称已经识别语音。
+
+验证：`python3 -m unittest test_server test_v6 test_http test_auto_naming -v`。

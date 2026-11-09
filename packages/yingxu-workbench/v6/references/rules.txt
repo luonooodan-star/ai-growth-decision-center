@@ -1,0 +1,433 @@
+规则修订3：所有命名只依据广告主体剧情画面、字幕、钩子文案及语音对白。忽略片尾角色简介、设定标签、推荐卡及品牌群像。下文提到档案/角色卡的原始定义只用于理解标签含义，实际命名证据来源必须遵守此总则。字段和200个短码不变。
+
+Mellow V6 字典修订2：15类，200个全局唯一两位标签；新增 sr 暧昧情欲、hu 人类。职业未知不加职业标签，以na保留字段位置。
+
+1. 一级分类
+dk = 暗黑恋爱 / dark romance
+  The core dynamic is dangerous, unhealthy, or coercive love — captivity, obsession, power imbalance, toxicity as the central appeal.
+sl = 慢热 / slow burn
+  The core appeal is gradual emotional development — denial, tension, walls coming down over time.
+pu = 纯爱 / pure love
+  The core appeal is warmth, sweetness, and healthy affection — fluff, comfort, wholesome romance.
+fb = 禁忌之恋 / forbidden love
+  The core tension is a systemic prohibition — ethics, taboo, law, caste, species make the relationship transgressive.
+el = 精英世界 / elite world
+  The core setting is high society, wealth, or professional power — CEOs, old money, workplace hierarchy.
+fa = 幻想世界 / the fantasy
+  The core setting is non-real-world — magic, supernatural beings, medieval kingdoms, sci-fi, mythology.
+lg = LGBT / lgbt
+  The character or relationship is explicitly lesbian, gay, bisexual, or transgender.
+ac = 动漫来源角色 / mellow anime
+  The character is from anime/manga and that origin is its primary shelf identity.
+mr = 多角色或分支场景 / multi-role
+  The card features multiple characters or branching scenarios as its primary identity.
+sr = 暧昧情欲 / sensual romance
+  核心卖点为成年人之间的调情、身体吸引或亲密接触暗示；不据此认定已经发生一夜情，不等同于危险、胁迫、伦理禁忌或纯爱。
+
+2. 人物组合
+sm = 单男 / solomale
+  依据可见画面或明确说明判断；无证据不推断。
+sf = 单女 / solofemale
+  依据可见画面或明确说明判断；无证据不推断。
+dm = 双男 / dualmale
+  依据可见画面或明确说明判断；无证据不推断。
+df = 双女 / dualfemale
+  依据可见画面或明确说明判断；无证据不推断。
+mf = 男女组合 / malefemale
+  依据可见画面或明确说明判断；无证据不推断。
+mm = 多男 / multimale
+  依据可见画面或明确说明判断；无证据不推断。
+ff = 多女 / multifemale
+  依据可见画面或明确说明判断；无证据不推断。
+mg = 混合群像 / mixedgroup
+  依据可见画面或明确说明判断；无证据不推断。
+rh = 逆后宫 / rharem
+  依据可见画面或明确说明判断；无证据不推断。
+
+3. 用户视角 POV
+pa = 不限用户性别 / any pov
+  No gendered expectation for user.
+pf = 女性用户视角 / female pov
+  User expected to be female.
+pm = 男性用户视角 / male pov
+  User expected to be male.
+
+4. 受众与配对
+u1 = 异性配对 / mxf
+  Heterosexual dynamic.
+u2 = 男男恋爱 / mellow mlm
+  Male x male romance.
+u3 = 女女恋爱 / mellow wlw
+  Female x female romance.
+u4 = 广义酷儿内容 / lgbtq+
+  Broader queer content. Co-tag with mellow mlm/mellow wlw if applicable.
+u5 = 逆后宫 / reverse harem
+  One user with 3+ love interests.
+u6 = 多个可互动角色 / multiple
+  Multiple distinct interactable characters.
+u7 = 跨性别角色 / trans
+  A character is explicitly transgender.
+u8 = 适合全年龄的非成人内容 / sfw
+  Entirely clean, no NSFW.
+
+5. 关系设定
+r1 = 敌人变恋人 / enemies to lovers
+  Real enmity — opposing sides, genuine hatred. Not dislike or rivalry.
+r2 = 竞争对手 / rivals
+  Direct competition in a defined domain.
+r3 = 被迫接近 / forced proximity
+  Involuntarily stuck together by external circumstances.
+r4 = 丈夫 / husband
+  Married.
+r5 = 室友 / roommate
+  Sharing a living space.
+r6 = 明确的 Daddy 关系 / daddy
+  Explicit daddy dynamic or arrangement. Not just older/protective.
+r7 = 继兄弟 / step-brother
+  Step-siblings through remarriage.
+r8 = 师生 / teacher - student
+  Institutional roles. Both sides present.
+r9 = 上下级 / boss - employee
+  Direct workplace hierarchy.
+ra = 保镖与公主 / bodyguard - princess
+  Formal protective duty by assignment.
+rb = 囚禁者与被囚禁者 / captive - captor
+  Physical imprisonment. Emotional control alone doesn't count.
+rc = 主人与仆人 / master - servant
+  Formalized servitude — the social structure must exist.
+rd = 青梅竹马 / childhood friends
+  Met as children. Must be explicit.
+re = 旧情复燃 / exes to lovers
+  Previous relationship, broke up, reconnecting.
+rf = 秘密恋人 / secret lover
+  Hidden relationship with real stakes.
+rg = 禁忌之恋 / forbidden love
+  Systemic prohibition — ethics, law, caste, species.
+sv = 跟踪者与受害者 / stalker - victim
+  Actual surveillance/following/intrusion. Not pining.
+ri = 陌生人变恋人 / strangers to lovers
+  No prior connection.
+rj = 暗恋 / crush
+  Unconfessed one-sided feelings.
+rk = 朋友变恋人 / friends to lovers
+  Pre-existing friendship evolving into romance.
+rl = 假恋爱 / fake dating
+  Pretending to be a couple by agreement.
+
+6. 性格特征
+n1 = 克制寡言 / stoic
+  Pervasively reserved and unexpressive.
+n2 = 占有欲 / possessive
+  Pattern of ownership — claiming, marking, controlling. Not occasional jealousy.
+n3 = 病娇 / yandere
+  Love escalating to violence/imprisonment. Without extreme action, use possessive.
+n4 = 傲娇 / tsundere
+  Cold exterior contradicted by warm behavior. Both halves required.
+n5 = 温柔 / gentle
+  Softness and tenderness as primary trait.
+n6 = 体贴 / caring
+  Love through attentive actions.
+n7 = 撩人 / flirty
+  Deliberate seduction with sexual undertone.
+n8 = 小奶狗 / puppy
+  Clingy, eager, transparent, high-energy devotion.
+n9 = 阳光忠犬 / golden retriever
+  Warm, reliable, sunny, steady.
+n0 = 成熟 / mature
+  Composure and wisdom from experience.
+nb = 创伤破碎感 / broken
+  Specific past trauma with visible consequences. Not just sad.
+nc = 傲慢 / arrogant
+  Consistent condescension and superiority.
+nd = 反派 / villain
+  Narrative antagonist role.
+ne = 黑帮 / mafia
+  Structured organized crime member.
+
+7. 职业与身份
+j1 = 骑士 / knight
+  Formal knightly title or order.
+j2 = 老钱 / old money
+  Generational inherited wealth.
+j3 = 教授 / professor
+  Academic position at university.
+j4 = 医生 / doctor
+  Licensed medical professional.
+j5 = 保镖 / bodyguard
+  Professional protector by job.
+j6 = 虚拟主播 / mellow vtuber
+  Virtual content creator with avatar.
+j7 = 首席执行官 / ceo
+  明确担任CEO或企业最高执行管理者；穿西装、富有或泛称老板不够。
+j8 = 创业者 / entrepreneur
+  明确创办并经营企业或创业项目；仅有财富不够。
+j9 = 律师 / lawyer
+  明确从事法律代理、辩护或律师职业；不能仅凭正装推断。
+ja = 警察 / police officer
+  明确执法机关警员身份；一般制服或保安不等于警察。
+jb = 侦探 / detective
+  明确以调查案件为职业或正式职务；喜欢推理或侦探题材不够。
+jc = 军人 / soldier
+  明确现役或职业军事身份；军装造型或战争背景本身不够。
+jd = 教师 / teacher
+  明确任教职业；大学教授优先使用教授标签，不能仅因师生关系词自动补职业。
+je = 护士 / nurse
+  明确护理专业职业；照顾他人或护士服装不够。
+jf = 科学家 / scientist
+  明确从事专业科学研究；聪明、实验室造型本身不够。
+jg = 工程师 / engineer
+  明确工程设计、研发或技术工程职业；使用科技设备不够。
+jh = 演员 / actor
+  明确影视或舞台表演职业；角色来自影视作品不代表角色本人是演员。
+ji = 歌手 / singer
+  明确职业演唱、音乐演出身份；爱好唱歌或背景音乐不够。
+jj = 职业运动员 / athlete
+  明确职业或正式竞技运动员身份；健身、肌肉或运动服不够。
+jk = 管家 / butler
+  明确负责家庭或庄园日常事务的正式管家身份；一般仆人或温柔照顾者不够。
+
+8. 物种
+s1 = 天使 / angel
+  Celestial being.
+s2 = 恶魔 / demon
+  Infernal being.
+s3 = 未匹配具体物种的非人类 / non-human
+  Not human, no specific species tag fits.
+s4 = 拟人动物 / furry
+  Anthropomorphic animal.
+s5 = 半人类 / demi-human
+  Human-nonhuman hybrid.
+s6 = 怪物 / mellow monster
+  Monstrous, inhuman form.
+s7 = 怪物娘 / mellow monster girl
+  Monstrous features + feminine humanoid form.
+s8 = 外星人 / mellow alien
+  Extraterrestrial.
+s9 = 精灵 / mellow elf
+  Explicitly elf.
+hu = 人类 / human
+  明确为普通人类的角色；用户确认可作为依据。孤立的无正文支持标签有冲突时记录冲突，不机械覆盖已确认设定。
+
+9. 情绪与关系氛围
+v1 = 甜蜜轻松 / fluff
+  Consistently warm, sweet, lighthearted.
+v2 = 宠溺 / doting
+  Excessive affection — spoiling, pampering.
+v3 = 浪漫 / romantic
+  Deliberate romantic gestures as defining feature.
+v4 = 虐心氛围 / angst
+  Emotional suffering as prevailing atmosphere.
+v5 = 心碎 / heartbreak
+  Specific event of romantic devastation.
+v6 = 慢热 / slow burn
+  Gradual emotional development promised by structure.
+v7 = 逗弄 / teasing
+  Playful, affectionate provocation. Not threats.
+v8 = 危险爱情 / dangerous love
+  Concrete danger from the relationship.
+v9 = 疗愈 / healing
+  Trajectory from damage to recovery. Requires wound + mending.
+va = 当下伤痛 / hurt
+  Present, active suffering. Not just backstory.
+vb = 慰藉 / comfort
+  Active soothing of distress. Requires distressed party.
+vc = 悬疑神秘 / mystery
+  Actual narrative unknowns. Not just quiet personality.
+vd = 权力博弈 / power play
+  Central power imbalance shaping the dynamic.
+ve = 嫉妒 / jealousy
+  Jealousy as significant recurring element.
+vf = 复仇 / revenge
+  Vengeance as core driver with specific wrong.
+vg = 禁忌感 / forbidden
+  Pervasive "we shouldn't" feeling.
+vh = 有毒关系 / toxic
+  The relationship dynamic is explicitly unhealthy — manipulation, emotional abuse, gaslighting, codependency, or mutual destruction presented as a feature of the dynamic, not a bug. The card leans into the toxicity rather than framing it as something to overcome.
+vi = 痴迷执念 / obsessive
+  The character's fixation on the user goes beyond possessive into all-consuming. They think about the user constantly, build their world around them, lose themselves in the attachment. Possessive is "you're mine"; obsessive is "you're all I see, think, breathe."
+vj = 自信张扬 / cocky
+  Swagger, self-assured bravado, and shameless confidence. The character knows they're attractive/talented/powerful and performs that knowledge. Lighter and more charming than arrogant — arrogant looks down on others, cocky shows off for them.
+
+10. 主题与世界观
+t1 = 现代 / modern
+  Contemporary real world.
+t2 = 亿万富翁 / billionaire
+  Extreme wealth explicitly stated and relevant.
+t3 = 校园 / campus
+  School/university as primary setting.
+t4 = 军旅 / military
+  Military affiliation or wartime setting.
+t5 = 吸血鬼世界观 / vampire
+  Vampire lore as world-building.
+t6 = 狼人世界观 / werewolf
+  Werewolf/shifter lore as world-building.
+t7 = ABO / abo
+  Alpha/Beta/Omega with ABO terminology.
+t8 = 魔法学院 / magic academy
+  Magical institution as primary setting.
+t9 = 王室 / royalty
+  Royal titles, courts, crown politics.
+ta = 赛博朋克 / cyberpunk
+  High-tech dystopian future.
+tb = 末日 / post-apocalyptic
+  Civilization collapsed.
+tc = 哨兵向导 / sentinel - guide
+  Sentinel/guide universe with specific terms.
+td = 名人 / celebrity
+  Public figure, fame is relevant.
+te = 中世纪奇幻 / medieval fantasy
+  Swords-and-sorcery medieval setting.
+tf = 超自然 / supernatural
+  Supernatural elements in any setting.
+tg = 神话 / mythology
+  Based on real-world myth systems.
+th = 历史背景 / mellow historical
+  Specific historical period.
+ti = 侦探 / mellow detective
+  Mystery/crime-solving narrative.
+tj = 魔法 / mellow magical
+  Magic present, doesn't fit academy or medieval.
+tk = 显著体型差 / mellow giant
+  Significant size difference dynamic.
+tl = 恐怖 / mellow horror
+  Horror genre.
+tm = 音乐主题 / mellow music mania
+  Music-centered narrative.
+tn = 原创角色 / mellow oc
+  Original character.
+to = 已有作品角色 / mellow fictional
+  From existing fiction.
+tp = 基于真人 / mellow real
+  Based on a real person.
+tq = 游戏来源 / mellow game
+  From a video game.
+tr = 动漫来源 / mellow anime
+  From anime/manga.
+ts = RPG机制 / mellow rpg
+  RPG structure with game mechanics.
+
+11. 艺术形式
+li = 真人实拍 / live
+  依据可见画面或明确说明判断；无证据不推断。
+ai = AI写实肖像 / air
+  依据可见画面或明确说明判断；无证据不推断。
+dp = 数字绘画 / dp
+  依据可见画面或明确说明判断；无证据不推断。
+kw = 韩漫 / kw
+  依据可见画面或明确说明判断；无证据不推断。
+an = 日漫 / anime
+  依据可见画面或明确说明判断；无证据不推断。
+wc = 欧美漫画 / wc
+  依据可见画面或明确说明判断；无证据不推断。
+vn = 视觉小说 / vn
+  依据可见画面或明确说明判断；无证据不推断。
+ot = 乙女游戏 / otome
+  依据可见画面或明确说明判断；无证据不推断。
+cg = 三维CG / 3dcg
+  依据可见画面或明确说明判断；无证据不推断。
+gc = 游戏CG / gamecg
+  依据可见画面或明确说明判断；无证据不推断。
+
+12. 渲染风格
+ph = 照片级写实 / photo
+  依据可见画面或明确说明判断；无证据不推断。
+rm = 写实 / real
+  依据可见画面或明确说明判断；无证据不推断。
+se = 半写实 / semi
+  依据可见画面或明确说明判断；无证据不推断。
+st = 风格化 / style
+  依据可见画面或明确说明判断；无证据不推断。
+
+13. 人物审美
+pr = 精致美少年 / pretty
+  依据可见画面或明确说明判断；无证据不推断。
+ha = 帅气男主 / handsome
+  依据可见画面或明确说明判断；无证据不推断。
+ma = 阳刚男主 / masc
+  依据可见画面或明确说明判断；无证据不推断。
+mt = 成熟男主 / maturem
+  依据可见画面或明确说明判断；无证据不推断。
+sa = 柔和男主 / softm
+  依据可见画面或明确说明判断；无证据不推断。
+am = 中性男性 / androm
+  依据可见画面或明确说明判断；无证据不推断。
+be = 美丽女主 / beautyf
+  依据可见画面或明确说明判断；无证据不推断。
+cu = 可爱女主 / cutef
+  依据可见画面或明确说明判断；无证据不推断。
+mb = 成熟女主 / maturef
+  依据可见画面或明确说明判断；无证据不推断。
+gl = 艳丽女主 / glamf
+  依据可见画面或明确说明判断；无证据不推断。
+af = 中性女性 / androf
+  依据可见画面或明确说明判断；无证据不推断。
+
+14. 画面视觉氛围
+dr = 暗黑 / dark
+  依据可见画面或明确说明判断；无证据不推断。
+go = 哥特 / gothic
+  依据可见画面或明确说明判断；无证据不推断。
+lu = 奢华 / lux
+  依据可见画面或明确说明判断；无证据不推断。
+ro = 浪漫 / rom
+  依据可见画面或明确说明判断；无证据不推断。
+sn = 感官魅力 / sensual
+  依据可见画面或明确说明判断；无证据不推断。
+vk = 危险 / danger
+  依据可见画面或明确说明判断；无证据不推断。
+vm = 神秘 / mys
+  依据可见画面或明确说明判断；无证据不推断。
+da = 梦幻 / dreamy
+  依据可见画面或明确说明判断；无证据不推断。
+so = 柔和 / soft
+  依据可见画面或明确说明判断；无证据不推断。
+vu = 可爱 / cute
+  依据可见画面或明确说明判断；无证据不推断。
+db = 戏剧化 / drama
+  依据可见画面或明确说明判断；无证据不推断。
+fn = 奇幻 / fantasy
+  依据可见画面或明确说明判断；无证据不推断。
+wr = 温暖 / warm
+  依据可见画面或明确说明判断；无证据不推断。
+
+15. 外观特征
+bh = 黑发 / blackhair
+  依据可见画面或明确说明判断；无证据不推断。
+bl = 金发 / blond
+  依据可见画面或明确说明判断；无证据不推断。
+br = 棕发 / brownhair
+  依据可见画面或明确说明判断；无证据不推断。
+rn = 红发 / redhair
+  依据可见画面或明确说明判断；无证据不推断。
+sh = 银白发 / silverhair
+  Hair explicitly white or silver. Not platinum blonde or gray. 银白发必须有明确视觉或文字证据，不能把铂金色金发、灰发当作银白发。
+lh = 长发 / longhair
+  依据可见画面或明确说明判断；无证据不推断。
+su = 西装 / suit
+  依据可见画面或明确说明判断；无证据不推断。
+un = 制服 / uniform
+  依据可见画面或明确说明判断；无证据不推断。
+mu = 军装 / miluniform
+  依据可见画面或明确说明判断；无证据不推断。
+ar = 奇幻盔甲 / armor
+  依据可见画面或明确说明判断；无证据不推断。
+gs = 眼镜 / glasses
+  依据可见画面或明确说明判断；无证据不推断。
+tt = 纹身 / tattoo
+  依据可见画面或明确说明判断；无证据不推断。
+tu = 裸上身 / shirtless
+  依据可见画面或明确说明判断；无证据不推断。
+fr = 正装 / formal
+  依据可见画面或明确说明判断；无证据不推断。
+vp = 吸血鬼外观 / vampapp
+  依据可见画面或明确说明判断；无证据不推断。
+de = 恶魔外观 / demonapp
+  依据可见画面或明确说明判断；无证据不推断。
+ap = 天使外观 / angelapp
+  依据可见画面或明确说明判断；无证据不推断。
+wo = 狼人外观 / wolfapp
+  依据可见画面或明确说明判断；无证据不推断。
+ea = 兽耳 / animalears
+  依据可见画面或明确说明判断；无证据不推断。
+x2 = 具有叙事意义的年龄差 / age gap
+  Significant, narratively relevant age difference.

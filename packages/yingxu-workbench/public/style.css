@@ -60,3 +60,5 @@
 .data-workspace .script-member-row td:first-child{padding-left:29px}
 .data-workspace .script-member-row .asset-name{max-width:100%;text-align:left}
 .data-workspace .asset-performance-table.recovery-table .perf-script-group{width:154px;min-width:154px;max-width:154px;text-align:left;white-space:normal}
+
+.v6-category{padding:8px 0;border-bottom:1px solid var(--line)}.v6-category b{font-size:12px;display:block;color:var(--muted)}.v6-chips summary{cursor:pointer;margin:8px 0}.v6-editor-group{padding:12px;border:1px solid var(--line);margin:12px 0;border-radius:8px}.v6-editor-group summary{cursor:pointer;font-weight:600}.v6-editor-group select[multiple]{height:auto;min-height:140px}.v6-report{margin:24px 0}.v6-report .v6-chips{max-width:none}

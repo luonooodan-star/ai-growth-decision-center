@@ -1,0 +1,1555 @@
+{
+  "version": "V6",
+  "dictionary_revision": 2,
+  "status": "updated_structure_not_deployed",
+  "global_unique": true,
+  "separator": "_",
+  "multi_separator": "+",
+  "recommended_length": 120,
+  "internal_max_length": 180,
+  "meta_limit_verified": false,
+  "reserved_status_codes": {
+    "na": "经确认无适用标签，需原因",
+    "unk": "未知，草稿专用"
+  },
+  "groups": [
+    {
+      "position": 1,
+      "category": "一级分类",
+      "min_tags": 1,
+      "recommended_max_tags": 1,
+      "tags": [
+        {
+          "code": "dk",
+          "label": "暗黑恋爱",
+          "canonical": "dark romance",
+          "rule": "The core dynamic is dangerous, unhealthy, or coercive love — captivity, obsession, power imbalance, toxicity as the central appeal.",
+          "v4_code": "dk"
+        },
+        {
+          "code": "sl",
+          "label": "慢热",
+          "canonical": "slow burn",
+          "rule": "The core appeal is gradual emotional development — denial, tension, walls coming down over time.",
+          "v4_code": "sl"
+        },
+        {
+          "code": "pu",
+          "label": "纯爱",
+          "canonical": "pure love",
+          "rule": "The core appeal is warmth, sweetness, and healthy affection — fluff, comfort, wholesome romance.",
+          "v4_code": "pu"
+        },
+        {
+          "code": "fb",
+          "label": "禁忌之恋",
+          "canonical": "forbidden love",
+          "rule": "The core tension is a systemic prohibition — ethics, taboo, law, caste, species make the relationship transgressive.",
+          "v4_code": "fb"
+        },
+        {
+          "code": "el",
+          "label": "精英世界",
+          "canonical": "elite world",
+          "rule": "The core setting is high society, wealth, or professional power — CEOs, old money, workplace hierarchy.",
+          "v4_code": "el"
+        },
+        {
+          "code": "fa",
+          "label": "幻想世界",
+          "canonical": "the fantasy",
+          "rule": "The core setting is non-real-world — magic, supernatural beings, medieval kingdoms, sci-fi, mythology.",
+          "v4_code": "fa"
+        },
+        {
+          "code": "lg",
+          "label": "LGBT",
+          "canonical": "lgbt",
+          "rule": "The character or relationship is explicitly lesbian, gay, bisexual, or transgender.",
+          "v4_code": "lgb"
+        },
+        {
+          "code": "ac",
+          "label": "动漫来源角色",
+          "canonical": "mellow anime",
+          "rule": "The character is from anime/manga and that origin is its primary shelf identity.",
+          "v4_code": "acg"
+        },
+        {
+          "code": "mr",
+          "label": "多角色或分支场景",
+          "canonical": "multi-role",
+          "rule": "The card features multiple characters or branching scenarios as its primary identity.",
+          "v4_code": "mrl"
+        },
+        {
+          "code": "sr",
+          "label": "暧昧情欲",
+          "canonical": "sensual romance",
+          "rule": "核心卖点为成年人之间的调情、身体吸引或亲密接触暗示；不据此认定已经发生一夜情，不等同于危险、胁迫、伦理禁忌或纯爱。"
+        }
+      ]
+    },
+    {
+      "position": 2,
+      "category": "人物组合",
+      "min_tags": 1,
+      "recommended_max_tags": 1,
+      "tags": [
+        {
+          "code": "sm",
+          "label": "单男",
+          "canonical": "solomale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sm"
+        },
+        {
+          "code": "sf",
+          "label": "单女",
+          "canonical": "solofemale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sf"
+        },
+        {
+          "code": "dm",
+          "label": "双男",
+          "canonical": "dualmale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "dm"
+        },
+        {
+          "code": "df",
+          "label": "双女",
+          "canonical": "dualfemale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "df"
+        },
+        {
+          "code": "mf",
+          "label": "男女组合",
+          "canonical": "malefemale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mf"
+        },
+        {
+          "code": "mm",
+          "label": "多男",
+          "canonical": "multimale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mm"
+        },
+        {
+          "code": "ff",
+          "label": "多女",
+          "canonical": "multifemale",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "ff"
+        },
+        {
+          "code": "mg",
+          "label": "混合群像",
+          "canonical": "mixedgroup",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mg"
+        },
+        {
+          "code": "rh",
+          "label": "逆后宫",
+          "canonical": "rharem",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "rh"
+        }
+      ]
+    },
+    {
+      "position": 3,
+      "category": "用户视角 POV",
+      "min_tags": 1,
+      "recommended_max_tags": 1,
+      "tags": [
+        {
+          "code": "pa",
+          "label": "不限用户性别",
+          "canonical": "any pov",
+          "rule": "No gendered expectation for user.",
+          "v4_code": "pany"
+        },
+        {
+          "code": "pf",
+          "label": "女性用户视角",
+          "canonical": "female pov",
+          "rule": "User expected to be female.",
+          "v4_code": "pf"
+        },
+        {
+          "code": "pm",
+          "label": "男性用户视角",
+          "canonical": "male pov",
+          "rule": "User expected to be male.",
+          "v4_code": "pm"
+        }
+      ]
+    },
+    {
+      "position": 4,
+      "category": "受众与配对",
+      "min_tags": 1,
+      "recommended_max_tags": 3,
+      "tags": [
+        {
+          "code": "u1",
+          "label": "异性配对",
+          "canonical": "mxf",
+          "rule": "Heterosexual dynamic.",
+          "v4_code": "u01"
+        },
+        {
+          "code": "u2",
+          "label": "男男恋爱",
+          "canonical": "mellow mlm",
+          "rule": "Male x male romance.",
+          "v4_code": "u02"
+        },
+        {
+          "code": "u3",
+          "label": "女女恋爱",
+          "canonical": "mellow wlw",
+          "rule": "Female x female romance.",
+          "v4_code": "u03"
+        },
+        {
+          "code": "u4",
+          "label": "广义酷儿内容",
+          "canonical": "lgbtq+",
+          "rule": "Broader queer content. Co-tag with mellow mlm/mellow wlw if applicable.",
+          "v4_code": "u04"
+        },
+        {
+          "code": "u5",
+          "label": "逆后宫",
+          "canonical": "reverse harem",
+          "rule": "One user with 3+ love interests.",
+          "v4_code": "u05"
+        },
+        {
+          "code": "u6",
+          "label": "多个可互动角色",
+          "canonical": "multiple",
+          "rule": "Multiple distinct interactable characters.",
+          "v4_code": "u06"
+        },
+        {
+          "code": "u7",
+          "label": "跨性别角色",
+          "canonical": "trans",
+          "rule": "A character is explicitly transgender.",
+          "v4_code": "u07"
+        },
+        {
+          "code": "u8",
+          "label": "适合全年龄的非成人内容",
+          "canonical": "sfw",
+          "rule": "Entirely clean, no NSFW.",
+          "v4_code": "u08"
+        }
+      ]
+    },
+    {
+      "position": 5,
+      "category": "关系设定",
+      "min_tags": 1,
+      "recommended_max_tags": 3,
+      "tags": [
+        {
+          "code": "r1",
+          "label": "敌人变恋人",
+          "canonical": "enemies to lovers",
+          "rule": "Real enmity — opposing sides, genuine hatred. Not dislike or rivalry.",
+          "v4_code": "r01"
+        },
+        {
+          "code": "r2",
+          "label": "竞争对手",
+          "canonical": "rivals",
+          "rule": "Direct competition in a defined domain.",
+          "v4_code": "r02"
+        },
+        {
+          "code": "r3",
+          "label": "被迫接近",
+          "canonical": "forced proximity",
+          "rule": "Involuntarily stuck together by external circumstances.",
+          "v4_code": "r03"
+        },
+        {
+          "code": "r4",
+          "label": "丈夫",
+          "canonical": "husband",
+          "rule": "Married.",
+          "v4_code": "r04"
+        },
+        {
+          "code": "r5",
+          "label": "室友",
+          "canonical": "roommate",
+          "rule": "Sharing a living space.",
+          "v4_code": "r05"
+        },
+        {
+          "code": "r6",
+          "label": "明确的 Daddy 关系",
+          "canonical": "daddy",
+          "rule": "Explicit daddy dynamic or arrangement. Not just older/protective.",
+          "v4_code": "r06"
+        },
+        {
+          "code": "r7",
+          "label": "继兄弟",
+          "canonical": "step-brother",
+          "rule": "Step-siblings through remarriage.",
+          "v4_code": "r07"
+        },
+        {
+          "code": "r8",
+          "label": "师生",
+          "canonical": "teacher - student",
+          "rule": "Institutional roles. Both sides present.",
+          "v4_code": "r08"
+        },
+        {
+          "code": "r9",
+          "label": "上下级",
+          "canonical": "boss - employee",
+          "rule": "Direct workplace hierarchy.",
+          "v4_code": "r09"
+        },
+        {
+          "code": "ra",
+          "label": "保镖与公主",
+          "canonical": "bodyguard - princess",
+          "rule": "Formal protective duty by assignment.",
+          "v4_code": "r10"
+        },
+        {
+          "code": "rb",
+          "label": "囚禁者与被囚禁者",
+          "canonical": "captive - captor",
+          "rule": "Physical imprisonment. Emotional control alone doesn't count.",
+          "v4_code": "r11"
+        },
+        {
+          "code": "rc",
+          "label": "主人与仆人",
+          "canonical": "master - servant",
+          "rule": "Formalized servitude — the social structure must exist.",
+          "v4_code": "r12"
+        },
+        {
+          "code": "rd",
+          "label": "青梅竹马",
+          "canonical": "childhood friends",
+          "rule": "Met as children. Must be explicit.",
+          "v4_code": "r13"
+        },
+        {
+          "code": "re",
+          "label": "旧情复燃",
+          "canonical": "exes to lovers",
+          "rule": "Previous relationship, broke up, reconnecting.",
+          "v4_code": "r14"
+        },
+        {
+          "code": "rf",
+          "label": "秘密恋人",
+          "canonical": "secret lover",
+          "rule": "Hidden relationship with real stakes.",
+          "v4_code": "r15"
+        },
+        {
+          "code": "rg",
+          "label": "禁忌之恋",
+          "canonical": "forbidden love",
+          "rule": "Systemic prohibition — ethics, law, caste, species.",
+          "v4_code": "r16"
+        },
+        {
+          "code": "sv",
+          "label": "跟踪者与受害者",
+          "canonical": "stalker - victim",
+          "rule": "Actual surveillance/following/intrusion. Not pining.",
+          "v4_code": "r17"
+        },
+        {
+          "code": "ri",
+          "label": "陌生人变恋人",
+          "canonical": "strangers to lovers",
+          "rule": "No prior connection.",
+          "v4_code": "r18"
+        },
+        {
+          "code": "rj",
+          "label": "暗恋",
+          "canonical": "crush",
+          "rule": "Unconfessed one-sided feelings.",
+          "v4_code": "r19"
+        },
+        {
+          "code": "rk",
+          "label": "朋友变恋人",
+          "canonical": "friends to lovers",
+          "rule": "Pre-existing friendship evolving into romance.",
+          "v4_code": "r20"
+        },
+        {
+          "code": "rl",
+          "label": "假恋爱",
+          "canonical": "fake dating",
+          "rule": "Pretending to be a couple by agreement.",
+          "v4_code": "r21"
+        }
+      ]
+    },
+    {
+      "position": 6,
+      "category": "性格特征",
+      "min_tags": 1,
+      "recommended_max_tags": 2,
+      "tags": [
+        {
+          "code": "n1",
+          "label": "克制寡言",
+          "canonical": "stoic",
+          "rule": "Pervasively reserved and unexpressive.",
+          "v4_code": "n01"
+        },
+        {
+          "code": "n2",
+          "label": "占有欲",
+          "canonical": "possessive",
+          "rule": "Pattern of ownership — claiming, marking, controlling. Not occasional jealousy.",
+          "v4_code": "n02"
+        },
+        {
+          "code": "n3",
+          "label": "病娇",
+          "canonical": "yandere",
+          "rule": "Love escalating to violence/imprisonment. Without extreme action, use possessive.",
+          "v4_code": "n03"
+        },
+        {
+          "code": "n4",
+          "label": "傲娇",
+          "canonical": "tsundere",
+          "rule": "Cold exterior contradicted by warm behavior. Both halves required.",
+          "v4_code": "n04"
+        },
+        {
+          "code": "n5",
+          "label": "温柔",
+          "canonical": "gentle",
+          "rule": "Softness and tenderness as primary trait.",
+          "v4_code": "n05"
+        },
+        {
+          "code": "n6",
+          "label": "体贴",
+          "canonical": "caring",
+          "rule": "Love through attentive actions.",
+          "v4_code": "n06"
+        },
+        {
+          "code": "n7",
+          "label": "撩人",
+          "canonical": "flirty",
+          "rule": "Deliberate seduction with sexual undertone.",
+          "v4_code": "n07"
+        },
+        {
+          "code": "n8",
+          "label": "小奶狗",
+          "canonical": "puppy",
+          "rule": "Clingy, eager, transparent, high-energy devotion.",
+          "v4_code": "n08"
+        },
+        {
+          "code": "n9",
+          "label": "阳光忠犬",
+          "canonical": "golden retriever",
+          "rule": "Warm, reliable, sunny, steady.",
+          "v4_code": "n09"
+        },
+        {
+          "code": "n0",
+          "label": "成熟",
+          "canonical": "mature",
+          "rule": "Composure and wisdom from experience.",
+          "v4_code": "n10"
+        },
+        {
+          "code": "nb",
+          "label": "创伤破碎感",
+          "canonical": "broken",
+          "rule": "Specific past trauma with visible consequences. Not just sad.",
+          "v4_code": "n11"
+        },
+        {
+          "code": "nc",
+          "label": "傲慢",
+          "canonical": "arrogant",
+          "rule": "Consistent condescension and superiority.",
+          "v4_code": "n12"
+        },
+        {
+          "code": "nd",
+          "label": "反派",
+          "canonical": "villain",
+          "rule": "Narrative antagonist role.",
+          "v4_code": "n13"
+        },
+        {
+          "code": "ne",
+          "label": "黑帮",
+          "canonical": "mafia",
+          "rule": "Structured organized crime member.",
+          "v4_code": "n14"
+        }
+      ]
+    },
+    {
+      "position": 7,
+      "category": "职业与身份",
+      "min_tags": 1,
+      "recommended_max_tags": 2,
+      "tags": [
+        {
+          "code": "j1",
+          "label": "骑士",
+          "canonical": "knight",
+          "rule": "Formal knightly title or order.",
+          "v4_code": "j01"
+        },
+        {
+          "code": "j2",
+          "label": "老钱",
+          "canonical": "old money",
+          "rule": "Generational inherited wealth.",
+          "v4_code": "j02"
+        },
+        {
+          "code": "j3",
+          "label": "教授",
+          "canonical": "professor",
+          "rule": "Academic position at university.",
+          "v4_code": "j03"
+        },
+        {
+          "code": "j4",
+          "label": "医生",
+          "canonical": "doctor",
+          "rule": "Licensed medical professional.",
+          "v4_code": "j04"
+        },
+        {
+          "code": "j5",
+          "label": "保镖",
+          "canonical": "bodyguard",
+          "rule": "Professional protector by job.",
+          "v4_code": "j05"
+        },
+        {
+          "code": "j6",
+          "label": "虚拟主播",
+          "canonical": "mellow vtuber",
+          "rule": "Virtual content creator with avatar.",
+          "v4_code": "j06"
+        },
+        {
+          "code": "j7",
+          "label": "首席执行官",
+          "canonical": "ceo",
+          "rule": "明确担任CEO或企业最高执行管理者；穿西装、富有或泛称老板不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "j8",
+          "label": "创业者",
+          "canonical": "entrepreneur",
+          "rule": "明确创办并经营企业或创业项目；仅有财富不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "j9",
+          "label": "律师",
+          "canonical": "lawyer",
+          "rule": "明确从事法律代理、辩护或律师职业；不能仅凭正装推断。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "ja",
+          "label": "警察",
+          "canonical": "police officer",
+          "rule": "明确执法机关警员身份；一般制服或保安不等于警察。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jb",
+          "label": "侦探",
+          "canonical": "detective",
+          "rule": "明确以调查案件为职业或正式职务；喜欢推理或侦探题材不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jc",
+          "label": "军人",
+          "canonical": "soldier",
+          "rule": "明确现役或职业军事身份；军装造型或战争背景本身不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jd",
+          "label": "教师",
+          "canonical": "teacher",
+          "rule": "明确任教职业；大学教授优先使用教授标签，不能仅因师生关系词自动补职业。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "je",
+          "label": "护士",
+          "canonical": "nurse",
+          "rule": "明确护理专业职业；照顾他人或护士服装不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jf",
+          "label": "科学家",
+          "canonical": "scientist",
+          "rule": "明确从事专业科学研究；聪明、实验室造型本身不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jg",
+          "label": "工程师",
+          "canonical": "engineer",
+          "rule": "明确工程设计、研发或技术工程职业；使用科技设备不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jh",
+          "label": "演员",
+          "canonical": "actor",
+          "rule": "明确影视或舞台表演职业；角色来自影视作品不代表角色本人是演员。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "ji",
+          "label": "歌手",
+          "canonical": "singer",
+          "rule": "明确职业演唱、音乐演出身份；爱好唱歌或背景音乐不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jj",
+          "label": "职业运动员",
+          "canonical": "athlete",
+          "rule": "明确职业或正式竞技运动员身份；健身、肌肉或运动服不够。",
+          "source": "user_requested_occupation_expansion"
+        },
+        {
+          "code": "jk",
+          "label": "管家",
+          "canonical": "butler",
+          "rule": "明确负责家庭或庄园日常事务的正式管家身份；一般仆人或温柔照顾者不够。",
+          "source": "user_requested_occupation_expansion"
+        }
+      ]
+    },
+    {
+      "position": 8,
+      "category": "物种",
+      "min_tags": 1,
+      "recommended_max_tags": 2,
+      "tags": [
+        {
+          "code": "s1",
+          "label": "天使",
+          "canonical": "angel",
+          "rule": "Celestial being.",
+          "v4_code": "s01"
+        },
+        {
+          "code": "s2",
+          "label": "恶魔",
+          "canonical": "demon",
+          "rule": "Infernal being.",
+          "v4_code": "s02"
+        },
+        {
+          "code": "s3",
+          "label": "未匹配具体物种的非人类",
+          "canonical": "non-human",
+          "rule": "Not human, no specific species tag fits.",
+          "v4_code": "s03"
+        },
+        {
+          "code": "s4",
+          "label": "拟人动物",
+          "canonical": "furry",
+          "rule": "Anthropomorphic animal.",
+          "v4_code": "s04"
+        },
+        {
+          "code": "s5",
+          "label": "半人类",
+          "canonical": "demi-human",
+          "rule": "Human-nonhuman hybrid.",
+          "v4_code": "s05"
+        },
+        {
+          "code": "s6",
+          "label": "怪物",
+          "canonical": "mellow monster",
+          "rule": "Monstrous, inhuman form.",
+          "v4_code": "s06"
+        },
+        {
+          "code": "s7",
+          "label": "怪物娘",
+          "canonical": "mellow monster girl",
+          "rule": "Monstrous features + feminine humanoid form.",
+          "v4_code": "s07"
+        },
+        {
+          "code": "s8",
+          "label": "外星人",
+          "canonical": "mellow alien",
+          "rule": "Extraterrestrial.",
+          "v4_code": "s08"
+        },
+        {
+          "code": "s9",
+          "label": "精灵",
+          "canonical": "mellow elf",
+          "rule": "Explicitly elf.",
+          "v4_code": "s09"
+        },
+        {
+          "code": "hu",
+          "label": "人类",
+          "canonical": "human",
+          "rule": "明确为普通人类的角色；用户确认可作为依据。孤立的无正文支持标签有冲突时记录冲突，不机械覆盖已确认设定。"
+        }
+      ]
+    },
+    {
+      "position": 9,
+      "category": "情绪与关系氛围",
+      "min_tags": 1,
+      "recommended_max_tags": 3,
+      "tags": [
+        {
+          "code": "v1",
+          "label": "甜蜜轻松",
+          "canonical": "fluff",
+          "rule": "Consistently warm, sweet, lighthearted.",
+          "v4_code": "v01"
+        },
+        {
+          "code": "v2",
+          "label": "宠溺",
+          "canonical": "doting",
+          "rule": "Excessive affection — spoiling, pampering.",
+          "v4_code": "v02"
+        },
+        {
+          "code": "v3",
+          "label": "浪漫",
+          "canonical": "romantic",
+          "rule": "Deliberate romantic gestures as defining feature.",
+          "v4_code": "v03"
+        },
+        {
+          "code": "v4",
+          "label": "虐心氛围",
+          "canonical": "angst",
+          "rule": "Emotional suffering as prevailing atmosphere.",
+          "v4_code": "v04"
+        },
+        {
+          "code": "v5",
+          "label": "心碎",
+          "canonical": "heartbreak",
+          "rule": "Specific event of romantic devastation.",
+          "v4_code": "v05"
+        },
+        {
+          "code": "v6",
+          "label": "慢热",
+          "canonical": "slow burn",
+          "rule": "Gradual emotional development promised by structure.",
+          "v4_code": "v06"
+        },
+        {
+          "code": "v7",
+          "label": "逗弄",
+          "canonical": "teasing",
+          "rule": "Playful, affectionate provocation. Not threats.",
+          "v4_code": "v07"
+        },
+        {
+          "code": "v8",
+          "label": "危险爱情",
+          "canonical": "dangerous love",
+          "rule": "Concrete danger from the relationship.",
+          "v4_code": "v08"
+        },
+        {
+          "code": "v9",
+          "label": "疗愈",
+          "canonical": "healing",
+          "rule": "Trajectory from damage to recovery. Requires wound + mending.",
+          "v4_code": "v09"
+        },
+        {
+          "code": "va",
+          "label": "当下伤痛",
+          "canonical": "hurt",
+          "rule": "Present, active suffering. Not just backstory.",
+          "v4_code": "v10"
+        },
+        {
+          "code": "vb",
+          "label": "慰藉",
+          "canonical": "comfort",
+          "rule": "Active soothing of distress. Requires distressed party.",
+          "v4_code": "v11"
+        },
+        {
+          "code": "vc",
+          "label": "悬疑神秘",
+          "canonical": "mystery",
+          "rule": "Actual narrative unknowns. Not just quiet personality.",
+          "v4_code": "v12"
+        },
+        {
+          "code": "vd",
+          "label": "权力博弈",
+          "canonical": "power play",
+          "rule": "Central power imbalance shaping the dynamic.",
+          "v4_code": "v13"
+        },
+        {
+          "code": "ve",
+          "label": "嫉妒",
+          "canonical": "jealousy",
+          "rule": "Jealousy as significant recurring element.",
+          "v4_code": "v14"
+        },
+        {
+          "code": "vf",
+          "label": "复仇",
+          "canonical": "revenge",
+          "rule": "Vengeance as core driver with specific wrong.",
+          "v4_code": "v15"
+        },
+        {
+          "code": "vg",
+          "label": "禁忌感",
+          "canonical": "forbidden",
+          "rule": "Pervasive \"we shouldn't\" feeling.",
+          "v4_code": "v16"
+        },
+        {
+          "code": "vh",
+          "label": "有毒关系",
+          "canonical": "toxic",
+          "rule": "The relationship dynamic is explicitly unhealthy — manipulation, emotional abuse, gaslighting, codependency, or mutual destruction presented as a feature of the dynamic, not a bug. The card leans into the toxicity rather than framing it as something to overcome.",
+          "v4_code": "v17"
+        },
+        {
+          "code": "vi",
+          "label": "痴迷执念",
+          "canonical": "obsessive",
+          "rule": "The character's fixation on the user goes beyond possessive into all-consuming. They think about the user constantly, build their world around them, lose themselves in the attachment. Possessive is \"you're mine\"; obsessive is \"you're all I see, think, breathe.\"",
+          "v4_code": "v18"
+        },
+        {
+          "code": "vj",
+          "label": "自信张扬",
+          "canonical": "cocky",
+          "rule": "Swagger, self-assured bravado, and shameless confidence. The character knows they're attractive/talented/powerful and performs that knowledge. Lighter and more charming than arrogant — arrogant looks down on others, cocky shows off for them.",
+          "v4_code": "v19"
+        }
+      ]
+    },
+    {
+      "position": 10,
+      "category": "主题与世界观",
+      "min_tags": 1,
+      "recommended_max_tags": 3,
+      "tags": [
+        {
+          "code": "t1",
+          "label": "现代",
+          "canonical": "modern",
+          "rule": "Contemporary real world.",
+          "v4_code": "t01"
+        },
+        {
+          "code": "t2",
+          "label": "亿万富翁",
+          "canonical": "billionaire",
+          "rule": "Extreme wealth explicitly stated and relevant.",
+          "v4_code": "t02"
+        },
+        {
+          "code": "t3",
+          "label": "校园",
+          "canonical": "campus",
+          "rule": "School/university as primary setting.",
+          "v4_code": "t03"
+        },
+        {
+          "code": "t4",
+          "label": "军旅",
+          "canonical": "military",
+          "rule": "Military affiliation or wartime setting.",
+          "v4_code": "t04"
+        },
+        {
+          "code": "t5",
+          "label": "吸血鬼世界观",
+          "canonical": "vampire",
+          "rule": "Vampire lore as world-building.",
+          "v4_code": "t05"
+        },
+        {
+          "code": "t6",
+          "label": "狼人世界观",
+          "canonical": "werewolf",
+          "rule": "Werewolf/shifter lore as world-building.",
+          "v4_code": "t06"
+        },
+        {
+          "code": "t7",
+          "label": "ABO",
+          "canonical": "abo",
+          "rule": "Alpha/Beta/Omega with ABO terminology.",
+          "v4_code": "t07"
+        },
+        {
+          "code": "t8",
+          "label": "魔法学院",
+          "canonical": "magic academy",
+          "rule": "Magical institution as primary setting.",
+          "v4_code": "t08"
+        },
+        {
+          "code": "t9",
+          "label": "王室",
+          "canonical": "royalty",
+          "rule": "Royal titles, courts, crown politics.",
+          "v4_code": "t09"
+        },
+        {
+          "code": "ta",
+          "label": "赛博朋克",
+          "canonical": "cyberpunk",
+          "rule": "High-tech dystopian future.",
+          "v4_code": "t10"
+        },
+        {
+          "code": "tb",
+          "label": "末日",
+          "canonical": "post-apocalyptic",
+          "rule": "Civilization collapsed.",
+          "v4_code": "t11"
+        },
+        {
+          "code": "tc",
+          "label": "哨兵向导",
+          "canonical": "sentinel - guide",
+          "rule": "Sentinel/guide universe with specific terms.",
+          "v4_code": "t12"
+        },
+        {
+          "code": "td",
+          "label": "名人",
+          "canonical": "celebrity",
+          "rule": "Public figure, fame is relevant.",
+          "v4_code": "t13"
+        },
+        {
+          "code": "te",
+          "label": "中世纪奇幻",
+          "canonical": "medieval fantasy",
+          "rule": "Swords-and-sorcery medieval setting.",
+          "v4_code": "t14"
+        },
+        {
+          "code": "tf",
+          "label": "超自然",
+          "canonical": "supernatural",
+          "rule": "Supernatural elements in any setting.",
+          "v4_code": "t15"
+        },
+        {
+          "code": "tg",
+          "label": "神话",
+          "canonical": "mythology",
+          "rule": "Based on real-world myth systems.",
+          "v4_code": "t16"
+        },
+        {
+          "code": "th",
+          "label": "历史背景",
+          "canonical": "mellow historical",
+          "rule": "Specific historical period.",
+          "v4_code": "t17"
+        },
+        {
+          "code": "ti",
+          "label": "侦探",
+          "canonical": "mellow detective",
+          "rule": "Mystery/crime-solving narrative.",
+          "v4_code": "t18"
+        },
+        {
+          "code": "tj",
+          "label": "魔法",
+          "canonical": "mellow magical",
+          "rule": "Magic present, doesn't fit academy or medieval.",
+          "v4_code": "t19"
+        },
+        {
+          "code": "tk",
+          "label": "显著体型差",
+          "canonical": "mellow giant",
+          "rule": "Significant size difference dynamic.",
+          "v4_code": "t20"
+        },
+        {
+          "code": "tl",
+          "label": "恐怖",
+          "canonical": "mellow horror",
+          "rule": "Horror genre.",
+          "v4_code": "t21"
+        },
+        {
+          "code": "tm",
+          "label": "音乐主题",
+          "canonical": "mellow music mania",
+          "rule": "Music-centered narrative.",
+          "v4_code": "t22"
+        },
+        {
+          "code": "tn",
+          "label": "原创角色",
+          "canonical": "mellow oc",
+          "rule": "Original character.",
+          "v4_code": "t23"
+        },
+        {
+          "code": "to",
+          "label": "已有作品角色",
+          "canonical": "mellow fictional",
+          "rule": "From existing fiction.",
+          "v4_code": "t24"
+        },
+        {
+          "code": "tp",
+          "label": "基于真人",
+          "canonical": "mellow real",
+          "rule": "Based on a real person.",
+          "v4_code": "t25"
+        },
+        {
+          "code": "tq",
+          "label": "游戏来源",
+          "canonical": "mellow game",
+          "rule": "From a video game.",
+          "v4_code": "t26"
+        },
+        {
+          "code": "tr",
+          "label": "动漫来源",
+          "canonical": "mellow anime",
+          "rule": "From anime/manga.",
+          "v4_code": "t27"
+        },
+        {
+          "code": "ts",
+          "label": "RPG机制",
+          "canonical": "mellow rpg",
+          "rule": "RPG structure with game mechanics.",
+          "v4_code": "t28"
+        }
+      ]
+    },
+    {
+      "position": 11,
+      "category": "艺术形式",
+      "min_tags": 1,
+      "recommended_max_tags": 1,
+      "tags": [
+        {
+          "code": "li",
+          "label": "真人实拍",
+          "canonical": "live",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "live"
+        },
+        {
+          "code": "ai",
+          "label": "AI写实肖像",
+          "canonical": "air",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "air"
+        },
+        {
+          "code": "dp",
+          "label": "数字绘画",
+          "canonical": "dp",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "dp"
+        },
+        {
+          "code": "kw",
+          "label": "韩漫",
+          "canonical": "kw",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "kw"
+        },
+        {
+          "code": "an",
+          "label": "日漫",
+          "canonical": "anime",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "ani"
+        },
+        {
+          "code": "wc",
+          "label": "欧美漫画",
+          "canonical": "wc",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "wc"
+        },
+        {
+          "code": "vn",
+          "label": "视觉小说",
+          "canonical": "vn",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "vn"
+        },
+        {
+          "code": "ot",
+          "label": "乙女游戏",
+          "canonical": "otome",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "oto"
+        },
+        {
+          "code": "cg",
+          "label": "三维CG",
+          "canonical": "3dcg",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "cg3"
+        },
+        {
+          "code": "gc",
+          "label": "游戏CG",
+          "canonical": "gamecg",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "gcg"
+        }
+      ]
+    },
+    {
+      "position": 12,
+      "category": "渲染风格",
+      "min_tags": 1,
+      "recommended_max_tags": 1,
+      "tags": [
+        {
+          "code": "ph",
+          "label": "照片级写实",
+          "canonical": "photo",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "pho"
+        },
+        {
+          "code": "rm",
+          "label": "写实",
+          "canonical": "real",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "rea"
+        },
+        {
+          "code": "se",
+          "label": "半写实",
+          "canonical": "semi",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sem"
+        },
+        {
+          "code": "st",
+          "label": "风格化",
+          "canonical": "style",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sty"
+        }
+      ]
+    },
+    {
+      "position": 13,
+      "category": "人物审美",
+      "min_tags": 1,
+      "recommended_max_tags": 2,
+      "tags": [
+        {
+          "code": "pr",
+          "label": "精致美少年",
+          "canonical": "pretty",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "pre"
+        },
+        {
+          "code": "ha",
+          "label": "帅气男主",
+          "canonical": "handsome",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "han"
+        },
+        {
+          "code": "ma",
+          "label": "阳刚男主",
+          "canonical": "masc",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mas"
+        },
+        {
+          "code": "mt",
+          "label": "成熟男主",
+          "canonical": "maturem",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mtm"
+        },
+        {
+          "code": "sa",
+          "label": "柔和男主",
+          "canonical": "softm",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sfm"
+        },
+        {
+          "code": "am",
+          "label": "中性男性",
+          "canonical": "androm",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "am"
+        },
+        {
+          "code": "be",
+          "label": "美丽女主",
+          "canonical": "beautyf",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "bea"
+        },
+        {
+          "code": "cu",
+          "label": "可爱女主",
+          "canonical": "cutef",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "cut"
+        },
+        {
+          "code": "mb",
+          "label": "成熟女主",
+          "canonical": "maturef",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mtf"
+        },
+        {
+          "code": "gl",
+          "label": "艳丽女主",
+          "canonical": "glamf",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "gla"
+        },
+        {
+          "code": "af",
+          "label": "中性女性",
+          "canonical": "androf",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "af"
+        }
+      ]
+    },
+    {
+      "position": 14,
+      "category": "画面视觉氛围",
+      "min_tags": 1,
+      "recommended_max_tags": 2,
+      "tags": [
+        {
+          "code": "dr",
+          "label": "暗黑",
+          "canonical": "dark",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "drk"
+        },
+        {
+          "code": "go",
+          "label": "哥特",
+          "canonical": "gothic",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "got"
+        },
+        {
+          "code": "lu",
+          "label": "奢华",
+          "canonical": "lux",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "lux"
+        },
+        {
+          "code": "ro",
+          "label": "浪漫",
+          "canonical": "rom",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "rom"
+        },
+        {
+          "code": "sn",
+          "label": "感官魅力",
+          "canonical": "sensual",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sen"
+        },
+        {
+          "code": "vk",
+          "label": "危险",
+          "canonical": "danger",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "vdg"
+        },
+        {
+          "code": "vm",
+          "label": "神秘",
+          "canonical": "mys",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "vmy"
+        },
+        {
+          "code": "da",
+          "label": "梦幻",
+          "canonical": "dreamy",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "drm"
+        },
+        {
+          "code": "so",
+          "label": "柔和",
+          "canonical": "soft",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sof"
+        },
+        {
+          "code": "vu",
+          "label": "可爱",
+          "canonical": "cute",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "vcu"
+        },
+        {
+          "code": "db",
+          "label": "戏剧化",
+          "canonical": "drama",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "dra"
+        },
+        {
+          "code": "fn",
+          "label": "奇幻",
+          "canonical": "fantasy",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "fan"
+        },
+        {
+          "code": "wr",
+          "label": "温暖",
+          "canonical": "warm",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "wrm"
+        }
+      ]
+    },
+    {
+      "position": 15,
+      "category": "外观特征",
+      "min_tags": 1,
+      "recommended_max_tags": 4,
+      "tags": [
+        {
+          "code": "bh",
+          "label": "黑发",
+          "canonical": "blackhair",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "bh"
+        },
+        {
+          "code": "bl",
+          "label": "金发",
+          "canonical": "blond",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "blh"
+        },
+        {
+          "code": "br",
+          "label": "棕发",
+          "canonical": "brownhair",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "brh"
+        },
+        {
+          "code": "rn",
+          "label": "红发",
+          "canonical": "redhair",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "rdh"
+        },
+        {
+          "code": "sh",
+          "label": "银白发",
+          "canonical": "silverhair",
+          "rule": "Hair explicitly white or silver. Not platinum blonde or gray. 银白发必须有明确视觉或文字证据，不能把铂金色金发、灰发当作银白发。",
+          "v4_code": "sh",
+          "aliases_from_v5": [
+            "x1"
+          ]
+        },
+        {
+          "code": "lh",
+          "label": "长发",
+          "canonical": "longhair",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "lh"
+        },
+        {
+          "code": "su",
+          "label": "西装",
+          "canonical": "suit",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "sut"
+        },
+        {
+          "code": "un",
+          "label": "制服",
+          "canonical": "uniform",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "uni"
+        },
+        {
+          "code": "mu",
+          "label": "军装",
+          "canonical": "miluniform",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "mun"
+        },
+        {
+          "code": "ar",
+          "label": "奇幻盔甲",
+          "canonical": "armor",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "arm"
+        },
+        {
+          "code": "gs",
+          "label": "眼镜",
+          "canonical": "glasses",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "gls"
+        },
+        {
+          "code": "tt",
+          "label": "纹身",
+          "canonical": "tattoo",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "tat"
+        },
+        {
+          "code": "tu",
+          "label": "裸上身",
+          "canonical": "shirtless",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "top"
+        },
+        {
+          "code": "fr",
+          "label": "正装",
+          "canonical": "formal",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "frm"
+        },
+        {
+          "code": "vp",
+          "label": "吸血鬼外观",
+          "canonical": "vampapp",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "vap"
+        },
+        {
+          "code": "de",
+          "label": "恶魔外观",
+          "canonical": "demonapp",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "dep"
+        },
+        {
+          "code": "ap",
+          "label": "天使外观",
+          "canonical": "angelapp",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "anp"
+        },
+        {
+          "code": "wo",
+          "label": "狼人外观",
+          "canonical": "wolfapp",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "wop"
+        },
+        {
+          "code": "ea",
+          "label": "兽耳",
+          "canonical": "animalears",
+          "rule": "依据可见画面或明确说明判断；无证据不推断。",
+          "v4_code": "ear"
+        },
+        {
+          "code": "x2",
+          "label": "具有叙事意义的年龄差",
+          "canonical": "age gap",
+          "rule": "Significant, narratively relevant age difference.",
+          "v4_code": "x02"
+        }
+      ]
+    }
+  ],
+  "code_length": 2,
+  "retired_codes": {
+    "ga": "删除角色性别字段；不得重新赋义",
+    "gm": "删除角色性别字段；不得重新赋义",
+    "gf": "删除角色性别字段；不得重新赋义",
+    "gn": "删除角色性别字段；不得重新赋义",
+    "x1": "合并为外观特征 sh；不得重新赋义"
+  },
+  "rules_revision": 3,
+  "evidence_policy": "main_ad_narrative_only",
+  "excluded_evidence": [
+    "end_card_character_profile",
+    "character_recommendations",
+    "end_card_tags",
+    "brand_poster",
+    "download_card"
+  ]
+}

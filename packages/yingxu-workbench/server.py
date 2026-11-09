@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """映序：本地独立素材工作台。Python 3.10+，SQLite，FFmpeg。"""
+from contextlib import contextmanager
+import naming_v6
 import base64, copy, hashlib, json, mimetypes, os, re, sqlite3, subprocess, threading, uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone, date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, quote
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
@@ -25,10 +27,17 @@ class Problem(Exception):
 
 def blank():
     return dict(assets=[], scripts=[], analyses=[], audit=[], facts=[], cohorts=[], batches=[], tags=copy.deepcopy(TAGS), settings={'quality_rule':{}}, integrations={'doris':{'status':'unconfigured'}}, candidates={'groups':[], 'revision':0, 'status':'draft'})
+@contextmanager
+def database():
+    db=sqlite3.connect(DATA/'workspace.sqlite3')
+    try:
+        with db: yield db
+    finally: db.close()
+
 def init():
     DATA.mkdir(parents=True, exist_ok=True)
     for name in ('media','covers','frames','tmp'): (DATA/name).mkdir(exist_ok=True)
-    with sqlite3.connect(DATA/'workspace.sqlite3') as db:
+    with database() as db:
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('CREATE TABLE IF NOT EXISTS workspace (product TEXT PRIMARY KEY, payload TEXT NOT NULL)')
         for p in PRODUCTS: db.execute('INSERT OR IGNORE INTO workspace VALUES (?,?)',(p,json.dumps(blank(),ensure_ascii=False)))
@@ -42,10 +51,10 @@ def init():
             save(p,s)
 def load(p):
     require(p in PRODUCTS,'未知产品')
-    with sqlite3.connect(DATA/'workspace.sqlite3') as db:
+    with database() as db:
         return json.loads(db.execute('SELECT payload FROM workspace WHERE product=?',(p,)).fetchone()[0])
 def save(p,s):
-    with sqlite3.connect(DATA/'workspace.sqlite3') as db:
+    with database() as db:
         db.execute('UPDATE workspace SET payload=? WHERE product=?',(json.dumps(s,ensure_ascii=False,allow_nan=False),p))
 def find(s,key,id):
     obj=next((x for x in s[key] if x['id']==id),None)
@@ -74,27 +83,33 @@ def analyze(p,id):
         video=next((x for x in meta['streams'] if x['codec_type']=='video'),None)
         require(video is not None,'文件不包含视频轨道')
         duration=float(meta['format'].get('duration',0)); aid=uid('analysis_'); folder=DATA/'frames'/aid; folder.mkdir()
+        has_audio=any(x['codec_type']=='audio' for x in meta['streams'])
+        audio_path=folder/'audio.wav'
+        if has_audio: run(['ffmpeg','-v','error','-i',str(path),'-vn','-ac','1','-ar','16000','-y',str(audio_path)])
         frames=[]
-        for i in range(5):
-            at=round(max(0,duration-.1)*i/5,2); name=f'{i}.jpg'
+        count=min(40,max(5,int(duration/2)+1))
+        for i in range(count):
+            at=round(max(0,duration-.1)*i/max(1,count-1),2); name=f'{i}.jpg'
             run(['ffmpeg','-v','error','-ss',str(at),'-i',str(path),'-frames:v','1','-vf','scale=640:-2','-y',str(folder/name)])
             frames.append({'at':at,'file':name})
         (DATA/'covers'/f'{id}.jpg').write_bytes((folder/'0.jpg').read_bytes())
         endpoint=os.environ.get('YINGXU_ANALYSIS_URL')
         result=None
         if endpoint:
-            result=external(endpoint,{'asset_id':id,'name':a['name'],'duration':duration,'taxonomy':TAGS,'frames':[dict(at=f['at'],jpeg_base64=base64.b64encode((folder/f['file']).read_bytes()).decode()) for f in frames]},os.environ.get('YINGXU_ANALYSIS_TOKEN',''))
+            result=external(endpoint,{'asset_id':id,'name':a['name'],'duration':duration,'taxonomy':TAGS,'v6_dictionary':naming_v6.GROUPS,'v6_metadata':a.get('v6',{}).get('metadata',{}),'v6_rules':(ROOT/'v6/SKILL.md').read_text()+'\n'+(ROOT/'v6/references/evidence-policy.md').read_text(),'has_audio':has_audio,'audio_wav_base64':base64.b64encode(audio_path.read_bytes()).decode() if has_audio else None,'required_output':'Return summary, tags and v6 with tags (15 category/code arrays), na_reasons, evidence (code -> source/at/observation), story_segments(start,end), visual_reviewed, subtitle_reviewed, audio_review(status reviewed/no_dialogue/no_audio, note, timestamped segments). Exclude outro metadata. Never claim reviewed without listening.','frames':[dict(at=f['at'],jpeg_base64=base64.b64encode((folder/f['file']).read_bytes()).decode()) for f in frames]},os.environ.get('YINGXU_ANALYSIS_TOKEN',''))
             require(isinstance(result,dict) and isinstance(result.get('summary'),str),'分析服务返回格式错误：缺少 summary')
             require(isinstance(result.get('tags',[]),list),'分析服务 tags 必须是数组')
         with LOCK:
             s=load(p); a=find(s,'assets',id)
-            a.update(duration=round(duration,2),width=video.get('width'),height=video.get('height'),analysis_error='')
-            report=dict(id=aid,created_at=now(),provider='外部视觉分析适配器' if result else 'FFmpeg 本地采样（无 AI 推理）',prompt_version='yingxu-v1',tags=[],script_candidates=[],limitations=['只采样视频画面，未分析音轨'],frames=frames,sufficient_visual_evidence=bool(result),script_title='',summary='已完成视频元数据读取与关键帧采样。配置视觉分析服务后可生成剧情和标签建议。')
+            a.update(duration=round(duration,2),width=video.get('width'),height=video.get('height'),has_audio=has_audio,analysis_error='')
+            report=dict(id=aid,created_at=now(),provider='外部视觉分析适配器' if result else 'FFmpeg 本地采样（无 AI 推理）',prompt_version='yingxu-v1',tags=[],script_candidates=[],limitations=['按采样画面及音轨核对；证据不足保持待确认'],frames=frames,sufficient_visual_evidence=bool(result),script_title='',summary='已完成视频元数据读取与关键帧采样。配置视觉分析服务后可生成剧情和标签建议。')
             if result:
                 report.update({k:result[k] for k in ('summary','script_title','creative_analysis') if k in result})
                 report['tags']=[t for t in result.get('tags',[]) if t in sum(TAGS.values(),[])]
             else: report['limitations'].append('未配置 YINGXU_ANALYSIS_URL；未生成剧情或标签结论')
             s['analyses'].append(report); a['analysis_id']=aid
+            if result and isinstance(result.get('v6'),dict) and not a.get('v6',{}).get('manual_locked'):
+                naming_v6.apply(a,result['v6'],s['assets']);a['revision']+=1
             a['analysis_status']='completed' if result else 'pending'
             if not result: a['analysis_error']='封面与关键帧已生成；内容分析服务尚未配置，可先人工复核。'
             if not a.get('manual_locked'): a['state']='待复核'
@@ -130,6 +145,7 @@ def state(p,day):
     complete=[f for f in fs if f.get('d0_complete') and f.get('d0_payers') is not None and f.get('installs') is not None]
     denominator=sum(f['installs'] for f in complete)
     s['metrics']=dict(spend=spend if fs else None,installs=installs if fs else None,cpi=spend/installs if installs else None,d0_rate=sum(f['d0_payers'] for f in complete)/denominator if denominator else None)
+    s['v6_dictionary']=naming_v6.GROUPS
     s['capabilities']={'analysis':bool(os.environ.get('YINGXU_ANALYSIS_URL')),'doris':bool(os.environ.get('YINGXU_DORIS_URL')),'ffmpeg':__import__('shutil').which('ffmpeg') is not None}
     return s
 
@@ -211,6 +227,10 @@ def post(path,b,p):
         before=copy.deepcopy(a)
         for k in ('script_id','source_type','source_id','tags','tags_confirmed','reason','state','manual_locked','classification','quality'): a[k]=log['before'].get(k)
         a['revision']+=1;audit(s,before,a,'撤销复核','撤销 '+log['id']);result=a
+    elif path=='/api/naming':
+        a=find(s,'assets',b.get('id'));require(b.get('revision')==a['revision'],'记录已更新，请刷新后重试',409)
+        require(isinstance(b.get('v6'),dict),'缺少 V6 数据');before=copy.deepcopy(a)
+        result=naming_v6.apply(a,b['v6'],s['assets'],manual=True);a['revision']+=1;audit(s,before,a,'V6 命名复核','保存命名与证据；原文件保留')
     elif path=='/api/settings':
         rule=b.get('quality_rule',{});require(isinstance(rule,dict),'规则无效')
         for k,v in rule.items():
@@ -273,6 +293,10 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path=='/api/state': return self.json(state(p,q.get('date')))
                 if u.path=='/api/analysis-status': return self.json({'assets':load(p)['assets']})
                 if u.path=='/api/script-candidates': return self.json(candidates(load(p)))
+                if u.path=='/api/v6-dictionary': return self.json(naming_v6.GROUPS)
+                if u.path.startswith('/download/'):
+                    a=find(load(p),'assets',u.path.split('/')[-1]);require(a.get('file'),'无素材文件',404);require(a.get('v6',{}).get('status')=='ready','V6 命名尚未完成',409)
+                    return self.file(DATA/'media'/a['file'],a['name'])
                 if u.path=='/api/health': return self.json({'ok':True})
                 if u.path.startswith('/media/'):
                     aid=u.path.split('/')[-1];a=next((a for pr in PRODUCTS for a in load(pr)['assets'] if a['id']==aid),None);require(a and a['file'],'视频不存在',404);return self.file(DATA/'media'/a['file'])
@@ -304,9 +328,10 @@ class Handler(BaseHTTPRequestHandler):
                 if old: b['duplicates']+=1;save(p,s);return self.json({'status':'duplicate','id':old['id']})
                 id=uid('A');file=id+Path(name).suffix.lower();tmp.replace(DATA/'media'/file)
                 a=dict(id=id,name=Path(name).name,file=file,sha256=digest.hexdigest(),size=n,uploaded_at=now(),batch=b['id'],creator=b['creator'],duration=0,language='未知',script_id='',source_type='',source_id='',tags=[],classification='待分类',state='等待批次提交',analysis_status='pending',analysis_error='',quality='规则未配置',variation='',reason='新上传，等待复核',revision=1,manual_locked=False)
+                a['original_name']=a['name'];a['v6']=naming_v6.initial(a['name'],len(s['assets'])+1)
                 s['assets'].append(a);save(p,s);self.json({'status':'uploaded','id':id})
         finally: tmp.unlink(missing_ok=True)
-    def file(self,path):
+    def file(self,path,download=None):
         size=path.stat().st_size;start=0;end=size-1;status=200
         if self.headers.get('Range'):
             m=re.fullmatch(r'bytes=(\d*)-(\d*)',self.headers['Range']);require(m and (m[1] or m[2]),'无效 Range',416)
@@ -314,6 +339,7 @@ class Handler(BaseHTTPRequestHandler):
             else: start=max(0,size-int(m[2]))
             require(0<=start<=end<size,'Range 超出范围',416);status=206
         self.send_response(status);self.send_header('Content-Type',mimetypes.guess_type(path)[0] or 'application/octet-stream');self.send_header('Content-Length',str(end-start+1));self.send_header('Accept-Ranges','bytes');self.send_header('X-Content-Type-Options','nosniff')
+        if download:self.send_header('Content-Disposition',"attachment; filename*=UTF-8''"+quote(download))
         if status==206:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
         self.end_headers()
         if self.command=='HEAD':return

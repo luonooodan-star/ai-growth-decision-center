@@ -5,6 +5,7 @@ const day = (s,n) => new Date(Date.parse(s+'T00:00:00Z')+n*86400000).toISOString
 const monday = s => day(s,-((new Date(s+'T00:00:00Z').getUTCDay()+6)%7));
 const defaults = () => ({week:'',channel:'',country:'',window:'7'});
 function direction(a,state) {
+  if(a.v6){const g=state.v6_dictionary?.[0],t=g?.tags.find(t=>t.code===a.v6.tags?.['一级分类']?.[0]);return a.v6.status==='ready'&&t?t.label+' / '+(t.english_full||t.canonical):'V6 待核对 / Unconfirmed'}
   const {tags} = contentTags(a,state);
   if(tags.includes('狼人') && tags.some(t=>['命定伴侣','命定伴侣识别'].includes(t))) return '狼人命定';
   for(const group of ['关系与爱情套路','核心陪伴需求','剧情触发点与事件']) {
