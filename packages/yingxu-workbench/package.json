@@ -1,0 +1,1 @@
+{"name":"yingxu-workbench","private":true,"version":"1.0.0","type":"module","scripts":{"start":"python3 server.py","test":"python3 -m unittest discover -p test_server.py -v","check":"node --check public/app.js && node --check public/candidates.js && node --check public/weekly.js"}}

@@ -1,0 +1,29 @@
+{
+  "source": "http://192.168.3.242:8766/",
+  "status": "frontend captured; backend and media not copied",
+  "files": {
+    "campaigns.js": "ef20a59594bb45f8ec760c3e13c4dbba9d586c54d0ab0188ba974d2964a64672",
+    "index.html": "04859f236d26bffb412d41e2dc792b345c310e12286d9354aecd239d35f21f7a",
+    "weekly.js": "b2591d2826e93122346382f0c527c4d54bb4a2446a200ac7b223add46727b242",
+    "content-tags.js": "90adbd25c5ff7b537f3ecf82047b563661450972aca423c7dd7cb189b71a296e",
+    "candidates.js": "ec9c9fd25b3f561ab51a473da4bbb4b28d78bf33a4b65584e21aaf3708576227",
+    "style.css": "0376ceb6dece370fa014fbdc84a620d1906893e1fd23923fb344e8b6255adbf6",
+    "app.js": "cf11352ab265cad6192007176d70b586fd2c7b0b7f1db85fbb1c68ce6118a1de"
+  },
+  "api_paths": [
+    "/api/analysis-status",
+    "/api/batches",
+    "/api/doris/sync",
+    "/api/mapping",
+    "/api/retry",
+    "/api/review",
+    "/api/script-candidates",
+    "/api/script-candidates/",
+    "/api/scripts",
+    "/api/seal",
+    "/api/settings",
+    "/api/state",
+    "/api/undo",
+    "/api/upload"
+  ]
+}
