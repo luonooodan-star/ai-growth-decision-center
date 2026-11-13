@@ -223,6 +223,25 @@ export function buildCreativeFunnelRows(
           ? null
           : Number(orders.has(`${user.bundle}:${user.userId}:${user.date}`)),
     };
+    if (input.events !== null) {
+      item.behaviors ||= {};
+      const countsByName = new Map<string, number>();
+      for (const event of userEvents) {
+        const count = Number(event.event_count || 0);
+        if (count > 0)
+          countsByName.set(
+            value(event.event_name),
+            (countsByName.get(value(event.event_name)) || 0) + count,
+          );
+      }
+      for (const [name, count] of countsByName) {
+        const previous = item.behaviors[name] || { users: 0, events: 0 };
+        item.behaviors[name] = {
+          users: previous.users + 1,
+          events: previous.events + count,
+        };
+      }
+    }
     item.users++;
     for (const field of Object.keys(counts) as (keyof typeof counts)[]) {
       item[field] =

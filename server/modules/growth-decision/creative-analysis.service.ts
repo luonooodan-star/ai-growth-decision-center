@@ -1,3 +1,5 @@
+import { buildBehaviorHourlyRows } from './behavior-hours';
+import { mergeBehaviorCounts } from '@shared/behavior-table';
 import {
   BadRequestException,
   ConflictException,
@@ -50,6 +52,11 @@ export function validateCreativeAnalysisQuery(q: CreativeAnalysisQuery) {
     q.end > today()
   )
     throw new BadRequestException('请选择不超过今天的 1～31 天');
+  for (const flag of ['behaviorDetail', 'hourly'] as const)
+    if (q[flag] !== undefined && typeof q[flag] !== 'boolean')
+      throw new BadRequestException('行为查询参数无效');
+  if (q.hourly && (!q.behaviorDetail || q.start !== q.end))
+    throw new BadRequestException('小时下探仅支持单日应用内行为查询');
   if (q.refresh !== undefined && typeof q.refresh !== 'boolean')
     throw new BadRequestException('刷新参数无效');
 }
@@ -77,9 +84,11 @@ export class CreativeAnalysisService {
       end: query.end,
       platform: query.platform,
       refresh: !!query.refresh,
+      behaviorDetail: !!query.behaviorDetail,
+      hourly: !!query.hourly,
     };
     const scope = personalScopeKey();
-    const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform])}`;
+    const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform, q.behaviorDetail, q.hourly])}`;
     const active = this.active.get(scope);
     if (active) {
       if (active.key === key && !active.cancelled) return active.job;
@@ -281,30 +290,31 @@ export class CreativeAnalysisService {
               owners.set(key, values);
             }
           }
-          const orders = app.orders
-            ? await optional(`${label} 订单核验`, () =>
-                read(
-                  ORDERS,
-                  date,
-                  date,
-                  [
-                    'event_date',
-                    'user_id',
-                    'bundle_id',
-                    'platform',
-                    'action_desc',
-                    'env',
-                  ],
-                  {
-                    bundle_id: app.bundle,
-                    ...(app.platform === 'ios' ? { platform: 2 } : {}),
-                    action_desc: 'PURCHASED',
-                    env: 'Production',
-                  },
-                  'order_count',
-                ),
-              )
-            : null;
+          const orders =
+            app.orders && !q.behaviorDetail
+              ? await optional(`${label} 订单核验`, () =>
+                  read(
+                    ORDERS,
+                    date,
+                    date,
+                    [
+                      'event_date',
+                      'user_id',
+                      'bundle_id',
+                      'platform',
+                      'action_desc',
+                      'env',
+                    ],
+                    {
+                      bundle_id: app.bundle,
+                      ...(app.platform === 'ios' ? { platform: 2 } : {}),
+                      action_desc: 'PURCHASED',
+                      env: 'Production',
+                    },
+                    'order_count',
+                  ),
+                )
+              : null;
           for (let offset = 0; offset < users.length; offset += 200) {
             checkpoint();
             const batch = users.slice(offset, offset + 200);
@@ -321,11 +331,12 @@ export class CreativeAnalysisService {
                   'resolved_user_id',
                   'event_name',
                   'character_id',
+                  ...(q.hourly ? ['event_timestamp'] : []),
                 ],
                 {
                   app_id: app.appId,
                   resolved_user_id: ids,
-                  event_name: FUNNEL_EVENTS,
+                  ...(!q.behaviorDetail ? { event_name: FUNNEL_EVENTS } : {}),
                 },
                 'event_count',
               ),
@@ -353,11 +364,10 @@ export class CreativeAnalysisService {
                 'user_count',
               ),
             );
-            for (const row of buildCreativeFunnelRows(batch, {
-              events,
-              attribution,
-              orders,
-            })) {
+            const detailRows = q.hourly
+              ? buildBehaviorHourlyRows(batch, events, attribution)
+              : buildCreativeFunnelRows(batch, { events, attribution, orders });
+            for (const row of detailRows) {
               const campaignId = row.campaignName.match(/\((\d+)\)\s*$/)?.[1];
               const owner =
                 owners.get(campaignId || '') ||
@@ -374,6 +384,8 @@ export class CreativeAnalysisService {
                 buckets.set(row.key, row);
                 continue;
               }
+              existing.behaviors =
+                mergeBehaviorCounts([existing, row]) || undefined;
               existing.users += row.users;
               for (const metric of FUNNEL_METRICS)
                 existing[metric] =
@@ -384,6 +396,10 @@ export class CreativeAnalysisService {
           }
         }
       checkpoint();
+      if (q.hourly)
+        issues.add(
+          '小时按东八区实际事件发生时间统计；各小时占比以当日 D0 首开样本为分母，同一用户跨小时会重复出现，小时去重人数不可相加。',
+        );
       if (q.end === today()) issues.add('包含今天，D0 行为和归因仍在回传。');
       const report: CreativeAnalysisReport = {
         schemaVersion: 2,

@@ -65,6 +65,8 @@ export class MellowSharingService {
       end: query.end,
       platform: query.platform,
       refresh: false,
+      ...(query.behaviorDetail ? { behaviorDetail: true } : {}),
+      ...(query.hourly ? { hourly: true } : {}),
     };
     const source = runPersonalData('growth', () => this.analysis.start(q));
     for (const [id, h] of this.handles)

@@ -1,3 +1,5 @@
+import BehaviorComparisonTable from './BehaviorComparisonTable';
+import { BEHAVIOR_LABELS, mergeBehaviorCounts } from '@shared/behavior-table';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
@@ -6,15 +8,18 @@ import type { RoasReport } from '@shared/roas-report';
 import type {
   CreativeAnalysisJob,
   CreativeAnalysisReport,
-  FunnelCounts,
 } from '@shared/creative-analysis.interface';
-import { sumFunnel } from '@shared/creative-analysis';
 import {
   startCreativeAnalysis,
   getCreativeAnalysis,
   cancelCreativeAnalysis,
 } from '../../api/creative-analysis';
-import { RangePicker } from './CreativeAnalysisPage';
+import ReferenceReportFilters from './ReferenceReportFilters';
+import {
+  matchesReferenceReport,
+  reportChannel,
+  REPORT_CHANNEL_NAMES,
+} from '@shared/reference-report-filters';
 import AnalysisTabs from './AnalysisTabs';
 const input = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm';
 const button =
@@ -33,13 +38,24 @@ export function BehaviorDataPage() {
 }
 function ReportPage({ behavior }: { behavior: boolean }) {
   const yesterday = subDays(shanghaiCalendarToday(), 1);
-  const [from, setFrom] = useState(subDays(yesterday, 6)),
-    [to, setTo] = useState(yesterday);
+  const [windowEnd] = useState(yesterday);
+  const [windowStart] = useState(
+    () =>
+      new Date(
+        Math.max(
+          new Date(2026, 10, 1).getTime(),
+          subDays(yesterday, 30).getTime(),
+        ),
+      ),
+  );
+  const [from, setFrom] = useState(windowStart),
+    [to, setTo] = useState(windowEnd);
   const [platform, setPlatform] = useState<'all' | 'android' | 'ios'>('all');
   const [buyer, setBuyer] = useState(''),
     [channel, setChannel] = useState('');
   const [roas, setRoas] = useState<RoasReport>(),
     [report, setReport] = useState<CreativeAnalysisReport>();
+  const [hourReport, setHourReport] = useState<CreativeAnalysisReport>();
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(''),
     [error, setError] = useState('');
@@ -53,17 +69,19 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     },
     [],
   );
-  const query = async (refresh = false) => {
+  const query = async (refresh = false, hourDate?: string) => {
     const controller = new AbortController();
     abort.current = controller;
     setBusy(true);
     setError('');
     setProgress('正在查询');
     const q = {
-      start: format(from, 'yyyy-MM-dd'),
-      end: format(to, 'yyyy-MM-dd'),
-      platform,
+      start: hourDate || format(windowStart, 'yyyy-MM-dd'),
+      end: hourDate || format(windowEnd, 'yyyy-MM-dd'),
+      platform: 'all' as const,
       refresh,
+      behaviorDetail: behavior,
+      hourly: !!hourDate,
     };
     try {
       if (!behavior)
@@ -99,8 +117,13 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           });
           job = await getCreativeAnalysis(job.id, controller.signal);
         }
-        if (job.report) setReport(job.report);
-        else throw new Error(job.error || job.progress);
+        if (job.report) {
+          if (hourDate) setHourReport(job.report);
+          else {
+            setReport(job.report);
+            setHourReport(undefined);
+          }
+        } else throw new Error(job.error || job.progress);
       }
     } catch (e) {
       if (!controller.signal.aborted) setError(errorText(e));
@@ -120,48 +143,67 @@ function ReportPage({ behavior }: { behavior: boolean }) {
         channel: r.channel || '未归因',
       }))
     : roas?.rows || [];
-  const buyers = [...new Set(all.map((r) => r.buyer))].sort(),
-    channels = [...new Set(all.map((r) => r.channel))].sort();
-  const rows = (roas?.rows || []).filter(
-    (r) => (!buyer || r.buyer === buyer) && (!channel || r.channel === channel),
+  const scope = {
+    buyer,
+    channel,
+    platform,
+    start: format(from, 'yyyy-MM-dd'),
+    end: format(to, 'yyyy-MM-dd'),
+  };
+  const rows = (roas?.rows || []).filter((r) =>
+    matchesReferenceReport(
+      { ...r, platform: r.appId === 3 ? 'ios' : 'android' },
+      scope,
+    ),
   );
-  const behaviorRows = (report?.rows || []).filter(
-    (r) =>
-      (!buyer || (r.buyer || '未确认归属') === buyer) &&
-      (!channel || (r.channel || '未归因') === channel),
+  const behaviorRows = (report?.rows || []).filter((r) =>
+    matchesReferenceReport({ ...r, buyer: r.buyer || '' }, scope),
   );
   const groups = new Map<string, typeof behaviorRows>();
   for (const row of behaviorRows) {
     const key = JSON.stringify([
       row.platform,
       row.buyer || '未确认归属',
-      row.channel || '未归因',
+      REPORT_CHANNEL_NAMES[reportChannel(row.channel)] || row.channel,
     ]);
     groups.set(key, [...(groups.get(key) || []), row]);
   }
-  const metrics: [keyof Omit<FunnelCounts, 'users'>, string][] = [
-    ['chat', '开聊'],
-    ['chat5', '单角色 ≥5 条'],
-    ['chat20', '单角色 ≥20 条'],
-    ['payShow', '付费展示'],
-    ['payClick', '展示后点击'],
-    ['paySuccess', '展示点击后成功'],
-    ['successAny', '任意付费成功事件'],
-    ['orders', '购买成功订单用户'],
-  ];
-  const issues = behavior ? report?.issues : roas?.issues;
+  const issues = behavior
+    ? [...(report?.issues || []), ...(hourReport?.issues || [])]
+    : roas?.issues;
   const exportCsv = () => {
     const data = behavior
       ? [
-          ['产品', '优化师', '渠道', 'D0首开用户', ...metrics.map((m) => m[1])],
-          ...[...groups].map(([key, group]) => {
-            const total = sumFunnel(group);
-            return [
-              ...JSON.parse(key),
-              total.users,
-              ...metrics.map(([m]) => total[m] ?? ''),
-            ];
-          }),
+          [
+            '产品',
+            '投放人员',
+            '渠道',
+            '日期',
+            '应用内行为',
+            '事件名',
+            '去重用户数',
+            '占样本比例',
+            '事件次数',
+          ],
+          ...[...groups].flatMap(([key, group]) =>
+            [...new Set(group.map((r) => r.date))]
+              .sort()
+              .reverse()
+              .flatMap((date) => {
+                const day = group.filter((r) => r.date === date),
+                  base = day.reduce((n, r) => n + r.users, 0),
+                  counts = mergeBehaviorCounts(day);
+                return Object.entries(counts || {}).map(([event, c]) => [
+                  ...JSON.parse(key),
+                  date,
+                  BEHAVIOR_LABELS[event] || event,
+                  event,
+                  c.users,
+                  base ? (100 * c.users) / base : '',
+                  c.events,
+                ]);
+              }),
+          ),
         ]
       : [
           [
@@ -175,7 +217,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           ...rows.map((r) => [
             r.appId === 3 ? 'Mellow iOS' : 'Mellow Android',
             r.buyer,
-            r.channel,
+            REPORT_CHANNEL_NAMES[reportChannel(r.channel)] || r.channel,
             r.date,
             r.spend,
             ...r.days.map((d) => (d ? (100 * d.revenue) / r.spend : '')),
@@ -212,31 +254,23 @@ function ReportPage({ behavior }: { behavior: boolean }) {
         </h1>
         <p className="mt-2 text-sm text-slate-500">
           {behavior
-            ? '按东八区 D0 首开去重用户关联当日行为，各阶段占比以首开用户为分母；未知归属单列。'
+            ? '按日期对比应用内行为：去重用户数、占 D0 首开样本比例、事件次数。最新日期在左，点击日期可按东八区小时下探。'
             : '安装同期群累计收入 ÷ 对应安装日全量媒体消耗。D0—D14，缺失值显示 —。渠道按 Doris 原始 media_source 分开显示。'}
         </p>
       </div>
-      <section className="flex flex-wrap items-center gap-3 rounded-2xl border bg-white p-5">
-        <select
-          aria-label="产品"
-          className={input}
-          value={platform}
-          onChange={(e) => setPlatform(e.target.value as typeof platform)}
-          disabled={busy}
-        >
-          <option value="all">全部 Mellow 产品</option>
-          <option value="android">Mellow Android</option>
-          <option value="ios">Mellow iOS</option>
-        </select>
-        <RangePicker
-          from={from}
-          to={to}
-          disabled={busy}
-          change={(a, b) => {
-            setFrom(a);
-            setTo(b);
-          }}
-        />
+      <ReferenceReportFilters
+        value={{ platform, buyer, channel, from, to }}
+        min={windowStart}
+        max={windowEnd}
+        change={(v) => {
+          setPlatform(v.platform);
+          setBuyer(v.buyer);
+          setChannel(v.channel);
+          setFrom(v.from);
+          setTo(v.to);
+        }}
+      />
+      <div className="flex flex-wrap items-center gap-3">
         <button className={button} disabled={busy} onClick={() => void query()}>
           查询数据
         </button>
@@ -252,10 +286,10 @@ function ReportPage({ behavior }: { behavior: boolean }) {
             停止等待
           </button>
         )}
-        <p className="w-full text-xs text-slate-500">
-          确认产品和日期后点击查询；人员与渠道筛选使用已返回数据。
-        </p>
-      </section>
+        <span className="text-xs text-slate-500">
+          人员、渠道、产品和日期均直接筛选已加载数据。
+        </span>
+      </div>
       {busy && (
         <p role="status" className="text-sm text-blue-600">
           {progress}，保留已有结果…
@@ -299,28 +333,6 @@ function ReportPage({ behavior }: { behavior: boolean }) {
       )}
       <section className="rounded-2xl border bg-white p-5">
         <div className="mb-5 flex flex-wrap gap-3">
-          <select
-            aria-label="优化师"
-            className={input}
-            value={buyer}
-            onChange={(e) => setBuyer(e.target.value)}
-          >
-            <option value="">全部优化师</option>
-            {buyers.map((b) => (
-              <option key={b}>{b}</option>
-            ))}
-          </select>
-          <select
-            aria-label="渠道"
-            className={input}
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-          >
-            <option value="">全部渠道</option>
-            {channels.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
           <button className={input} onClick={exportCsv} disabled={!all.length}>
             导出 CSV
           </button>
@@ -334,46 +346,12 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           </span>
         </div>
         {behavior ? (
-          <div className="space-y-6">
-            {[...groups].map(([key, group]) => {
-              const [app, owner, media] = JSON.parse(key);
-              const total = sumFunnel(group);
-              return (
-                <article key={key} className="rounded-xl border p-5">
-                  <h2 className="font-semibold">
-                    Mellow {app} · {owner} · {media}
-                  </h2>
-                  <p className="my-3 text-sm text-slate-500">
-                    D0 首开用户 {total.users} 人
-                  </p>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {metrics.map(([metric, label]) => (
-                      <div key={metric} className="rounded-lg bg-slate-50 p-3">
-                        <p className="text-xs text-slate-500">{label}</p>
-                        <p className="my-1 font-semibold">
-                          {total[metric] ?? '—'} 人 ·{' '}
-                          {pct(total[metric], total.users)}
-                        </p>
-                        <div className="h-1.5 overflow-hidden rounded bg-slate-200">
-                          <div
-                            className="h-full bg-blue-500"
-                            style={{
-                              width: `${total[metric] === null || !total.users ? 0 : (100 * total[metric]!) / total.users}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
-            {!groups.size && (
-              <p className="py-12 text-center text-sm text-slate-500">
-                {report ? '当前条件没有用户数据' : '选择日期后点击查询数据'}
-              </p>
-            )}
-          </div>
+          <BehaviorComparisonTable
+            rows={behaviorRows}
+            hourlyRows={hourReport?.rows || []}
+            busy={busy}
+            onDrill={(date) => void query(false, date)}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1800px] text-right text-sm">
@@ -396,7 +374,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
                   <tr key={i} className="border-t">
                     <td className="whitespace-nowrap px-3 py-3 text-left">
                       Mellow {r.appId === 3 ? 'iOS' : 'Android'} / {r.buyer} /{' '}
-                      {r.channel}
+                      {REPORT_CHANNEL_NAMES[reportChannel(r.channel)] ||
+                        r.channel}
                     </td>
                     <td className="whitespace-nowrap px-3">{r.date}</td>
                     <td className="px-3">${r.spend.toFixed(2)}</td>

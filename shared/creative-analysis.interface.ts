@@ -4,6 +4,8 @@ export interface CreativeAnalysisQuery {
   end: string;
   platform: FunnelPlatform | 'all';
   refresh?: boolean;
+  behaviorDetail?: boolean;
+  hourly?: boolean;
 }
 export interface CreativeTagParse {
   version: 'v2' | 'unknown';
@@ -37,6 +39,8 @@ export interface CreativeFunnelRow extends FunnelCounts {
   creativeId: string;
   campaignName: string;
   buyer?: string;
+  hour?: number;
+  behaviors?: Record<string, import('./behavior-table').BehaviorCount>;
   tags: CreativeTagParse;
 }
 export interface CreativeAnalysisReport {
