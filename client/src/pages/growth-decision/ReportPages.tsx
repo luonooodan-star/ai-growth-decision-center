@@ -37,14 +37,15 @@ export function BehaviorDataPage() {
   return <ReportPage behavior />;
 }
 function ReportPage({ behavior }: { behavior: boolean }) {
-  const yesterday = subDays(shanghaiCalendarToday(), 1);
-  const [windowEnd] = useState(yesterday);
+  const [windowEnd] = useState(() =>
+    behavior ? shanghaiCalendarToday() : subDays(shanghaiCalendarToday(), 1),
+  );
   const [windowStart] = useState(
     () =>
       new Date(
         Math.max(
           new Date(2026, 10, 1).getTime(),
-          subDays(yesterday, 30).getTime(),
+          subDays(windowEnd, 30).getTime(),
         ),
       ),
   );
@@ -287,7 +288,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           </button>
         )}
         <span className="text-xs text-slate-500">
-          人员、渠道、产品和日期均直接筛选已加载数据。
+          每日东八区 10:00
+          后台更新；查询与筛选读取持久缓存，缺失日期首次补齐。仅“重新抓取”主动刷新。
         </span>
       </div>
       {busy && (

@@ -1,3 +1,5 @@
+import { format } from 'date-fns';
+import { shanghaiCalendarToday } from '@shared/paid-growth-dates';
 import { Fragment, useState } from 'react';
 import type { CreativeFunnelRow } from '@shared/creative-analysis.interface';
 import {
@@ -39,7 +41,10 @@ export default function BehaviorComparisonTable({
       );
       return {
         column,
-        base: parts.reduce((n, r) => n + r.users, 0),
+        base: (hourly && !parts.length
+          ? source.filter((r) => r.hour === 0)
+          : parts
+        ).reduce((n, r) => n + r.users, 0),
         counts: parts.length ? mergeBehaviorCounts(parts) : null,
       };
     });
@@ -79,7 +84,12 @@ export default function BehaviorComparisonTable({
                         onDrill(c.column);
                       }}
                     >
-                      {c.column} · 按小时下探
+                      {c.column}
+                      {c.column ===
+                      format(shanghaiCalendarToday(), 'yyyy-MM-dd')
+                        ? '（今天 · 回传中）'
+                        : ''}{' '}
+                      · 按小时下探
                     </button>
                   )}
                   <p className="mt-1 text-xs font-normal text-slate-500">

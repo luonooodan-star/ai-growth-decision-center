@@ -64,7 +64,7 @@ export class MellowSharingService {
       start: query.start,
       end: query.end,
       platform: query.platform,
-      refresh: false,
+      refresh: query.behaviorDetail ? query.refresh === true : false,
       ...(query.behaviorDetail ? { behaviorDetail: true } : {}),
       ...(query.hourly ? { hourly: true } : {}),
     };

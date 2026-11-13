@@ -24,6 +24,7 @@ export function buildBehaviorHourlyRows(
   cohort: FunnelCohortUser[],
   events: BiRawRow[] | null,
   attribution: BiRawRow[] | null,
+  now = new Date(),
 ): CreativeFunnelRow[] {
   if (events === null) throw new Error('行为事件读取失败，无法生成小时数据');
   const byHour = new Map<number, BiRawRow[]>();
@@ -34,11 +35,19 @@ export function buildBehaviorHourlyRows(
     );
     byHour.set(h, [...(byHour.get(h) || []), row]);
   }
+  const current = new Date(now.getTime() + 8 * 3600000);
+  const dateNow = current.toISOString().slice(0, 10);
   return Array.from({ length: 24 }, (_, hour) =>
     buildCreativeFunnelRows(cohort, {
       events: byHour.get(hour) || [],
       attribution,
       orders: null,
     }).map((row) => ({ ...row, hour, key: JSON.stringify([row.key, hour]) })),
-  ).flat();
+  )
+    .flat()
+    .filter(
+      (row) =>
+        row.date < dateNow ||
+        (row.date === dateNow && row.hour! <= current.getUTCHours()),
+    );
 }

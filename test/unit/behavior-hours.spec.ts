@@ -52,6 +52,19 @@ describe('D0 behavior daily and hourly counts', () => {
       shanghaiEventHour(Date.parse('2026-11-11T16:00:00Z'), '2026-11-11'),
     ).toThrow();
   });
+  it('leaves future hours missing for today rather than reporting zero activity', () => {
+    const rows = buildBehaviorHourlyRows(
+      cohort,
+      [],
+      [],
+      new Date('2026-11-11T02:30:00Z'),
+    );
+    expect(rows).toHaveLength(11);
+    expect(rows.map((r) => r.hour)).toEqual(
+      Array.from({ length: 11 }, (_, i) => i),
+    );
+    expect(rows.find((r) => r.hour === 11)).toBeUndefined();
+  });
   it('deduplicates users independently of event counts and preserves cross-hour users', () => {
     const events = [
       event('a', '2026-11-11T01:00:00Z', 3),

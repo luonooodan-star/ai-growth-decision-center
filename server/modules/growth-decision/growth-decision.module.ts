@@ -1,7 +1,7 @@
-import {
-  RoasReportController,
-  RoasReportService,
-} from './roas-report.controller';
+import { RoasReportService } from './roas-report.service';
+import { ReportCacheService } from './report-cache.service';
+import { ReportScheduleService } from './report-schedule.service';
+import { RoasReportController } from './roas-report.controller';
 import { Module } from '@nestjs/common';
 import { CreativeAnalysisController } from './creative-analysis.controller';
 import { CreativeAnalysisService } from './creative-analysis.service';
@@ -45,7 +45,9 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    ReportCacheService,
     RoasReportService,
+    ReportScheduleService,
     MellowSharingService,
     CreativeAnalysisService,
     MetaAdjustmentService,

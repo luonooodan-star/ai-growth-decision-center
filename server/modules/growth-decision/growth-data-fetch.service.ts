@@ -204,6 +204,10 @@ export class GrowthDataFetchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  reportBackgroundBusy() {
+    return this.queryGate.isInteractiveBusy() || !!this.activeRun;
+  }
+
   getHistory(productId?: string): GrowthFetchHistoryResponse {
     return {
       items: this.database.listFetchRuns(productId),

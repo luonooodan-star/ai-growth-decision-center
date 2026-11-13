@@ -1,9 +1,16 @@
+import { dorisWorkPriority } from './doris-query-gate';
+import {
+  ReportCacheService,
+  reportCycle,
+  type ReportTask,
+} from './report-cache.service';
 import { buildBehaviorHourlyRows } from './behavior-hours';
 import { mergeBehaviorCounts } from '@shared/behavior-table';
 import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Optional,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -62,6 +69,7 @@ export function validateCreativeAnalysisQuery(q: CreativeAnalysisQuery) {
 }
 type Work = {
   scope: string;
+  activeScope: string;
   key: string;
   created: number;
   cancelled: boolean;
@@ -75,7 +83,60 @@ export class CreativeAnalysisService {
   constructor(
     private readonly bi: PaidGrowthService,
     private readonly db: LocalDatabaseService,
+    @Optional() private readonly dailyCache?: ReportCacheService,
   ) {}
+  private get slices() {
+    return this.dailyCache || new ReportCacheService(this.db);
+  }
+  isBusy() {
+    return this.active.size > 0;
+  }
+  private sliceTask(
+    date: string,
+    platform: 'ios' | 'android',
+    hourly = false,
+  ): ReportTask {
+    return { kind: 'behavior', date, platform, hourly };
+  }
+  private readCachedDetail(
+    q: CreativeAnalysisQuery,
+  ): CreativeAnalysisReport | undefined {
+    const rows: CreativeFunnelRow[] = [];
+    const issues = new Set<string>();
+    const times: string[] = [];
+    let excluded = 0,
+      duplicates = 0;
+    for (const app of FUNNEL_APPS.filter(
+      (a) => q.platform === 'all' || a.platform === q.platform,
+    ))
+      for (let date = q.start; date <= q.end; date = shift(date, 1)) {
+        const task = this.sliceTask(date, app.platform, !!q.hourly);
+        this.slices.track(task);
+        const cached = this.slices.read<CreativeAnalysisReport>(task);
+        if (!cached) return;
+        rows.push(...cached.data.rows);
+        excluded += cached.data.excludedFirstOpenEvents;
+        duplicates += cached.data.duplicateFirstOpenUsers;
+        times.push(cached.updatedAt);
+        cached.data.issues.forEach((i) => issues.add(i));
+        const error = this.slices.error(task);
+        if (error) issues.add(`${date} 更新失败，保留缓存：${error}`);
+      }
+    if (q.end === today())
+      issues.add(
+        '包含今天，数据为最近一次保存的快照；每日东八区 10:00 更新，可手动重新抓取。',
+      );
+    return {
+      schemaVersion: 2,
+      scope: q,
+      generatedAt: times.sort()[0] || new Date().toISOString(),
+      cache: true,
+      rows,
+      issues: [...issues],
+      excludedFirstOpenEvents: excluded,
+      duplicateFirstOpenUsers: duplicates,
+    };
+  }
 
   start(query: CreativeAnalysisQuery): CreativeAnalysisJob {
     validateCreativeAnalysisQuery(query);
@@ -88,25 +149,23 @@ export class CreativeAnalysisService {
       hourly: !!query.hourly,
     };
     const scope = personalScopeKey();
+    const activeScope = `${scope}:${dorisWorkPriority.getStore() || 'interactive'}`;
     const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform, q.behaviorDetail, q.hourly])}`;
-    const active = this.active.get(scope);
-    if (active) {
-      if (active.key === key && !active.cancelled) return active.job;
-      throw new ConflictException(
-        '当前用户的分析仍在读取，请等待完成或取消后重试',
-      );
-    }
     for (const [id, entry] of this.jobs)
-      if (!this.active.has(entry.scope) && Date.now() - entry.created > 1800000)
+      if (
+        this.active.get(entry.activeScope) !== entry &&
+        Date.now() - entry.created > 1800000
+      )
         this.jobs.delete(id);
     if (this.jobs.size >= 30) {
       const finished = [...this.jobs].find(
-        ([, work]) => !this.active.has(work.scope),
+        ([, work]) => this.active.get(work.activeScope) !== work,
       );
       if (finished) this.jobs.delete(finished[0]);
     }
     const work: Work = {
       scope,
+      activeScope,
       key,
       created: Date.now(),
       cancelled: false,
@@ -114,7 +173,19 @@ export class CreativeAnalysisService {
     };
     this.jobs.set(work.job.id, work);
     const cached = this.db.getBiCache(key);
-    if (!q.refresh && cached) {
+    if (q.behaviorDetail && !q.refresh) {
+      const detail = this.readCachedDetail(q);
+      if (detail) {
+        work.job = {
+          ...work.job,
+          state: 'completed',
+          progress: '已读取每日持久缓存',
+          report: detail,
+        };
+        return work.job;
+      }
+    }
+    if (!q.behaviorDetail && !q.refresh && cached) {
       try {
         const report = JSON.parse(cached) as CreativeAnalysisReport;
         const ttl = q.end < today() ? 86400000 : 300000;
@@ -134,12 +205,20 @@ export class CreativeAnalysisService {
         /* A corrupt cache triggers a fresh, scoped query. */
       }
     }
+    const active = this.active.get(activeScope);
+    if (active) {
+      if (active.key === key && !active.cancelled) return active.job;
+      this.jobs.delete(work.job.id);
+      throw new ConflictException(
+        '当前用户的分析仍在读取，请等待完成或取消后重试',
+      );
+    }
     if (this.active.size >= 2) {
       this.jobs.delete(work.job.id);
       throw new ConflictException('已有两个分析任务正在读取，请稍后再查询');
     }
-    this.active.set(scope, work);
-    void this.run(work, q).finally(() => this.active.delete(scope));
+    this.active.set(activeScope, work);
+    void this.run(work, q).finally(() => this.active.delete(activeScope));
     return work.job;
   }
   status(id: string): CreativeAnalysisJob {
@@ -165,6 +244,7 @@ export class CreativeAnalysisService {
   }
   private async run(work: Work, q: CreativeAnalysisQuery) {
     let sourceFailed = false;
+    const startedSlices: ReportTask[] = [];
     const issues = new Set<string>();
     const failedSources = new Set<string>();
     const checkpoint = () => {
@@ -230,12 +310,31 @@ export class CreativeAnalysisService {
       const apps = FUNNEL_APPS.filter(
         (app) => q.platform === 'all' || app.platform === q.platform,
       );
+      const reused = new Map<string, CreativeAnalysisReport>();
+      const sliceTimes: string[] = [];
       const first: BiRawRow[] = [];
       const dates: string[] = [];
       for (let date = q.start; date <= q.end; date = shift(date, 1))
         dates.push(date);
       for (const app of apps)
         for (const date of dates) {
+          if (q.behaviorDetail) {
+            const task = this.sliceTask(date, app.platform, !!q.hourly);
+            this.slices.track(task);
+            const cached = !q.refresh
+              ? this.slices.read<CreativeAnalysisReport>(task)
+              : undefined;
+            if (!q.refresh && !cached && this.slices.error(task))
+              throw new Error(
+                `${date} 暂无成功缓存；上次读取失败，请等待每日 10:00 更新或手动重新抓取。`,
+              );
+            if (!cached) startedSlices.push(task);
+            if (cached) {
+              reused.set(`${app.platform}:${date}`, cached.data);
+              sliceTimes.push(cached.updatedAt);
+              continue;
+            }
+          }
           work.job.progress = `${app.platform === 'ios' ? 'iOS' : 'Android'} · ${date} · 读取首开用户`;
           first.push(
             ...(await read(
@@ -252,9 +351,14 @@ export class CreativeAnalysisService {
         }
       const cohort = funnelCohort(first);
       const buckets = new Map<string, CreativeFunnelRow>();
+      for (const report of reused.values()) {
+        for (const row of report.rows) buckets.set(row.key, row);
+        report.issues.forEach((i) => issues.add(i));
+      }
       for (const app of apps)
         for (const date of dates) {
           checkpoint();
+          if (reused.has(`${app.platform}:${date}`)) continue;
           const users = cohort.users.filter(
             (user) => user.appId === app.appId && user.date === date,
           );
@@ -411,7 +515,62 @@ export class CreativeAnalysisService {
         excludedFirstOpenEvents: cohort.excluded,
         duplicateFirstOpenUsers: cohort.duplicates,
       };
-      if (!sourceFailed)
+      if (q.behaviorDetail) {
+        for (const app of apps)
+          for (const date of dates) {
+            if (reused.has(`${app.platform}:${date}`)) continue;
+            const prefix = `${app.platform === 'ios' ? 'iOS' : 'Android'} · ${date}`;
+            if ([...failedSources].some((label) => label.startsWith(prefix))) {
+              this.slices.mark(
+                this.sliceTask(date, app.platform, !!q.hourly),
+                reportCycle(),
+                [...issues].filter((i) => i.startsWith(prefix)).join('；'),
+              );
+              continue;
+            }
+            const dailyCohort = funnelCohort(
+              first.filter(
+                (r) =>
+                  Number(r.app_id) === app.appId &&
+                  String(r.event_date).slice(0, 10) === date,
+              ),
+            );
+            this.slices.save(this.sliceTask(date, app.platform, !!q.hourly), {
+              ...report,
+              excludedFirstOpenEvents: dailyCohort.excluded,
+              duplicateFirstOpenUsers: dailyCohort.duplicates,
+              issues: report.issues.filter((i) => !i.startsWith('包含今天')),
+              scope: {
+                ...q,
+                start: date,
+                end: date,
+                platform: app.platform,
+                refresh: false,
+              },
+              rows: report.rows.filter(
+                (r) => r.date === date && r.platform === app.platform,
+              ),
+            });
+            sliceTimes.push(report.generatedAt);
+          }
+        if (sliceTimes.length) report.generatedAt = sliceTimes.sort()[0];
+      }
+      if (q.behaviorDetail && sourceFailed) {
+        const previous = this.readCachedDetail(q);
+        if (previous) {
+          const errors = report.issues;
+          Object.assign(report, previous, {
+            issues: [
+              ...new Set([
+                ...previous.issues,
+                ...errors,
+                '本次更新未完整完成，继续显示上次成功缓存。',
+              ]),
+            ],
+          });
+        }
+      }
+      if (!sourceFailed && !q.behaviorDetail)
         this.db.saveBiCache(
           work.key,
           JSON.stringify({ ...report, updatedAt: report.generatedAt }),
@@ -423,6 +582,10 @@ export class CreativeAnalysisService {
         report,
       };
     } catch (error) {
+      if (q.behaviorDetail && !work.cancelled)
+        for (const task of startedSlices)
+          if (!this.slices.read(task))
+            this.slices.mark(task, reportCycle(), errorText(error));
       if (!work.cancelled)
         work.job = {
           ...work.job,
