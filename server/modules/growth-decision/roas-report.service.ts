@@ -1,3 +1,4 @@
+import { dorisWorkPriority } from './doris-query-gate';
 import { ReportCacheService, reportCycle } from './report-cache.service';
 import { Injectable } from '@nestjs/common';
 import type { CreativeAnalysisQuery } from '@shared/creative-analysis.interface';
@@ -12,6 +13,13 @@ export class RoasReportService {
   ) {}
   async query(q: CreativeAnalysisQuery): Promise<RoasReport> {
     validateCreativeAnalysisQuery(q);
+    if (dorisWorkPriority.getStore() !== 'background')
+      this.cache.select(
+        'roas',
+        q.start,
+        q.end,
+        q.platform === 'all' ? ['android', 'ios'] : [q.platform],
+      );
     const rows: RoasReport['rows'] = [],
       issues = new Set<string>(),
       times: string[] = [];

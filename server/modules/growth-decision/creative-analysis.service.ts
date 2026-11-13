@@ -148,6 +148,17 @@ export class CreativeAnalysisService {
       behaviorDetail: !!query.behaviorDetail,
       hourly: !!query.hourly,
     };
+    if (
+      q.behaviorDetail &&
+      !q.hourly &&
+      dorisWorkPriority.getStore() !== 'background'
+    )
+      this.slices.select(
+        'behavior',
+        q.start,
+        q.end,
+        q.platform === 'all' ? ['android', 'ios'] : [q.platform],
+      );
     const scope = personalScopeKey();
     const activeScope = `${scope}:${dorisWorkPriority.getStore() || 'interactive'}`;
     const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform, q.behaviorDetail, q.hourly])}`;

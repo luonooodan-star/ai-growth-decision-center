@@ -1,3 +1,4 @@
+import { dorisWorkPriority } from './doris-query-gate';
 import { Injectable } from '@nestjs/common';
 import { LocalDatabaseService } from '@server/database/local-database.service';
 import { personalScopeKey } from '../../common/utils/personal-doris';
@@ -48,6 +49,23 @@ export class ReportCacheService {
       }),
     );
   }
+  select(
+    kind: ReportTask['kind'],
+    start: string,
+    end: string,
+    platforms: ReportTask['platform'][],
+  ) {
+    this.write(
+      this.tasks().filter(
+        (t) =>
+          t.kind !== kind ||
+          (t.date >= start && t.date <= end && platforms.includes(t.platform)),
+      ),
+    );
+  }
+  isTracked(t: ReportTask) {
+    return this.tasks().some((x) => this.key(x) === this.key(t));
+  }
   track(t: ReportTask, scheduled = false) {
     const tasks = this.tasks();
     if (!tasks.some((x) => this.key(x) === this.key(t))) {
@@ -59,7 +77,8 @@ export class ReportCacheService {
     const tasks = this.tasks();
     const index = tasks.findIndex((x) => this.key(x) === this.key(t));
     if (index >= 0) tasks[index] = { ...tasks[index], attempt, error };
-    else tasks.push({ ...t, attempt, error });
+    else if (dorisWorkPriority.getStore() !== 'background')
+      tasks.push({ ...t, attempt, error });
     this.write(tasks);
   }
   read<T>(t: ReportTask): ReportCacheEntry<T> | undefined {

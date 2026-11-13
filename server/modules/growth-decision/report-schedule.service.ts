@@ -58,24 +58,12 @@ export class ReportScheduleService implements OnModuleInit, OnModuleDestroy {
           dorisWorkPriority.run('background', async () => {
             const tasks = this.cache.tasks();
             if (!tasks.length) return;
-            // Carry the previously viewed product profiles forward to the new data day.
-            for (const t of tasks.filter((t) => !t.hourly)) {
-              const date =
-                t.kind === 'behavior'
-                  ? local.toISOString().slice(0, 10)
-                  : new Date(local.getTime() - 86400000)
-                      .toISOString()
-                      .slice(0, 10);
-              this.cache.track(
-                { ...t, date, attempt: undefined, error: undefined },
-                true,
-              );
-            }
             const due = this.cache
               .tasks()
               .filter((t) => t.attempt !== reportCycle(now))
               .sort((a, b) => b.date.localeCompare(a.date));
             for (const task of due) {
+              if (!this.cache.isTracked(task)) continue;
               if (this.fetcher.reportBackgroundBusy() || this.analysis.isBusy())
                 break;
               this.cache.mark(task, reportCycle(now));

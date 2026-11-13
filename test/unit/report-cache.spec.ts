@@ -124,6 +124,45 @@ describe('daily report persistence and 10:00 schedule', () => {
     await asUser(() => roas.query({ ...query, refresh: true }));
     expect(bi.part.mock.calls.length).toBeGreaterThan(calls);
   });
+  it('refreshes only the selected dates and retains other cached dates without scheduling them', async () => {
+    const { cache, roas, bi } = setup();
+    await asUser(() => roas.query({ ...query, start: '2026-11-11' }));
+    await asUser(() =>
+      roas.query({ ...query, start: '2026-11-12', end: '2026-11-12' }),
+    );
+    expect(asUser(() => cache.tasks()).map((t) => t.date)).toEqual([
+      '2026-11-12',
+    ]);
+    expect(
+      asUser(() =>
+        cache.read({
+          kind: 'roas',
+          date: '2026-11-11',
+          platform: 'android',
+          hourly: false,
+        }),
+      ),
+    ).toBeDefined();
+    bi.part.mockClear();
+    jest.setSystemTime(new Date('2026-11-14T02:00:00Z'));
+    const schedule = new ReportScheduleService(
+      cache,
+      { isBusy: () => false } as never,
+      roas,
+      { reportBackgroundBusy: () => false } as never,
+    );
+    await schedule.tick();
+    expect(bi.part).toHaveBeenCalledTimes(2);
+    expect(
+      bi.part.mock.calls.every(
+        ([args]) =>
+          args.start_date === '2026-11-12' && args.end_date === '2026-11-12',
+      ),
+    ).toBe(true);
+    expect(asUser(() => cache.tasks()).map((t) => t.date)).toEqual([
+      '2026-11-12',
+    ]);
+  });
   it('defers automatic work while foreground queries are busy', async () => {
     const { cache, roas, bi } = setup();
     await asUser(() => roas.query(query));

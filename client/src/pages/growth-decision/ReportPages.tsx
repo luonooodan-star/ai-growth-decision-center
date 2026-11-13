@@ -77,8 +77,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     setError('');
     setProgress('正在查询');
     const q = {
-      start: hourDate || format(windowStart, 'yyyy-MM-dd'),
-      end: hourDate || format(windowEnd, 'yyyy-MM-dd'),
+      start: hourDate || format(from, 'yyyy-MM-dd'),
+      end: hourDate || format(to, 'yyyy-MM-dd'),
       platform: 'all' as const,
       refresh,
       behaviorDetail: behavior,
