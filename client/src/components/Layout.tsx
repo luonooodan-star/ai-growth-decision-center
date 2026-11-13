@@ -158,6 +158,10 @@ const Layout = () => {
               </NavLink>
               {username && connection.role !== 'designer' && (
                 <>
+                  <NavLink to="/roas" className={navClass}>
+                    <ChartNoAxesCombined className="size-3.5" />
+                    ROAS数据查看
+                  </NavLink>
                   <NavLink to="/" className={navClass} end>
                     <Activity className="size-3.5" />
                     产品中心

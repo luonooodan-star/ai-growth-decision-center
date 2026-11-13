@@ -41,7 +41,7 @@ function setup() {
   return { service, bi, db, cache };
 }
 describe('creative analysis jobs', () => {
-  it('loads iOS orders and long-lookback attribution with platform isolation and v2 cache keys', async () => {
+  it('loads iOS orders and long-lookback attribution with platform isolation and versioned ownership cache keys', async () => {
     const { service, bi, db } = setup();
     bi.part.mockImplementation(async (args) => {
       const filters = JSON.parse(String(args.filters_json));
@@ -72,7 +72,45 @@ describe('creative analysis jobs', () => {
       platform: 2,
       user_id: ['1'],
     });
-    expect(db.saveBiCache.mock.calls[0][0]).toContain('creative-funnel:v2:');
+    expect(db.saveBiCache.mock.calls[0][0]).toContain('creative-funnel:v3:');
+  });
+  it('resolves optimizer by campaign ID without guessing from campaign names', async () => {
+    const { service, bi } = setup();
+    bi.part.mockImplementation(async (args) => {
+      const filters = JSON.parse(String(args.filters_json));
+      if (filters.event_name === 'first_open')
+        return { state: 'fresh', rows: [first(1)] };
+      if (args.dataset === 'bi_ads.ads_paid_acquisition_daily')
+        return {
+          state: 'fresh',
+          rows: [
+            {
+              campaign_id: '123',
+              campaign_name: 'example',
+              buyer_alias: 'lzx',
+            },
+          ],
+        };
+      if (args.dataset === 'xy_online_data.tbl_user_access_permissions_all')
+        return {
+          state: 'fresh',
+          rows: [
+            {
+              bundle_id: 'com.pixelfly.mellow',
+              user_id: '1',
+              event_date: q.start,
+              channel: 'TikTok SAN',
+              campaign: 'example (123)',
+            },
+          ],
+        };
+      return { state: 'fresh', rows: [] };
+    });
+    const job = asUser('a', () => service.start(q));
+    await tick();
+    expect(
+      asUser('a', () => service.status(job.id)).report?.rows[0].buyer,
+    ).toBe('lzx');
   });
   it('validates date bounds and fixed product contracts', () => {
     expect(() => validateCreativeAnalysisQuery(q)).not.toThrow();

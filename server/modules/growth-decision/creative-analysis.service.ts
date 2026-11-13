@@ -79,7 +79,7 @@ export class CreativeAnalysisService {
       refresh: !!query.refresh,
     };
     const scope = personalScopeKey();
-    const key = `${scope}:creative-funnel:v2:${JSON.stringify([q.start, q.end, q.platform])}`;
+    const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform])}`;
     const active = this.active.get(scope);
     if (active) {
       if (active.key === key && !active.cancelled) return active.job;
@@ -183,7 +183,7 @@ export class CreativeAnalysisService {
         },
         !!q.refresh,
         end < today() ? 86400000 : 300000,
-        'creative-funnel:v2',
+        'creative-funnel:v3',
       );
       checkpoint();
       if (!['fresh', 'cached'].includes(part.state))
@@ -251,6 +251,36 @@ export class CreativeAnalysisService {
           );
           if (!users.length) continue;
           const label = `${app.platform === 'ios' ? 'iOS' : 'Android'} · ${date}`;
+          const ownership = await optional(`${label} 优化师归属`, async () => {
+            const part = await this.bi.part(
+              {
+                dataset: 'bi_ads.ads_paid_acquisition_daily',
+                start_date: date,
+                end_date: date,
+                dimensions: ['campaign_id', 'campaign_name', 'buyer_alias'],
+                metrics: ['spend'],
+                filters_json: JSON.stringify({ app_id: app.appId }),
+              },
+              !!q.refresh,
+              date < today() ? 86400000 : 300000,
+              'funnel-ownership:v1',
+            );
+            if (!['fresh', 'cached'].includes(part.state))
+              throw new Error(part.message || '归属未完整返回');
+            return part.rows;
+          });
+          const owners = new Map<string, Set<string>>();
+          for (const row of ownership || []) {
+            for (const key of [
+              String(row.campaign_id || ''),
+              String(row.campaign_name || '').trim(),
+            ]) {
+              if (!key) continue;
+              const values = owners.get(key) || new Set<string>();
+              if (row.buyer_alias) values.add(String(row.buyer_alias));
+              owners.set(key, values);
+            }
+          }
           const orders = app.orders
             ? await optional(`${label} 订单核验`, () =>
                 read(
@@ -328,6 +358,17 @@ export class CreativeAnalysisService {
               attribution,
               orders,
             })) {
+              const campaignId = row.campaignName.match(/\((\d+)\)\s*$/)?.[1];
+              const owner =
+                owners.get(campaignId || '') ||
+                owners.get(row.campaignName.trim());
+              row.buyer =
+                owner?.size === 1
+                  ? [...owner][0]
+                  : owner && owner.size > 1
+                    ? '归属冲突'
+                    : '未确认归属';
+              row.key = JSON.stringify([row.key, row.buyer]);
               const existing = buckets.get(row.key);
               if (!existing) {
                 buckets.set(row.key, row);

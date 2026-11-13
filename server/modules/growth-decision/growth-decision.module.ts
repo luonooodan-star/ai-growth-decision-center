@@ -1,3 +1,7 @@
+import {
+  RoasReportController,
+  RoasReportService,
+} from './roas-report.controller';
 import { Module } from '@nestjs/common';
 import { CreativeAnalysisController } from './creative-analysis.controller';
 import { CreativeAnalysisService } from './creative-analysis.service';
@@ -28,6 +32,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
 
 @Module({
   controllers: [
+    RoasReportController,
     CreativeAnalysisController,
     PersonalDorisController,
     MetaAdjustmentController,
@@ -40,6 +45,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
     GrowthMavisMcpController,
   ],
   providers: [
+    RoasReportService,
     MellowSharingService,
     CreativeAnalysisService,
     MetaAdjustmentService,

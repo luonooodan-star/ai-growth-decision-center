@@ -36,6 +36,7 @@ export interface CreativeFunnelRow extends FunnelCounts {
   creativeName: string;
   creativeId: string;
   campaignName: string;
+  buyer?: string;
   tags: CreativeTagParse;
 }
 export interface CreativeAnalysisReport {

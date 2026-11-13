@@ -1,4 +1,8 @@
 /* eslint-disable @lark-apaas/require-app-container */
+import {
+  RoasDataPage,
+  BehaviorDataPage,
+} from './pages/growth-decision/ReportPages';
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
@@ -20,6 +24,8 @@ const RoutesComponent = () => {
         <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" element={<PaidGrowthPage />} />
+        <Route path="roas" element={<RoasDataPage />} />
+        <Route path="analysis/behavior" element={<BehaviorDataPage />} />
         <Route path="analysis" element={<CreativeAnalysisPage />} />
         <Route path="adjustments" element={<AdAdjustmentPage />} />
         <Route path="operations" element={<MetaOperationsPage />} />

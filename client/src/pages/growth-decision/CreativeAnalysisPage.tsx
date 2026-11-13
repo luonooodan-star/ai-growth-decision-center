@@ -1,3 +1,4 @@
+import AnalysisTabs from './AnalysisTabs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
@@ -66,7 +67,7 @@ const groupLabel = (code: string) =>
     .map((group) => CREATIVE_TAG_GROUPS.find(([id]) => id === group)?.[1])
     .join(' / ') || '';
 
-function RangePicker({
+export function RangePicker({
   from,
   to,
   disabled,
@@ -502,6 +503,7 @@ export default function CreativeAnalysisPage() {
   };
   return (
     <main className="mx-auto max-w-[1540px] space-y-6 px-5 py-8 lg:px-8">
+      <AnalysisTabs />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold tracking-[0.18em] text-blue-600">
