@@ -445,7 +445,7 @@ export class CreativeAnalysisService {
                   'app_id',
                   'resolved_user_id',
                   'event_name',
-                  'character_id',
+                  ...(!q.behaviorDetail ? ['character_id'] : []),
                   ...(q.hourly ? ['event_timestamp'] : []),
                 ],
                 {

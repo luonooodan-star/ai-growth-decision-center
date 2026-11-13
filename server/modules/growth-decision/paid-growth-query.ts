@@ -11,13 +11,29 @@ export async function completeBiQuery(
   args: Query,
 ): Promise<DorisRow[]> {
   let calls = 0;
+  let active = 0;
+  const waiting: Array<() => void> = [];
   const deadline = Date.now() + 120000;
   const run = async (q: Query) => {
     if (Date.now() > deadline)
       throw new Error('本次查询超过两分钟，请缩小产品 / 渠道范围后重试');
     if (++calls > 300)
       throw new Error('查询分片超过本次安全上限；请缩小产品 / 渠道范围');
-    return query({ ...q, limit: 1000 });
+    await new Promise<void>((resolve) => {
+      if (active < 2) {
+        active++;
+        resolve();
+      } else waiting.push(resolve);
+    });
+    try {
+      if (Date.now() > deadline)
+        throw new Error('本次查询超过两分钟，请缩小产品 / 渠道范围后重试');
+      return await query({ ...q, limit: 1000 });
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
   };
   const read = async (q: Query): Promise<DorisRow[]> => {
     const result = await run(q);
@@ -26,8 +42,43 @@ export async function completeBiQuery(
       string,
       unknown
     >;
-    let selected: { field: string; groups: DorisRow[] } | undefined;
+    // The caller already knows the disjoint user ID manifest. An IN filter
+    // must be subdivided too; skipping every filtered dimension made large
+    // user-event queries impossible to complete when other fields contained NULL.
     const dimensions = q.dimensions as string[];
+    const arrayField = dimensions.find(
+      (field) =>
+        Array.isArray(filters[field]) &&
+        (filters[field] as unknown[]).every(
+          (v) => v !== null && v !== undefined,
+        ) &&
+        new Set(filters[field] as unknown[]).size > 1,
+    );
+    if (arrayField) {
+      const values = [...new Set(filters[arrayField] as unknown[])];
+      const total = await run({ ...q, dimensions: [] });
+      if (saturated(total) || (total.rows?.length || 0) > 1)
+        throw new Error('无法确认分片汇总口径');
+      const midpoint = Math.ceil(values.length / 2);
+      const pieces = await Promise.allSettled(
+        [values.slice(0, midpoint), values.slice(midpoint)].map((values) =>
+          read({
+            ...q,
+            filters_json: JSON.stringify({ ...filters, [arrayField]: values }),
+          }),
+        ),
+      );
+      const failure = pieces.find((p) => p.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
+      const rows = pieces.flatMap((p) =>
+        p.status === 'fulfilled' ? p.value : [],
+      );
+      if (total.rows?.[0])
+        reconcile(rows, total.rows[0], q.metrics as string[]);
+      else if (rows.length) throw new Error('分片明细与汇总不一致');
+      return rows;
+    }
+    let selected: { field: string; groups: DorisRow[] } | undefined;
     const candidates = [...dimensions].sort((a, b) => {
       const rank = (field: string) =>
         field === 'buyer_alias'
