@@ -95,6 +95,7 @@ export class ReportScheduleService implements OnModuleInit, OnModuleDestroy {
       refresh: true,
       behaviorDetail: t.kind === 'behavior',
       hourly: t.hourly,
+      behaviorEvent: t.event,
     };
     if (t.kind === 'roas') {
       await this.roas.query(q);

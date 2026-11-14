@@ -6,6 +6,7 @@ export interface CreativeAnalysisQuery {
   refresh?: boolean;
   behaviorDetail?: boolean;
   hourly?: boolean;
+  behaviorEvent?: string;
 }
 export interface CreativeTagParse {
   version: 'v2' | 'unknown';

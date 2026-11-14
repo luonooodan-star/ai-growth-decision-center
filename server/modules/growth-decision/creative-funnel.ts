@@ -75,6 +75,7 @@ export function buildCreativeFunnelRows(
     events: BiRawRow[] | null;
     attribution: BiRawRow[] | null;
     orders: BiRawRow[] | null;
+    behaviorEvents?: Record<string, string[]>;
   },
 ): CreativeFunnelRow[] {
   const events = new Map<string, BiRawRow[]>();
@@ -228,11 +229,13 @@ export function buildCreativeFunnelRows(
       const countsByName = new Map<string, number>();
       for (const event of userEvents) {
         const count = Number(event.event_count || 0);
-        if (count > 0)
-          countsByName.set(
-            value(event.event_name),
-            (countsByName.get(value(event.event_name)) || 0) + count,
-          );
+        const name = input.behaviorEvents
+          ? Object.entries(input.behaviorEvents).find(([, names]) =>
+              names.includes(value(event.event_name)),
+            )?.[0]
+          : value(event.event_name);
+        if (count > 0 && name)
+          countsByName.set(name, (countsByName.get(name) || 0) + count);
       }
       for (const [name, count] of countsByName) {
         const previous = item.behaviors[name] || { users: 0, events: 0 };

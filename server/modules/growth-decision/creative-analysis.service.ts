@@ -5,7 +5,14 @@ import {
   type ReportTask,
 } from './report-cache.service';
 import { buildBehaviorHourlyRows } from './behavior-hours';
-import { mergeBehaviorCounts } from '@shared/behavior-table';
+import {
+  mergeBehaviorCounts,
+  keyBehaviorEventNames,
+  isKeyBehavior,
+  BEHAVIOR_ORDER,
+  BEHAVIOR_LABELS,
+  KEY_BEHAVIOR_EVENT_MAP,
+} from '@shared/behavior-table';
 import {
   BadRequestException,
   ConflictException,
@@ -64,6 +71,17 @@ export function validateCreativeAnalysisQuery(q: CreativeAnalysisQuery) {
       throw new BadRequestException('行为查询参数无效');
   if (q.hourly && (!q.behaviorDetail || q.start !== q.end))
     throw new BadRequestException('小时下探仅支持单日应用内行为查询');
+  if (
+    q.hourly &&
+    (!isKeyBehavior(q.behaviorEvent) ||
+      !keyBehaviorEventNames(q.behaviorEvent).length)
+  )
+    throw new BadRequestException('小时下探必须指定已确认埋点的关键行为事件');
+  if (
+    q.behaviorEvent !== undefined &&
+    (!q.hourly || !isKeyBehavior(q.behaviorEvent))
+  )
+    throw new BadRequestException('行为事件参数无效');
   if (q.refresh !== undefined && typeof q.refresh !== 'boolean')
     throw new BadRequestException('刷新参数无效');
 }
@@ -95,8 +113,9 @@ export class CreativeAnalysisService {
     date: string,
     platform: 'ios' | 'android',
     hourly = false,
+    event?: string,
   ): ReportTask {
-    return { kind: 'behavior', date, platform, hourly };
+    return { kind: 'behavior', date, platform, hourly, event, version: 2 };
   }
   private readCachedDetail(
     q: CreativeAnalysisQuery,
@@ -110,7 +129,12 @@ export class CreativeAnalysisService {
       (a) => q.platform === 'all' || a.platform === q.platform,
     ))
       for (let date = q.start; date <= q.end; date = shift(date, 1)) {
-        const task = this.sliceTask(date, app.platform, !!q.hourly);
+        const task = this.sliceTask(
+          date,
+          app.platform,
+          !!q.hourly,
+          q.behaviorEvent,
+        );
         this.slices.track(task);
         const cached = this.slices.read<CreativeAnalysisReport>(task);
         if (!cached) return;
@@ -147,6 +171,7 @@ export class CreativeAnalysisService {
       refresh: !!query.refresh,
       behaviorDetail: !!query.behaviorDetail,
       hourly: !!query.hourly,
+      behaviorEvent: query.behaviorEvent,
     };
     if (
       q.behaviorDetail &&
@@ -161,7 +186,7 @@ export class CreativeAnalysisService {
       );
     const scope = personalScopeKey();
     const activeScope = `${scope}:${dorisWorkPriority.getStore() || 'interactive'}`;
-    const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform, q.behaviorDetail, q.hourly])}`;
+    const key = `${scope}:creative-funnel:v3:${JSON.stringify([q.start, q.end, q.platform, q.behaviorDetail, q.hourly, q.behaviorEvent])}`;
     for (const [id, entry] of this.jobs)
       if (
         this.active.get(entry.activeScope) !== entry &&
@@ -292,6 +317,16 @@ export class CreativeAnalysisService {
         const date = String(row.event_date || '').slice(0, 10);
         if (!date || date < start || date > end)
           throw new Error('数据日期与查询范围不一致');
+        if (
+          filters.event_name &&
+          row.event_name !== undefined &&
+          !(
+            Array.isArray(filters.event_name)
+              ? filters.event_name
+              : [filters.event_name]
+          ).includes(row.event_name)
+        )
+          throw new Error('返回事件不属于本次所选行为，未发布数据');
         if (filters.app_id && Number(row.app_id) !== filters.app_id)
           throw new Error('数据产品与查询范围不一致');
         if (filters.bundle_id && row.bundle_id !== filters.bundle_id)
@@ -330,7 +365,12 @@ export class CreativeAnalysisService {
       for (const app of apps)
         for (const date of dates) {
           if (q.behaviorDetail) {
-            const task = this.sliceTask(date, app.platform, !!q.hourly);
+            const task = this.sliceTask(
+              date,
+              app.platform,
+              !!q.hourly,
+              q.behaviorEvent,
+            );
             this.slices.track(task);
             const cached = !q.refresh
               ? this.slices.read<CreativeAnalysisReport>(task)
@@ -451,7 +491,9 @@ export class CreativeAnalysisService {
                 {
                   app_id: app.appId,
                   resolved_user_id: ids,
-                  ...(!q.behaviorDetail ? { event_name: FUNNEL_EVENTS } : {}),
+                  event_name: q.behaviorDetail
+                    ? keyBehaviorEventNames(q.behaviorEvent)
+                    : FUNNEL_EVENTS,
                 },
                 'event_count',
               ),
@@ -480,8 +522,21 @@ export class CreativeAnalysisService {
               ),
             );
             const detailRows = q.hourly
-              ? buildBehaviorHourlyRows(batch, events, attribution)
-              : buildCreativeFunnelRows(batch, { events, attribution, orders });
+              ? buildBehaviorHourlyRows(
+                  batch,
+                  events,
+                  attribution,
+                  new Date(),
+                  KEY_BEHAVIOR_EVENT_MAP,
+                )
+              : buildCreativeFunnelRows(batch, {
+                  events,
+                  attribution,
+                  orders,
+                  ...(q.behaviorDetail
+                    ? { behaviorEvents: KEY_BEHAVIOR_EVENT_MAP }
+                    : {}),
+                });
             for (const row of detailRows) {
               const campaignId = row.campaignName.match(/\((\d+)\)\s*$/)?.[1];
               const owner =
@@ -515,6 +570,15 @@ export class CreativeAnalysisService {
         issues.add(
           '小时按东八区实际事件发生时间统计；各小时占比以当日 D0 首开样本为分母，同一用户跨小时会重复出现，小时去重人数不可相加。',
         );
+      if (q.behaviorDetail) {
+        const missing = BEHAVIOR_ORDER.filter(
+          (e) => !keyBehaviorEventNames(e).length,
+        );
+        if (missing.length)
+          issues.add(
+            `以下关键行为的源埋点名尚未确认，显示 —：${missing.map((e) => BEHAVIOR_LABELS[e]).join('、')}`,
+          );
+      }
       if (q.end === today()) issues.add('包含今天，D0 行为和归因仍在回传。');
       const report: CreativeAnalysisReport = {
         schemaVersion: 2,
@@ -533,7 +597,7 @@ export class CreativeAnalysisService {
             const prefix = `${app.platform === 'ios' ? 'iOS' : 'Android'} · ${date}`;
             if ([...failedSources].some((label) => label.startsWith(prefix))) {
               this.slices.mark(
-                this.sliceTask(date, app.platform, !!q.hourly),
+                this.sliceTask(date, app.platform, !!q.hourly, q.behaviorEvent),
                 reportCycle(),
                 [...issues].filter((i) => i.startsWith(prefix)).join('；'),
               );
@@ -546,22 +610,25 @@ export class CreativeAnalysisService {
                   String(r.event_date).slice(0, 10) === date,
               ),
             );
-            this.slices.save(this.sliceTask(date, app.platform, !!q.hourly), {
-              ...report,
-              excludedFirstOpenEvents: dailyCohort.excluded,
-              duplicateFirstOpenUsers: dailyCohort.duplicates,
-              issues: report.issues.filter((i) => !i.startsWith('包含今天')),
-              scope: {
-                ...q,
-                start: date,
-                end: date,
-                platform: app.platform,
-                refresh: false,
+            this.slices.save(
+              this.sliceTask(date, app.platform, !!q.hourly, q.behaviorEvent),
+              {
+                ...report,
+                excludedFirstOpenEvents: dailyCohort.excluded,
+                duplicateFirstOpenUsers: dailyCohort.duplicates,
+                issues: report.issues.filter((i) => !i.startsWith('包含今天')),
+                scope: {
+                  ...q,
+                  start: date,
+                  end: date,
+                  platform: app.platform,
+                  refresh: false,
+                },
+                rows: report.rows.filter(
+                  (r) => r.date === date && r.platform === app.platform,
+                ),
               },
-              rows: report.rows.filter(
-                (r) => r.date === date && r.platform === app.platform,
-              ),
-            });
+            );
             sliceTimes.push(report.generatedAt);
           }
         if (sliceTimes.length) report.generatedAt = sliceTimes.sort()[0];

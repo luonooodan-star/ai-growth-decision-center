@@ -5,6 +5,7 @@ import type { CreativeFunnelRow } from '@shared/creative-analysis.interface';
 import {
   BEHAVIOR_LABELS,
   BEHAVIOR_ORDER,
+  keyBehaviorEventNames,
   mergeBehaviorCounts,
 } from '@shared/behavior-table';
 import {
@@ -20,9 +21,13 @@ export default function BehaviorComparisonTable({
   rows: CreativeFunnelRow[];
   hourlyRows: CreativeFunnelRow[];
   busy: boolean;
-  onDrill: (date: string) => void;
+  onDrill: (date: string, event: string, platform: 'android' | 'ios') => void;
 }) {
-  const [expanded, setExpanded] = useState<{ group: string; date: string }>();
+  const [expanded, setExpanded] = useState<{
+    group: string;
+    date: string;
+    event: string;
+  }>();
   const groups = new Map<string, CreativeFunnelRow[]>();
   const keyOf = (r: CreativeFunnelRow) =>
     JSON.stringify([r.platform, r.buyer, reportChannel(r.channel)]);
@@ -48,13 +53,12 @@ export default function BehaviorComparisonTable({
         counts: parts.length ? mergeBehaviorCounts(parts) : null,
       };
     });
-    const eventNames = [
-      ...new Set(source.flatMap((r) => Object.keys(r.behaviors || {}))),
-    ];
-    const events = [
-      ...BEHAVIOR_ORDER,
-      ...eventNames.filter((e) => !BEHAVIOR_ORDER.includes(e)).sort(),
-    ];
+    const events = hourly && expanded ? [expanded.event] : BEHAVIOR_ORDER;
+    const drill = (date: string, event: string) => {
+      const group = source[0] ? keyOf(source[0]) : '';
+      setExpanded({ group, date, event });
+      if (source[0]) onDrill(date, event, source[0].platform);
+    };
     return (
       <div className="max-h-[680px] overflow-auto rounded-xl border">
         <table className="w-full border-collapse whitespace-nowrap text-right text-sm">
@@ -75,22 +79,13 @@ export default function BehaviorComparisonTable({
                   {hourly ? (
                     `${c.column.padStart(2, '0')}:00—${c.column.padStart(2, '0')}:59`
                   ) : (
-                    <button
-                      disabled={busy}
-                      className="text-blue-600 underline underline-offset-4 disabled:opacity-50"
-                      onClick={() => {
-                        const group = source[0] ? keyOf(source[0]) : '';
-                        setExpanded({ group, date: c.column });
-                        onDrill(c.column);
-                      }}
-                    >
+                    <span>
                       {c.column}
                       {c.column ===
                       format(shanghaiCalendarToday(), 'yyyy-MM-dd')
                         ? '（今天 · 回传中）'
-                        : ''}{' '}
-                      · 按小时下探
-                    </button>
+                        : ''}
+                    </span>
                   )}
                   <p className="mt-1 text-xs font-normal text-slate-500">
                     {hourly ? '当日 D0 样本' : 'D0 样本'} {c.base} 人
@@ -121,25 +116,53 @@ export default function BehaviorComparisonTable({
                   title={event}
                   className="sticky left-0 z-10 bg-white px-4 py-3 text-left font-medium"
                 >
-                  {BEHAVIOR_LABELS[event] || event}
+                  {hourly ? (
+                    BEHAVIOR_LABELS[event]
+                  ) : (
+                    <button
+                      disabled={busy || !keyBehaviorEventNames(event).length}
+                      className="text-blue-600 underline underline-offset-4 disabled:text-slate-500"
+                      title="查看最新所选日期该事件的小时分布；也可点击对应日期的人数"
+                      onClick={() => drill(columns[0], event)}
+                    >
+                      {BEHAVIOR_LABELS[event]}
+                    </button>
+                  )}
                   <p className="max-w-64 truncate text-[10px] font-normal text-slate-400">
-                    {event}
+                    {keyBehaviorEventNames(event).join(' / ') ||
+                      '待确认源埋点名'}
                   </p>
                 </th>
                 {cells.map((c) => {
+                  const configured = keyBehaviorEventNames(event).length > 0;
                   const n = c.counts?.[event] || { users: 0, events: 0 };
                   return (
                     <Fragment key={c.column}>
                       <td key={c.column + 'u'} className="border-l px-3 py-3">
-                        {c.counts ? n.users : '—'}
+                        {c.counts && configured ? (
+                          hourly ? (
+                            n.users
+                          ) : (
+                            <button
+                              disabled={busy}
+                              className="text-blue-600 underline underline-offset-4 disabled:opacity-50"
+                              aria-label={`${c.column} ${BEHAVIOR_LABELS[event]} 按小时下探`}
+                              onClick={() => drill(c.column, event)}
+                            >
+                              {n.users}
+                            </button>
+                          )
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td key={c.column + 'p'} className="px-3 py-3">
-                        {c.counts && c.base
+                        {c.counts && configured && c.base
                           ? `${((100 * n.users) / c.base).toFixed(1)}%`
                           : '—'}
                       </td>
                       <td key={c.column + 'e'} className="px-3 py-3">
-                        {c.counts ? n.events : '—'}
+                        {c.counts && configured ? n.events : '—'}
                       </td>
                     </Fragment>
                   );
@@ -154,8 +177,8 @@ export default function BehaviorComparisonTable({
   return (
     <div className="space-y-6">
       <p className="text-xs text-slate-500">
-        各行为独立去重；消息里程碑按实际埋点计数，不用消息条数推算。未识别的事件显示原埋点名，缺失数据展示
-        —。
+        各行为独立去重；消息里程碑按实际埋点计数，不用消息条数推算。未确认埋点的关键行为与缺失数据展示
+        —。点击事件名称查看最新日期，或点击某日人数查看该事件当天的小时分布。
       </p>
       {[...groups].map(([key, group]) => {
         const [platform, buyer, channel] = JSON.parse(key);
@@ -174,7 +197,8 @@ export default function BehaviorComparisonTable({
               <div className="space-y-3 rounded-xl bg-slate-50 p-4">
                 <div className="flex justify-between gap-3">
                   <h3 className="font-semibold">
-                    {expanded.date} · 东八区分小时行为
+                    {expanded.date} · {BEHAVIOR_LABELS[expanded.event]} ·
+                    东八区分小时行为
                   </h3>
                   <button
                     className="text-sm text-blue-600"

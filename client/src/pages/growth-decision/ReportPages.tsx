@@ -1,5 +1,10 @@
 import BehaviorComparisonTable from './BehaviorComparisonTable';
-import { BEHAVIOR_LABELS, mergeBehaviorCounts } from '@shared/behavior-table';
+import {
+  BEHAVIOR_LABELS,
+  BEHAVIOR_ORDER,
+  keyBehaviorEventNames,
+  mergeBehaviorCounts,
+} from '@shared/behavior-table';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
@@ -70,7 +75,13 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     },
     [],
   );
-  const query = async (refresh = false, hourDate?: string) => {
+  const query = async (
+    refresh = false,
+    hourDate?: string,
+    behaviorEvent?: string,
+    hourPlatform?: 'android' | 'ios',
+  ) => {
+    if (hourDate) setHourReport(undefined);
     const controller = new AbortController();
     abort.current = controller;
     setBusy(true);
@@ -79,10 +90,11 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     const q = {
       start: hourDate || format(from, 'yyyy-MM-dd'),
       end: hourDate || format(to, 'yyyy-MM-dd'),
-      platform: 'all' as const,
+      platform: hourPlatform || ('all' as const),
       refresh,
       behaviorDetail: behavior,
       hourly: !!hourDate,
+      ...(hourDate ? { behaviorEvent } : {}),
     };
     try {
       if (!behavior)
@@ -194,15 +206,21 @@ function ReportPage({ behavior }: { behavior: boolean }) {
                 const day = group.filter((r) => r.date === date),
                   base = day.reduce((n, r) => n + r.users, 0),
                   counts = mergeBehaviorCounts(day);
-                return Object.entries(counts || {}).map(([event, c]) => [
-                  ...JSON.parse(key),
-                  date,
-                  BEHAVIOR_LABELS[event] || event,
-                  event,
-                  c.users,
-                  base ? (100 * c.users) / base : '',
-                  c.events,
-                ]);
+                return BEHAVIOR_ORDER.map((event) => {
+                  const c = counts?.[event] || { users: 0, events: 0 };
+                  const known =
+                    !!counts && keyBehaviorEventNames(event).length > 0;
+                  return [
+                    ...JSON.parse(key),
+                    date,
+                    BEHAVIOR_LABELS[event] || event,
+                    keyBehaviorEventNames(event).join(' / ') ||
+                      '待确认源埋点名',
+                    known ? c.users : '',
+                    known && base ? (100 * c.users) / base : '',
+                    known ? c.events : '',
+                  ];
+                });
               }),
           ),
         ]
@@ -255,7 +273,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
         </h1>
         <p className="mt-2 text-sm text-slate-500">
           {behavior
-            ? '按日期对比应用内行为：去重用户数、占 D0 首开样本比例、事件次数。最新日期在左，点击日期可按东八区小时下探。'
+            ? '按日期对比应用内行为：去重用户数、占 D0 首开样本比例、事件次数。最新日期在左，点击某个事件或该事件某日的人数，只下探该事件的东八区小时分布。'
             : '安装同期群累计收入 ÷ 对应安装日全量媒体消耗。D0—D14，缺失值显示 —。渠道按 Doris 原始 media_source 分开显示。'}
         </p>
       </div>
@@ -352,7 +370,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
             rows={behaviorRows}
             hourlyRows={hourReport?.rows || []}
             busy={busy}
-            onDrill={(date) => void query(false, date)}
+            onDrill={(date, event, app) => void query(false, date, event, app)}
           />
         ) : (
           <div className="overflow-x-auto">

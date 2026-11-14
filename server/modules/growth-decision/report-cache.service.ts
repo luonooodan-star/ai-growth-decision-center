@@ -1,3 +1,4 @@
+import { isKeyBehavior, KEY_BEHAVIOR_EVENT_MAP } from '@shared/behavior-table';
 import { dorisWorkPriority } from './doris-query-gate';
 import { Injectable } from '@nestjs/common';
 import { LocalDatabaseService } from '@server/database/local-database.service';
@@ -7,6 +8,8 @@ export type ReportTask = {
   date: string;
   platform: 'android' | 'ios';
   hourly: boolean;
+  event?: string;
+  version?: number;
   attempt?: string;
   error?: string;
 };
@@ -26,13 +29,19 @@ export class ReportCacheService {
     return `${personalScopeKey()}:daily-report-registry:v1`;
   }
   private key(t: ReportTask) {
-    return `${personalScopeKey()}:daily-report-slice:v1:${JSON.stringify([t.kind, t.date, t.platform, t.hourly])}`;
+    return t.kind === 'behavior'
+      ? `${personalScopeKey()}:daily-report-slice:v2:${JSON.stringify([t.kind, t.date, t.platform, t.hourly, t.event])}`
+      : `${personalScopeKey()}:daily-report-slice:v1:${JSON.stringify([t.kind, t.date, t.platform, t.hourly])}`;
   }
   tasks(): ReportTask[] {
     const raw = this.db.getBiCache(this.registryKey());
     if (!raw) return [];
     try {
-      return JSON.parse(raw).tasks || [];
+      return (JSON.parse(raw).tasks || []).filter(
+        (t: ReportTask) =>
+          t.kind !== 'behavior' ||
+          (t.version === 2 && (!t.hourly || isKeyBehavior(t.event))),
+      );
     } catch {
       return [];
     }
@@ -82,7 +91,46 @@ export class ReportCacheService {
     this.write(tasks);
   }
   read<T>(t: ReportTask): ReportCacheEntry<T> | undefined {
-    const raw = this.db.getBiCache(this.key(t));
+    let raw = this.db.getBiCache(this.key(t));
+    // A successful old daily snapshot can be projected without querying Doris.
+    // Old all-event hourly tasks are intentionally never replayed.
+    if (!raw && t.kind === 'behavior' && !t.hourly) {
+      const legacy = this.db.getBiCache(
+        `${personalScopeKey()}:daily-report-slice:v1:${JSON.stringify([t.kind, t.date, t.platform, false])}`,
+      );
+      if (legacy)
+        try {
+          const old = JSON.parse(legacy);
+          if (
+            Array.isArray(old.data?.rows) &&
+            old.data.rows.every(
+              (r: { behaviors?: unknown }) => !!r.behaviors,
+            ) &&
+            Object.values(KEY_BEHAVIOR_EVENT_MAP).every(
+              (names) => names.length <= 1,
+            )
+          ) {
+            old.data.rows = old.data.rows.map(
+              (row: { behaviors: Record<string, unknown> }) => ({
+                ...row,
+                behaviors: Object.fromEntries(
+                  Object.entries(KEY_BEHAVIOR_EVENT_MAP)
+                    .filter(
+                      ([, names]) =>
+                        names.length === 1 &&
+                        row.behaviors[names[0]] !== undefined,
+                    )
+                    .map(([id, names]) => [id, row.behaviors[names[0]]]),
+                ),
+              }),
+            );
+            raw = JSON.stringify(old);
+            this.db.saveBiCache(this.key(t), raw);
+          }
+        } catch {
+          /* An incompatible legacy snapshot requires a scoped first load. */
+        }
+    }
     if (!raw) return;
     try {
       const entry = JSON.parse(raw);

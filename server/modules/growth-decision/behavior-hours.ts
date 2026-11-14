@@ -25,6 +25,7 @@ export function buildBehaviorHourlyRows(
   events: BiRawRow[] | null,
   attribution: BiRawRow[] | null,
   now = new Date(),
+  behaviorEvents?: Record<string, string[]>,
 ): CreativeFunnelRow[] {
   if (events === null) throw new Error('行为事件读取失败，无法生成小时数据');
   const byHour = new Map<number, BiRawRow[]>();
@@ -42,6 +43,7 @@ export function buildBehaviorHourlyRows(
       events: byHour.get(hour) || [],
       attribution,
       orders: null,
+      behaviorEvents,
     }).map((row) => ({ ...row, hour, key: JSON.stringify([row.key, hour]) })),
   )
     .flat()
