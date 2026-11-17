@@ -16,11 +16,15 @@ export function roasChannelLabel(channel: string): string {
 }
 export function roasReportChannels(
   catalog: { appId: number; channel: string }[],
-  rows: { appId: number; channel: string }[],
+  rows: { appId: number; channel: string; buyer?: string }[],
   platform: string,
+  buyer = '',
 ): string[] {
   const channels = new Map<string, string>();
-  for (const row of [...catalog, ...rows]) {
+  const source = buyer
+    ? rows.filter((row) => row.buyer === buyer)
+    : [...catalog, ...rows];
+  for (const row of source) {
     if (
       ![3, 12].includes(row.appId) ||
       (platform !== 'all' && row.appId !== (platform === 'ios' ? 3 : 12))

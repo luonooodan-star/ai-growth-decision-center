@@ -102,8 +102,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     };
   }, [behavior, loadChannelCatalog]);
   const availableRoasChannels = useMemo(
-    () => roasReportChannels(channelCatalog, roas?.rows || [], platform),
-    [channelCatalog, roas, platform],
+    () => roasReportChannels(channelCatalog, roas?.rows || [], platform, buyer),
+    [channelCatalog, roas, platform, buyer],
   );
   useEffect(() => {
     if (!behavior && channel && !availableRoasChannels.includes(channel))
@@ -358,6 +358,12 @@ function ReportPage({ behavior }: { behavior: boolean }) {
       {busy && (
         <p role="status" className="text-sm text-blue-600">
           {progress}，保留已有结果…
+        </p>
+      )}
+      {!behavior && buyer && availableRoasChannels.length === 0 && (
+        <p className="text-sm text-slate-500">
+          当前已加载数据中没有 {buyer}{' '}
+          的渠道记录，请查询对应日期后查看；不会列出其他优化师的渠道。
         </p>
       )}
       {!behavior && channelError && (

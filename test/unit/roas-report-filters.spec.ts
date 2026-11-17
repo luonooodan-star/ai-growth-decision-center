@@ -49,6 +49,36 @@ describe('ROAS channels follow paid-data metadata', () => {
       ),
     ).toBe(true);
   });
+  it('links a selected optimizer only to channels present in their own product data', () => {
+    const catalog = [
+      { appId: 12, channel: 'facebook' },
+      { appId: 12, channel: 'google ads' },
+      { appId: 12, channel: 'snapchat' },
+    ];
+    const rows = [
+      { appId: 12, buyer: 'lzx', channel: 'facebook' },
+      { appId: 12, buyer: 'lzx', channel: 'new_partner' },
+      { appId: 12, buyer: 'jsa', channel: 'google ads' },
+      { appId: 3, buyer: 'lzx', channel: 'ios_only' },
+    ];
+    expect(roasReportChannels(catalog, rows, 'android', 'lzx')).toEqual([
+      'facebook',
+      'new_partner',
+    ]);
+    expect(roasReportChannels(catalog, rows, 'android', 'jsa')).toEqual([
+      'google ads',
+    ]);
+    expect(roasReportChannels(catalog, rows, 'ios', 'lzx')).toEqual([
+      'ios_only',
+    ]);
+    expect(roasReportChannels(catalog, [], 'all', 'lzx')).toEqual([]);
+    expect(roasReportChannels(catalog, rows, 'android')).toEqual([
+      'facebook',
+      'google ads',
+      'new_partner',
+      'snapchat',
+    ]);
+  });
   it('keeps Facebook Web separate and deduplicates source casing', () => {
     expect(
       roasReportChannels(
