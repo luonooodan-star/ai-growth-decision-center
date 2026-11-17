@@ -1,3 +1,4 @@
+import { roasChannelLabel } from '@shared/roas-report-filters';
 import { useState } from 'react';
 import { format, subDays } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
@@ -23,11 +24,13 @@ export default function ReferenceReportFilters({
   change,
   min,
   max,
+  channels,
 }: {
   value: ReferenceFilterValue;
   change: (v: ReferenceFilterValue) => void;
   min: Date;
   max: Date;
+  channels?: string[];
 }) {
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState<DateRange>();
@@ -68,7 +71,9 @@ export default function ReferenceReportFilters({
               change({
                 ...value,
                 buyer,
-                channel: reportChannels(buyer).includes(value.channel)
+                channel: (channels || reportChannels(buyer)).includes(
+                  value.channel,
+                )
                   ? value.channel
                   : '',
               });
@@ -88,9 +93,9 @@ export default function ReferenceReportFilters({
             onChange={(e) => change({ ...value, channel: e.target.value })}
           >
             <option value="">全部渠道</option>
-            {reportChannels(value.buyer).map((c) => (
+            {(channels || reportChannels(value.buyer)).map((c) => (
               <option key={c} value={c}>
-                {REPORT_CHANNEL_NAMES[c]}
+                {channels ? roasChannelLabel(c) : REPORT_CHANNEL_NAMES[c]}
               </option>
             ))}
           </select>

@@ -1,3 +1,10 @@
+import { getBiProductOptions } from '../../api/paid-growth';
+import type { BiProduct } from '@shared/paid-growth.interface';
+import {
+  matchesRoasReport,
+  roasReportChannels,
+  roasChannelLabel,
+} from '@shared/roas-report-filters';
 import BehaviorComparisonTable from './BehaviorComparisonTable';
 import {
   BEHAVIOR_LABELS,
@@ -5,7 +12,7 @@ import {
   keyBehaviorEventNames,
   mergeBehaviorCounts,
 } from '@shared/behavior-table';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { format, subDays } from 'date-fns';
 import { shanghaiCalendarToday } from '@shared/paid-growth-dates';
@@ -61,6 +68,47 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     [channel, setChannel] = useState('');
   const [roas, setRoas] = useState<RoasReport>(),
     [report, setReport] = useState<CreativeAnalysisReport>();
+  const [channelCatalog, setChannelCatalog] = useState<BiProduct[]>([]);
+  const [channelError, setChannelError] = useState('');
+  const metadataPending = useRef(false);
+  const metadataChecked = useRef(0);
+  const loadChannelCatalog = useCallback(async () => {
+    if (behavior || metadataPending.current) return;
+    metadataPending.current = true;
+    metadataChecked.current = Date.now();
+    try {
+      setChannelCatalog(await getBiProductOptions());
+      setChannelError('');
+    } catch {
+      setChannelError('渠道目录暂时读取失败，暂用已加载 ROAS 数据中的渠道。');
+    } finally {
+      metadataPending.current = false;
+    }
+  }, [behavior]);
+  useEffect(() => {
+    if (behavior) return;
+    void loadChannelCatalog();
+    const onFocus = () => {
+      if (Date.now() - metadataChecked.current >= 60000)
+        void loadChannelCatalog();
+    };
+    window.addEventListener('focus', onFocus);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadChannelCatalog();
+    }, 60000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(timer);
+    };
+  }, [behavior, loadChannelCatalog]);
+  const availableRoasChannels = useMemo(
+    () => roasReportChannels(channelCatalog, roas?.rows || [], platform),
+    [channelCatalog, roas, platform],
+  );
+  useEffect(() => {
+    if (!behavior && channel && !availableRoasChannels.includes(channel))
+      setChannel('');
+  }, [behavior, channel, availableRoasChannels]);
   const [hourReport, setHourReport] = useState<CreativeAnalysisReport>();
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(''),
@@ -82,6 +130,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     hourPlatform?: 'android' | 'ios',
   ) => {
     if (hourDate) setHourReport(undefined);
+    if (!behavior) void loadChannelCatalog();
     const controller = new AbortController();
     abort.current = controller;
     setBusy(true);
@@ -163,12 +212,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     start: format(from, 'yyyy-MM-dd'),
     end: format(to, 'yyyy-MM-dd'),
   };
-  const rows = (roas?.rows || []).filter((r) =>
-    matchesReferenceReport(
-      { ...r, platform: r.appId === 3 ? 'ios' : 'android' },
-      scope,
-    ),
-  );
+  const rows = (roas?.rows || []).filter((r) => matchesRoasReport(r, scope));
   const behaviorRows = (report?.rows || []).filter((r) =>
     matchesReferenceReport({ ...r, buyer: r.buyer || '' }, scope),
   );
@@ -236,7 +280,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           ...rows.map((r) => [
             r.appId === 3 ? 'Mellow iOS' : 'Mellow Android',
             r.buyer,
-            REPORT_CHANNEL_NAMES[reportChannel(r.channel)] || r.channel,
+            roasChannelLabel(r.channel),
             r.date,
             r.spend,
             ...r.days.map((d) => (d ? (100 * d.revenue) / r.spend : '')),
@@ -279,6 +323,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
       </div>
       <ReferenceReportFilters
         value={{ platform, buyer, channel, from, to }}
+        channels={behavior ? undefined : availableRoasChannels}
         min={windowStart}
         max={windowEnd}
         change={(v) => {
@@ -314,6 +359,9 @@ function ReportPage({ behavior }: { behavior: boolean }) {
         <p role="status" className="text-sm text-blue-600">
           {progress}，保留已有结果…
         </p>
+      )}
+      {!behavior && channelError && (
+        <p className="text-sm text-amber-700">{channelError}</p>
       )}
       {error && (
         <p role="alert" className="text-sm text-red-600">
@@ -394,8 +442,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
                   <tr key={i} className="border-t">
                     <td className="whitespace-nowrap px-3 py-3 text-left">
                       Mellow {r.appId === 3 ? 'iOS' : 'Android'} / {r.buyer} /{' '}
-                      {REPORT_CHANNEL_NAMES[reportChannel(r.channel)] ||
-                        r.channel}
+                      {roasChannelLabel(r.channel)}
                     </td>
                     <td className="whitespace-nowrap px-3">{r.date}</td>
                     <td className="px-3">${r.spend.toFixed(2)}</td>
