@@ -1,3 +1,7 @@
+import {
+  mergeBuyerChannelOptions,
+  type BuyerChannelOption,
+} from '@shared/buyer-channel-options';
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import {
@@ -399,12 +403,67 @@ export class LocalDatabaseService implements OnModuleDestroy {
     return row ? String(row.payload) : undefined;
   }
 
+  private buyerChannelKey() {
+    return `${personalScopeKey()}:paid-buyer-channels:v1`;
+  }
+  private recordBuyerChannels(key: string, payload: string): void {
+    const prefix = personalScopeKey() + ':';
+    if (
+      !key.startsWith(prefix) ||
+      !key.includes('bi_ads.ads_paid_acquisition_daily')
+    )
+      return;
+    const data = JSON.parse(payload);
+    if (!['fresh', 'cached'].includes(data.state) || !Array.isArray(data.rows))
+      return;
+    const existing = this.getBiCache(this.buyerChannelKey());
+    const previous: BuyerChannelOption[] = existing
+      ? JSON.parse(existing).rows || []
+      : [];
+    const fallback =
+      key.match(/"end_date":"(\d{4}-\d{2}-\d{2})"/)?.[1] ||
+      String(data.updatedAt || '').slice(0, 10);
+    const rows = mergeBuyerChannelOptions(previous, data.rows, fallback);
+    if (JSON.stringify(previous) === JSON.stringify(rows)) return;
+    this.database
+      .prepare(
+        'INSERT INTO growth_bi_cache(cache_key,payload) VALUES (?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload',
+      )
+      .run(
+        this.buyerChannelKey(),
+        JSON.stringify({ rows, updatedAt: new Date().toISOString() }),
+      );
+  }
+  getBuyerChannelOptions(): BuyerChannelOption[] {
+    const marker = `${this.buyerChannelKey()}:seeded`;
+    if (!this.getBiCache(marker)) {
+      // One-time, streaming migration of successful source caches, within the
+      // current personal credential space. Never query Doris for dropdowns.
+      const prefix = personalScopeKey() + ':';
+      const statement = this.database.prepare(
+        "SELECT cache_key,payload FROM growth_bi_cache WHERE substr(cache_key,1,length(?))=? AND instr(cache_key,'bi_ads.ads_paid_acquisition_daily')>0",
+      );
+      for (const row of statement.iterate(prefix, prefix))
+        this.recordBuyerChannels(String(row.cache_key), String(row.payload));
+      this.saveBiCache(
+        marker,
+        JSON.stringify({ updatedAt: new Date().toISOString() }),
+      );
+    }
+    const raw = this.getBiCache(this.buyerChannelKey());
+    return mergeBuyerChannelOptions(
+      raw ? JSON.parse(raw).rows || [] : [],
+      [],
+      '',
+    );
+  }
   saveBiCache(key: string, payload: string): void {
     this.database
       .prepare(
         'INSERT INTO growth_bi_cache (cache_key, payload) VALUES (?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload',
       )
       .run(key, payload);
+    this.recordBuyerChannels(key, payload);
     // Keep shared BI/adjustment data on disk for 90 days per personal scope.
     // Do not evict recent dates merely because detailed queries exceed 1,500
     // entries / 128 MiB. Query responses remain lazy and are not all loaded in RAM.

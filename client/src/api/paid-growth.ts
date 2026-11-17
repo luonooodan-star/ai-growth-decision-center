@@ -1,3 +1,4 @@
+import type { BuyerChannelOption } from '@shared/buyer-channel-options';
 import axios from 'axios';
 import type {
   BiDay,
@@ -62,5 +63,13 @@ export const syncBiProducts = async (): Promise<BiProduct[]> =>
       '/api/growth-decision/bi/products/sync',
       {},
       { timeout: 120000 },
+    )
+  ).data;
+
+export const getRoasBuyerChannels = async (): Promise<BuyerChannelOption[]> =>
+  (
+    await axios.get<BuyerChannelOption[]>(
+      '/api/growth-decision/roas-report/channels',
+      { timeout: 10000 },
     )
   ).data;

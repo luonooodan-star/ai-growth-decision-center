@@ -72,6 +72,22 @@ describe('ROAS channels follow paid-data metadata', () => {
       'ios_only',
     ]);
     expect(roasReportChannels(catalog, [], 'all', 'lzx')).toEqual([]);
+    expect(
+      roasReportChannels(catalog, [], 'android', 'lzx', [
+        {
+          appId: 12,
+          buyer: 'lzx',
+          channel: 'applovin',
+          lastDate: '2026-11-16',
+        },
+        {
+          appId: 12,
+          buyer: 'jsa',
+          channel: 'google ads',
+          lastDate: '2026-11-16',
+        },
+      ]),
+    ).toEqual(['applovin']);
     expect(roasReportChannels(catalog, rows, 'android')).toEqual([
       'facebook',
       'google ads',

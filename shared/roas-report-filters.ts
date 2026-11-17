@@ -1,3 +1,4 @@
+import type { BuyerChannelOption } from './buyer-channel-options';
 import { normalizePaidMedia } from './paid-media-channel';
 import type { RoasRow } from './roas-report';
 export const roasChannel = (source: string) => normalizePaidMedia(source);
@@ -9,6 +10,7 @@ export function roasChannelLabel(channel: string): string {
         facebook: 'FB',
         facebook_web: 'Facebook Web',
         tiktok: 'TT',
+        applovin: 'AppLovin',
         'google ads': 'Google Ads',
       } as Record<string, string>
     )[value.toLowerCase()] || value
@@ -19,11 +21,12 @@ export function roasReportChannels(
   rows: { appId: number; channel: string; buyer?: string }[],
   platform: string,
   buyer = '',
+  relations: BuyerChannelOption[] = [],
 ): string[] {
   const channels = new Map<string, string>();
   const source = buyer
-    ? rows.filter((row) => row.buyer === buyer)
-    : [...catalog, ...rows];
+    ? [...relations, ...rows].filter((row) => row.buyer === buyer)
+    : [...catalog, ...relations, ...rows];
   for (const row of source) {
     if (
       ![3, 12].includes(row.appId) ||

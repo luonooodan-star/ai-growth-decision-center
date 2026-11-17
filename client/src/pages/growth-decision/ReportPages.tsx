@@ -1,4 +1,8 @@
-import { getBiProductOptions } from '../../api/paid-growth';
+import type { BuyerChannelOption } from '@shared/buyer-channel-options';
+import {
+  getBiProductOptions,
+  getRoasBuyerChannels,
+} from '../../api/paid-growth';
 import type { BiProduct } from '@shared/paid-growth.interface';
 import {
   matchesRoasReport,
@@ -69,6 +73,9 @@ function ReportPage({ behavior }: { behavior: boolean }) {
   const [roas, setRoas] = useState<RoasReport>(),
     [report, setReport] = useState<CreativeAnalysisReport>();
   const [channelCatalog, setChannelCatalog] = useState<BiProduct[]>([]);
+  const [channelRelations, setChannelRelations] = useState<
+    BuyerChannelOption[]
+  >([]);
   const [channelError, setChannelError] = useState('');
   const metadataPending = useRef(false);
   const metadataChecked = useRef(0);
@@ -77,8 +84,18 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     metadataPending.current = true;
     metadataChecked.current = Date.now();
     try {
-      setChannelCatalog(await getBiProductOptions());
-      setChannelError('');
+      const [catalog, relations] = await Promise.allSettled([
+        getBiProductOptions(),
+        getRoasBuyerChannels(),
+      ]);
+      if (catalog.status === 'fulfilled') setChannelCatalog(catalog.value);
+      if (relations.status === 'fulfilled')
+        setChannelRelations(relations.value);
+      setChannelError(
+        catalog.status === 'rejected' || relations.status === 'rejected'
+          ? '渠道目录或优化师对应关系暂时读取失败，保留已有选项。'
+          : '',
+      );
     } catch {
       setChannelError('渠道目录暂时读取失败，暂用已加载 ROAS 数据中的渠道。');
     } finally {
@@ -102,8 +119,15 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     };
   }, [behavior, loadChannelCatalog]);
   const availableRoasChannels = useMemo(
-    () => roasReportChannels(channelCatalog, roas?.rows || [], platform, buyer),
-    [channelCatalog, roas, platform, buyer],
+    () =>
+      roasReportChannels(
+        channelCatalog,
+        roas?.rows || [],
+        platform,
+        buyer,
+        channelRelations,
+      ),
+    [channelCatalog, roas, platform, buyer, channelRelations],
   );
   useEffect(() => {
     if (!behavior && channel && !availableRoasChannels.includes(channel))
@@ -362,8 +386,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
       )}
       {!behavior && buyer && availableRoasChannels.length === 0 && (
         <p className="text-sm text-slate-500">
-          当前已加载数据中没有 {buyer}{' '}
-          的渠道记录，请查询对应日期后查看；不会列出其他优化师的渠道。
+          当前投放缓存中尚未找到 {buyer}{' '}
+          的渠道记录；投放数据读取成功后，对应渠道会自动加入。
         </p>
       )}
       {!behavior && channelError && (

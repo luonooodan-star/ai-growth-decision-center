@@ -95,7 +95,10 @@ export class PaidGrowthService {
         : {}),
     };
     const dimensions = [
-      ...new Set(levels.flatMap((level) => namedDimensions(level))),
+      ...new Set([
+        ...levels.flatMap((level) => namedDimensions(level)),
+        ...(!designer ? ['buyer_alias'] : []),
+      ]),
     ];
     const base = { start_date: q.date, end_date: q.date, dimensions };
     const dailyRaw = await this.part(
@@ -184,38 +187,50 @@ export class PaidGrowthService {
   channelSpend(date: string, appId: string): Promise<BiPart> {
     validateBiQuery({ date, appId, level: 'channels' });
     if (!appId) throw new BadRequestException('请先选择产品');
-    return this.part(
-      {
-        start_date: date,
-        end_date: date,
-        dimensions: namedDimensions('channels'),
-        dataset: DAILY,
-        metrics: [
-          'spend',
-          'impressions',
-          'media_clicks',
-          'media_installs',
-          'adjust_installs',
-        ],
-        filters_json: JSON.stringify({ app_id: Number(appId) }),
-      },
-      false,
-    ).then((raw) => {
-      const part = classifiedMediaPart(raw);
-      const rows = part.rows.filter((row) => String(row.app_id) === appId);
-      return rows.length === part.rows.length
-        ? part
-        : {
-            ...part,
-            rows,
-            message: [
-              part.message,
-              `已排除 ${part.rows.length - rows.length} 条其他产品的数据`,
-            ]
-              .filter(Boolean)
-              .join('；'),
-          };
-    });
+    const username = centerIdentity.getStore();
+    return (
+      username ? readCenterRole(username) : Promise.resolve('operator' as const)
+    )
+      .then((role) =>
+        this.part(
+          {
+            start_date: date,
+            end_date: date,
+            dimensions: [
+              ...new Set([
+                ...namedDimensions('channels'),
+                ...(role !== 'designer' ? ['buyer_alias'] : []),
+              ]),
+            ],
+            dataset: DAILY,
+            metrics: [
+              'spend',
+              'impressions',
+              'media_clicks',
+              'media_installs',
+              'adjust_installs',
+            ],
+            filters_json: JSON.stringify({ app_id: Number(appId) }),
+          },
+          false,
+        ),
+      )
+      .then((raw) => {
+        const part = classifiedMediaPart(raw);
+        const rows = part.rows.filter((row) => String(row.app_id) === appId);
+        return rows.length === part.rows.length
+          ? part
+          : {
+              ...part,
+              rows,
+              message: [
+                part.message,
+                `已排除 ${part.rows.length - rows.length} 条其他产品的数据`,
+              ]
+                .filter(Boolean)
+                .join('；'),
+            };
+      });
   }
 
   part(
@@ -340,6 +355,12 @@ export class PaidGrowthService {
       });
     }
     return [...result.values()];
+  }
+
+  buyerChannelOptions() {
+    return this.database
+      .getBuyerChannelOptions()
+      .filter((row) => [3, 12].includes(row.appId));
   }
 
   /** Dropdown metadata is local/cached; opening the page never starts Doris work. */
