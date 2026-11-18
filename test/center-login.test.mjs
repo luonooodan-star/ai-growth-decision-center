@@ -20,6 +20,13 @@ test(
     await new Promise((resolve) => probe.close(resolve));
     const root = mkdtempSync(join(tmpdir(), 'center-http-test-'));
     mkdirSync(join(root, 'runtime'));
+    const asset = '/assets/report-Abcd1234.js';
+    mkdirSync(join(root, 'dist/client/assets'), { recursive: true });
+    writeFileSync(
+      join(root, 'dist/client', asset),
+      'export const loaded = true;',
+    );
+    writeFileSync(join(root, 'dist/client/index.html'), '<html></html>');
     const salt = 'd'.repeat(32),
       password = 'fixture-password-only';
     const user = { salt, hash: scryptSync(password, salt, 64).toString('hex') };
@@ -71,6 +78,7 @@ test(
       }
       assert.ok(ready, output);
       assert.equal((await request('/data')).status, 302);
+      assert.equal((await request(asset)).status, 302);
       const page = await request('/login');
       assert.equal(page.status, 200);
       assert.match(await page.text(), /autocomplete="current-password"/);
@@ -95,9 +103,20 @@ test(
         /HttpOnly; SameSite=Strict/,
       );
       const a = first.headers.get('set-cookie').split(';')[0];
-      const me = await (
-        await request('/api/center/me', { headers: { Cookie: a } })
-      ).json();
+      const signedIn = { headers: { Cookie: a } };
+      const chunk = await request(asset, signedIn);
+      assert.equal(chunk.status, 200);
+      assert.equal(
+        chunk.headers.get('cache-control'),
+        'private, max-age=31536000, immutable',
+      );
+      assert.equal(
+        (await request('/data', signedIn)).headers.get('cache-control'),
+        'no-store',
+      );
+      const meResponse = await request('/api/center/me', signedIn);
+      assert.equal(meResponse.headers.get('cache-control'), 'no-store');
+      const me = await meResponse.json();
       assert.equal(me.username, 'alice');
       assert.ok(me.sessionId);
       const postJson = (path, body) =>

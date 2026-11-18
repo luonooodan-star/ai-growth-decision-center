@@ -12,12 +12,16 @@ import type { DateRange } from 'react-day-picker';
 import axios from 'axios';
 import { biRows } from '@shared/paid-growth';
 import { verifiedNoSpend } from '@shared/campaign-visibility';
-import { metaTargets } from '@shared/meta-targets';
+import {
+  paidCampaignTargets,
+  formatBiNumber as number,
+} from './paid-growth-display';
+import { PaidGrowthDailyRow } from './PaidGrowthDailyRow';
 import { BiCampaignDetail } from './BiCampaignDetail';
 import { BiTrend } from './BiTrend';
 import { MellowSharedRoas } from './MellowSharedRoas';
 import { useAuthorization } from '@/components/AuthorizationContext';
-import { biChannelSpend, biSummary } from '@shared/bi-summary';
+import { biChannelSpend, biSummaryFromRows } from '@shared/bi-summary';
 import {
   paidGrowthQuickRange,
   shanghaiCalendarToday,
@@ -41,11 +45,7 @@ import {
 } from '@/api/paid-growth';
 import type { MetaAdEntity } from '@shared/api.interface';
 import { getMetaEntities } from '@/api/meta-operations';
-import {
-  CampaignMetaFilters,
-  type MetaFilter,
-  type MetaFilterItem,
-} from './CampaignMetaFilters';
+import { CampaignMetaFilters, type MetaFilter } from './CampaignMetaFilters';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -82,10 +82,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
-const number = (n: number | null, decimals = 2) =>
-  n === null
-    ? '—'
-    : n.toLocaleString('zh-CN', { maximumFractionDigits: decimals });
 const channelLabel = (channel: string) =>
   channel === 'facebook_web'
     ? 'Facebook Web'
@@ -123,6 +119,9 @@ const allColumns: Array<{
   { key: 'd0Roas', label: 'D0 收入 / 全部消耗 (%)' },
   { key: 'events', label: 'D0 收入事件数', decimals: 0 },
 ];
+const designerColumns = allColumns.filter(
+  (c) => !['revenue', 'd0Roas', 'events'].includes(c.key),
+);
 function DateRangeFilter({
   from,
   to,
@@ -196,9 +195,7 @@ function DateRangeFilter({
 export default function PaidGrowthPage() {
   const { role } = useAuthorization();
   const designer = role === 'designer';
-  const columns = designer
-    ? allColumns.filter((c) => !['revenue', 'd0Roas', 'events'].includes(c.key))
-    : allColumns;
+  const columns = designer ? designerColumns : allColumns;
   const [mellowSharing, setMellowSharing] = useState(false);
   const [mellowScope, setMellowScope] = useState<{
     start: string;
@@ -260,21 +257,6 @@ export default function PaidGrowthPage() {
   const [search, setSearch] = useState('');
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
-  useEffect(() => {
-    if (designer) return;
-    const refresh = () => {
-      void getMetaEntities()
-        .then(setMetaEntities)
-        .catch((e) => setError(errorText(e)));
-    };
-    refresh();
-    window.addEventListener('focus', refresh);
-    const timer = window.setInterval(refresh, 60_000);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      window.clearInterval(timer);
-    };
-  }, [designer]);
   const [selectedCampaign, setSelectedCampaign] = useState<BiRow | null>(null);
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
@@ -321,11 +303,7 @@ export default function PaidGrowthPage() {
       setError('请选择 1～31 天；大范围请分月查询。');
       return;
     }
-    void refreshStandards();
-    if (!designer)
-      void getMetaEntities()
-        .then(setMetaEntities)
-        .catch((e) => setError(errorText(e)));
+    if (!designer) void refreshStandards();
     controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
@@ -426,7 +404,11 @@ export default function PaidGrowthPage() {
     [days, levels],
   );
   const rows = useMemo(() => biRows(days), [days]);
-  const summary = useMemo(() => biSummary(days), [days]);
+  const summary = useMemo(() => biSummaryFromRows(rows), [rows]);
+  const displayedSpend = useMemo(
+    () => (loadedMedia ? biChannelSpend(days, loadedMedia) : summary.spend),
+    [days, loadedMedia, summary.spend],
+  );
   const trendStandards = standards.filter(
     (p) =>
       String(p.dorisAppId) === trendScope?.appId &&
@@ -445,51 +427,83 @@ export default function PaidGrowthPage() {
         : () => false,
     [days, expectedDates, reportLevels],
   );
-  const hiddenCount = rows.filter(noSpend).length;
-  const hasBad = (row: BiRow) =>
-    columns.some((c) => biMetricSignal(row, c.key, standards).state === 'bad');
-  const rowMeta = useMemo(() => {
-    const result = new Map<string, MetaFilterItem>();
-    for (const row of rows) {
-      const entities = metaEntities.filter(
-        (e) =>
-          row.media.toLowerCase() === 'facebook' &&
-          e.campaignId === row.campaignId,
-      );
-      // BI lacks account dimension: never combine metadata if ownership is ambiguous.
-      const unique =
-        new Set(entities.map((e) => e.accountId)).size === 1 ? entities : [];
-      result.set(row.key, {
-        metaObjectives: [
-          ...new Set(unique.flatMap((e) => (e.objective ? [e.objective] : []))),
-        ],
-        metaOptimizationGoals: [
-          ...new Set(
-            unique.flatMap((e) =>
-              e.optimizationGoal ? [e.optimizationGoal] : [],
-            ),
+  const hiddenCount = useMemo(
+    () => rows.filter(noSpend).length,
+    [rows, noSpend],
+  );
+  const badRows = useMemo(
+    () =>
+      new Set(
+        rows.filter((row) =>
+          columns.some(
+            (c) => biMetricSignal(row, c.key, standards).state === 'bad',
           ),
-        ],
-        metaConversionEvents: metaTargets(unique).conversionEvents,
-      });
+        ),
+      ),
+    [rows, columns, standards],
+  );
+  const facebookCampaignIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!designer && reportLevels.includes('campaigns')) {
+      for (const row of rows) {
+        if (row.media.toLowerCase() === 'facebook' && row.campaignId)
+          ids.add(row.campaignId);
+      }
     }
-    return result;
-  }, [rows, metaEntities]);
+    return ids;
+  }, [designer, rows, reportLevels]);
+  const needsMeta =
+    !designer &&
+    (facebookCampaignIds.size > 0 ||
+      selectedCampaign?.media.toLowerCase() === 'facebook');
+  useEffect(() => {
+    if (!needsMeta) return;
+    const abort = new AbortController();
+    let pending = false;
+    let lastRead = -Infinity;
+    const refresh = async () => {
+      if (document.hidden || pending || Date.now() - lastRead < 60_000) return;
+      pending = true;
+      lastRead = Date.now();
+      try {
+        const result = await getMetaEntities(abort.signal);
+        if (!abort.signal.aborted) setMetaEntities(result);
+      } catch (e) {
+        if (!abort.signal.aborted) setError(errorText(e));
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      abort.abort();
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [needsMeta]);
+  const campaignMeta = useMemo(
+    () => paidCampaignTargets(facebookCampaignIds, metaEntities),
+    [facebookCampaignIds, metaEntities],
+  );
   const filtered = useMemo(
     () =>
       rows
         .filter((r) => !noSpend(r))
-        .filter((r) => !badOnly || hasBad(r))
-        .filter(
-          (r) =>
-            !reportLevels.includes('campaigns') ||
-            !metaFilter ||
-            (metaFilter.value === '__missing'
-              ? !rowMeta.get(r.key)?.[metaFilter.key]?.length
-              : rowMeta
-                  .get(r.key)
-                  ?.[metaFilter.key]?.includes(metaFilter.value)),
-        )
+        .filter((r) => !badOnly || badRows.has(r))
+        .filter((row) => {
+          if (!reportLevels.includes('campaigns') || !metaFilter) return true;
+          const values =
+            row.media.toLowerCase() === 'facebook' && row.campaignId
+              ? campaignMeta.get(row.campaignId)?.[metaFilter.key]
+              : undefined;
+          return metaFilter.value === '__missing'
+            ? !values?.length
+            : values?.includes(metaFilter.value);
+        })
         .filter((r) =>
           `${r.appName} ${r.media} ${r.label} ${r.campaignName || ''}`
             .toLowerCase()
@@ -497,7 +511,7 @@ export default function PaidGrowthPage() {
         )
         .sort(
           (a, b) =>
-            (badFirst ? Number(hasBad(b)) - Number(hasBad(a)) : 0) ||
+            (badFirst ? Number(badRows.has(b)) - Number(badRows.has(a)) : 0) ||
             Number(b[sort] ?? -1) - Number(a[sort] ?? -1),
         ),
     [
@@ -507,10 +521,10 @@ export default function PaidGrowthPage() {
       sort,
       reportLevels,
       metaFilter,
-      rowMeta,
+      campaignMeta,
       badOnly,
       badFirst,
-      standards,
+      badRows,
     ],
   );
   const issues = days.flatMap((day) =>
@@ -525,10 +539,6 @@ export default function PaidGrowthPage() {
         : [],
     ),
   );
-  const total = (key: 'spend' | 'installs' | 'revenue') =>
-    !rows.length || rows.some((r) => r[key] === null)
-      ? null
-      : rows.reduce((sum, r) => sum + (r[key] || 0), 0);
   const exportCsv = () => {
     const cell = (v: unknown) =>
       `"${String(v ?? '')
@@ -791,7 +801,7 @@ export default function PaidGrowthPage() {
       </section>
       {!designer && reportLevels.includes('campaigns') && (
         <CampaignMetaFilters
-          items={[...rowMeta.values()]}
+          items={[...campaignMeta.values()]}
           value={metaFilter}
           onChange={(value) => {
             setMetaFilter(value);
@@ -810,12 +820,9 @@ export default function PaidGrowthPage() {
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          [
-            '消耗 ($)',
-            loadedMedia ? biChannelSpend(days, loadedMedia) : summary.spend,
-          ],
-          ['Adjust 安装', total('installs')],
-          ['当前 D0 收入 ($)', total('revenue')],
+          ['消耗 ($)', displayedSpend],
+          ['Adjust 安装', summary.installs],
+          ['当前 D0 收入 ($)', summary.revenue],
           ['当前 D0 ROAS (%)', summary.d0Roas],
         ]
           .filter((_, index) => !designer || index < 2)
@@ -895,58 +902,14 @@ export default function PaidGrowthPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[...days].reverse().map((day) => {
-                  const daily = biRows([day]);
-                  const sum = (key: 'spend' | 'installs') =>
-                    !daily.length || daily.some((r) => r[key] === null)
-                      ? null
-                      : daily.reduce((v, r) => v + (r[key] || 0), 0);
-                  const spend = loadedMedia
-                      ? biChannelSpend([day], loadedMedia)
-                      : biSummary([day]).spend,
-                    installs = sum('installs');
-                  const states = {
-                    fresh: '已更新',
-                    cached: '缓存',
-                    stale: '旧缓存',
-                    missing: '失败',
-                    unsupported: '不支持',
-                  };
-                  return (
-                    <TableRow key={day.date}>
-                      <TableCell className="whitespace-nowrap">
-                        {day.date}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {(designer
-                          ? [day.daily]
-                          : [day.daily, day.revenue, day.events]
-                        )
-                          .map((p) => states[p.state])
-                          .join(' / ')}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {number(spend)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {number(installs, 0)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {number(
-                          spend !== null && installs ? spend / installs : null,
-                          3,
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-slate-500">
-                        {day.daily.updatedAt
-                          ? new Date(day.daily.updatedAt).toLocaleString(
-                              'zh-CN',
-                            )
-                          : '未获取'}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {[...days].reverse().map((day) => (
+                  <PaidGrowthDailyRow
+                    key={day.date}
+                    day={day}
+                    media={loadedMedia}
+                    designer={designer}
+                  />
+                ))}
               </TableBody>
             </Table>
           </div>
@@ -1010,7 +973,7 @@ export default function PaidGrowthPage() {
                 setBadOnly(!badOnly);
               }}
             >
-              仅看不达标（{rows.filter(hasBad).length}）
+              仅看不达标（{badRows.size}）
             </Button>
             <span className="text-red-700">红：未达产品标准</span>
             <span className="text-emerald-700">绿：达到标准（含等于）</span>
@@ -1054,10 +1017,10 @@ export default function PaidGrowthPage() {
                 return (
                   <TableRow
                     key={row.key}
-                    className={hasBad(row) ? 'bg-red-50/40' : ''}
+                    className={badRows.has(row) ? 'bg-red-50/40' : ''}
                   >
                     <TableCell
-                      className={`sticky left-0 z-10 min-w-72 max-w-96 border-r ${hasBad(row) ? 'bg-red-50' : 'bg-white'}`}
+                      className={`sticky left-0 z-10 min-w-72 max-w-96 border-r ${badRows.has(row) ? 'bg-red-50' : 'bg-white'}`}
                     >
                       {row.campaignId && reportLevels.includes('campaigns') ? (
                         <button

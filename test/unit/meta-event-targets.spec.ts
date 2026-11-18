@@ -1,3 +1,4 @@
+import { paidCampaignTargets } from '@client/pages/growth-decision/paid-growth-display';
 import { execFileSync } from 'node:child_process';
 import { adsetEvent, metaTargets } from '@shared/meta-targets';
 import type { MetaAdEntity } from '@shared/api.interface';
@@ -55,5 +56,37 @@ describe('adset event targets', () => {
     ]);
     expect(metaTargets(result).conversionEvents).not.toContain('OTHER');
     expect(metaTargets([result[3]]).eventStatus).toBe('pending');
+  });
+});
+
+describe('paid campaign target index', () => {
+  it('only joins requested campaigns with a single known account', () => {
+    const entities = [
+      { ...entity, campaignId: 'a', optimizationGoal: 'APP_INSTALLS' },
+      { ...entity, campaignId: 'b', conversionEvent: 'PURCHASE' },
+      { ...entity, campaignId: 'a', conversionEvent: 'PURCHASE' },
+      {
+        ...entity,
+        campaignId: 'b',
+        accountId: 'other',
+        conversionEvent: 'OTHER',
+      },
+      { ...entity, campaignId: 'c', optimizationGoal: 'APP_INSTALLS' },
+    ];
+    entities.push({
+      ...entity,
+      campaignId: 'missing_account',
+      accountId: '',
+      optimizationGoal: 'APP_INSTALLS',
+    });
+    const targets = paidCampaignTargets(
+      new Set(['b', 'a', 'no_meta', 'missing_account']),
+      entities,
+    );
+    expect([...targets.keys()]).toEqual(['a']);
+    expect(targets.get('a')?.metaConversionEvents).toEqual([
+      'install',
+      'purchase',
+    ]);
   });
 });

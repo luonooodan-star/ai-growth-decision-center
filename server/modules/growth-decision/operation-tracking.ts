@@ -36,7 +36,7 @@ export function activeOperationAnchors(
 
 export function periodicObservation(
   op: MetaOperation,
-  previous: OperationObservation[],
+  hasObservation: (id: string) => boolean,
   snapshots: CampaignDailySnapshot[],
   now = new Date(),
 ): OperationObservation | undefined {
@@ -44,7 +44,7 @@ export function periodicObservation(
   const slot = Math.floor(elapsed / OBSERVATION_INTERVAL_MS);
   if (!Number.isFinite(slot) || slot < 1 || !op.campaignId) return;
   const id = `${op.id}:periodic:${slot}`;
-  if (previous.some((p) => p.id === id)) return;
+  if (hasObservation(id)) return;
   const dueAt = Date.parse(op.occurredAt) + slot * OBSERVATION_INTERVAL_MS;
   const snapshot = snapshots
     .filter(

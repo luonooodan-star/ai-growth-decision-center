@@ -81,6 +81,29 @@ test('successful activation requires new version readiness and preserves runtime
     'untouched',
   );
 });
+test('module builds validate lazy routes as well as the initial script', (t) => {
+  const { directory } = fixture(t);
+  const client = join(directory, 'dist/client');
+  writeFileSync(
+    join(client, 'index.html'),
+    '<script type="module" src="/assets/app.js"></script>',
+  );
+  mkdirSync(join(client, '.vite'));
+  writeFileSync(
+    join(client, '.vite/manifest.json'),
+    JSON.stringify({
+      'client/index.html': {
+        file: 'assets/app.js',
+        isEntry: true,
+        dynamicImports: ['report'],
+      },
+      report: { file: 'assets/report.js' },
+    }),
+  );
+  assert.throws(() => verifyRelease(directory), /report\.js/);
+  writeFileSync(join(client, 'assets/report.js'), '');
+  verifyRelease(directory);
+});
 test('failed readiness restores legacy pointer and restarts old server', async (t) => {
   const { root } = fixture(t);
   const seen = [];

@@ -145,6 +145,17 @@ describe('weekly operation learning', () => {
       '归因回补',
     );
   });
+  it('scans manual evidence once across products and does not read full reports to check existence', () => {
+    const product = seed(false);
+    db.saveProduct({ ...product, id: 'other-one' });
+    db.saveProduct({ ...product, id: 'other-two' });
+    const records = jest.spyOn(db, 'listDecisionRecords');
+    const fullReports = jest.spyOn(db, 'listSkillReports');
+    const reports = service.generate(now);
+    expect(reports).toHaveLength(1);
+    expect(records).toHaveBeenCalledTimes(1);
+    expect(fullReports).toHaveBeenCalledTimes(1); // Only the requested API response.
+  });
   it('never reconstructs missing historical recommendations using current rules', () => {
     seed(false);
     expect(meta.overview().items[0].decision?.state).toBe('unknown');

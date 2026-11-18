@@ -128,6 +128,18 @@ describe('Meta read-only operation lifecycle', () => {
       'other',
     );
   });
+  it('links legacy operations using distinct product/account/campaign ownership without loading snapshot payloads', () => {
+    db.saveMetaOperation(normalizeMetaOperation(input));
+    db.saveCampaignSnapshot(snapshot('2026-01-03'));
+    db.saveCampaignSnapshot(snapshot('2026-01-04'));
+    const histories = jest.spyOn(db, 'listCampaignSnapshots');
+    expect(service.linkedOperations()[0].productId).toBe(productId);
+    const second = { ...db.getProduct(productId)!, id: 'another-product' };
+    db.saveProduct(second);
+    db.saveCampaignSnapshot({ ...snapshot('2026-01-04'), key: 'second', productId: second.id });
+    expect(service.linkedOperations()[0].linked).toBe(false);
+    expect(histories).not.toHaveBeenCalled();
+  });
   it('rejects lossy numeric IDs and timezone-free timestamps before any write', () => {
     expect(() =>
       service.import({

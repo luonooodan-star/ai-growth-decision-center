@@ -147,10 +147,12 @@ export function normalizeMetaOperation(value: unknown): MetaOperation {
   };
 }
 
+const shanghaiDate = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+});
 export function dataDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Shanghai',
-  });
+  const time = Date.parse(iso);
+  return Number.isFinite(time) ? shanghaiDate.format(time) : 'Invalid Date';
 }
 
 export function reviewMetaOperation(
@@ -164,6 +166,9 @@ export function reviewMetaOperation(
     new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000)
       .toISOString()
       .slice(0, 10);
+  const beforeStart = addDays(-3),
+    afterEnd = addDays(7),
+    today = dataDay(now.toISOString());
   const history = snapshots
     .filter(
       (s) =>
@@ -172,13 +177,10 @@ export function reviewMetaOperation(
     )
     .sort((a, b) => a.dataDate.localeCompare(b.dataDate));
   const before = history.filter(
-    (s) => s.dataDate >= addDays(-3) && s.dataDate < day,
+    (s) => s.dataDate >= beforeStart && s.dataDate < day,
   );
   const after = history.filter(
-    (s) =>
-      s.dataDate > day &&
-      s.dataDate <= addDays(7) &&
-      s.dataDate < dataDay(now.toISOString()),
+    (s) => s.dataDate > day && s.dataDate <= afterEnd && s.dataDate < today,
   );
   const intervening = operations
     .filter(
@@ -188,7 +190,7 @@ export function reviewMetaOperation(
         o.accountId === operation.accountId &&
         o.campaignId === operation.campaignId &&
         o.occurredAt >= operation.occurredAt &&
-        dataDay(o.occurredAt) <= addDays(7),
+        dataDay(o.occurredAt) <= afterEnd,
     )
     .map((o) => o.id);
   let summary = !operation.linked

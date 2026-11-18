@@ -44,10 +44,13 @@ export async function getOperationTimeline(
 ): Promise<import('@shared/meta-operations').OperationTimeline> {
   return (await axios.get(`${root}/${encodeURIComponent(id)}/timeline`)).data;
 }
-export async function getMetaEntities(): Promise<MetaAdEntity[]> {
+export async function getMetaEntities(
+  signal?: AbortSignal,
+): Promise<MetaAdEntity[]> {
   return (
     await axios.get<MetaAdEntity[]>(
       '/api/growth-decision/meta-operations/entities',
+      { signal, timeout: 15000 },
     )
   ).data;
 }

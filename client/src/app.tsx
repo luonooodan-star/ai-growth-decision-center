@@ -1,21 +1,45 @@
 /* eslint-disable @lark-apaas/require-app-container */
-import {
-  RoasDataPage,
-  BehaviorDataPage,
-} from './pages/growth-decision/ReportPages';
-import React from 'react';
+import React, { lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-
 import Layout from './components/Layout';
-import AuthorizationPage from './pages/growth-decision/AuthorizationPage';
-import GrowthDecisionPage from './pages/growth-decision/GrowthDecisionPage';
-import ProductOverviewPage from './pages/growth-decision/ProductOverviewPage';
-import MetricLibraryPage from './pages/growth-decision/MetricLibraryPage';
-import SkillIterationPage from './pages/growth-decision/SkillIterationPage';
-import PaidGrowthPage from './pages/growth-decision/PaidGrowthPage';
-import MetaOperationsPage from './pages/growth-decision/MetaOperationsPage';
-import AdAdjustmentPage from './pages/growth-decision/AdAdjustmentPage';
-import CreativeAnalysisPage from './pages/growth-decision/CreativeAnalysisPage';
+
+const AuthorizationPage = lazy(
+  () => import('./pages/growth-decision/AuthorizationPage'),
+);
+const PaidGrowthPage = lazy(
+  () => import('./pages/growth-decision/PaidGrowthPage'),
+);
+const ProductOverviewPage = lazy(
+  () => import('./pages/growth-decision/ProductOverviewPage'),
+);
+const GrowthDecisionPage = lazy(
+  () => import('./pages/growth-decision/GrowthDecisionPage'),
+);
+const AdAdjustmentPage = lazy(
+  () => import('./pages/growth-decision/AdAdjustmentPage'),
+);
+const MetaOperationsPage = lazy(
+  () => import('./pages/growth-decision/MetaOperationsPage'),
+);
+const CreativeAnalysisPage = lazy(
+  () => import('./pages/growth-decision/CreativeAnalysisPage'),
+);
+const MetricLibraryPage = lazy(
+  () => import('./pages/growth-decision/MetricLibraryPage'),
+);
+const SkillIterationPage = lazy(
+  () => import('./pages/growth-decision/SkillIterationPage'),
+);
+const RoasDataPage = lazy(() =>
+  import('./pages/growth-decision/ReportPages').then(({ RoasDataPage }) => ({
+    default: RoasDataPage,
+  })),
+);
+const BehaviorDataPage = lazy(() =>
+  import('./pages/growth-decision/ReportPages').then(
+    ({ BehaviorDataPage }) => ({ default: BehaviorDataPage }),
+  ),
+);
 
 const RoutesComponent = () => {
   return (

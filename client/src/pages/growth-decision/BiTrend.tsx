@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { getBiDay } from '@/api/paid-growth';
-import type { BiDay } from '@shared/paid-growth.interface';
 import { biSummary, trendTickIndexes } from '@shared/bi-summary';
 import { Button } from '@/components/ui/button';
 import { useAuthorization } from '@/components/AuthorizationContext';
@@ -37,7 +36,9 @@ export function BiTrend({
     designer ? 'spend' : 'roas',
   );
   const [excludeToday, setExcludeToday] = useState(false);
-  const [days, setDays] = useState<Record<string, BiDay>>({});
+  const [days, setDays] = useState<
+    Record<string, { row: ReturnType<typeof biSummary>; stale: boolean }>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -61,7 +62,13 @@ export function BiTrend({
             abort.signal,
           );
           if (abort.signal.aborted) return;
-          setDays((old) => ({ ...old, [date]: day }));
+          const point = {
+            row: biSummary([day]),
+            stale: [day.daily, day.revenue, day.events].some(
+              (p) => p.state === 'stale',
+            ),
+          };
+          setDays((old) => ({ ...old, [date]: point }));
         }
       } catch {
         if (!abort.signal.aborted)
@@ -86,10 +93,8 @@ export function BiTrend({
       const d = days[date];
       points.push({
         date,
-        row: d ? biSummary([d]) : null,
-        stale:
-          !!d &&
-          [d.daily, d.revenue, d.events].some((p) => p.state === 'stale'),
+        row: d?.row ?? null,
+        stale: d?.stale ?? false,
       });
     }
   const today = new Date().toLocaleDateString('en-CA', {

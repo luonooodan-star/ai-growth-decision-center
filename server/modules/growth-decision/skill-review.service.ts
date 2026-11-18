@@ -42,11 +42,11 @@ export class SkillReviewService implements OnModuleInit, OnModuleDestroy {
     // this timer never fabricates analysis or publishes rules automatically.
     this.timer = setInterval(() => {
       try {
-        if (process.env.GROWTH_PERSONAL_DATA !== '1') this.generate();
+        if (process.env.GROWTH_PERSONAL_DATA !== '1') this.enqueue();
         else
           for (const username of configuredDorisUsers()) {
             try {
-              runPersonalData(username, () => this.generate());
+              runPersonalData(username, () => this.enqueue());
             } catch {
               this.logger.warn(`周复盘证据入队失败：${username}`);
             }
@@ -76,33 +76,45 @@ export class SkillReviewService implements OnModuleInit, OnModuleDestroy {
       }));
   }
   generate(now = new Date()) {
+    this.enqueue(now);
+    return this.list();
+  }
+  private enqueue(now = new Date()) {
     const week = previousReviewWeek(now);
+    const username = centerIdentity.getStore();
+    const pending = this.db
+      .listProducts()
+      .map((product) => ({
+        product,
+        id: `${week.start}-${product.id}${username ? `-user-${username}` : ''}`,
+      }))
+      .filter(({ id }) => !this.db.hasSkillReport(id));
+    if (!pending.length) return;
     const all = this.meta.linkedOperations();
-    for (const product of this.db.listProducts()) {
-      // Each operator contributes a report; shared storage must not let the first
-      // operator's report suppress everybody else's evidence for the same week.
-      const username = centerIdentity.getStore();
-      const id = `${week.start}-${product.id}${username ? `-user-${username}` : ''}`;
-      if (this.db.listSkillReports().some((r) => r.id === id)) continue;
-      const operations = all.filter(
-        (o) =>
-          o.productId === product.id &&
-          !o.systemActor &&
-          o.category !== 'other' &&
-          dataDay(o.occurredAt) >= week.start &&
-          dataDay(o.occurredAt) <= week.end,
+    const withinWeek = (iso: string) => {
+      const day = dataDay(iso);
+      return day >= week.start && day <= week.end;
+    };
+    const weeklyOperations = all.filter(
+      (op) =>
+        !op.systemActor && op.category !== 'other' && withinWeek(op.occurredAt),
+    );
+    const weeklyRecords = this.db
+      .listDecisionRecords(10000)
+      .filter(
+        (r): r is GrowthDecisionCase =>
+          !('preliminaryJudgment' in r) &&
+          !r.deletedAt &&
+          !r.metaOperationId &&
+          withinWeek(r.createdAt),
       );
-      const manualRecords = this.db
-        .listDecisionRecords(10000)
-        .filter(
-          (r): r is GrowthDecisionCase =>
-            !('preliminaryJudgment' in r) &&
-            !r.deletedAt &&
-            !r.metaOperationId &&
-            r.productId === product.id &&
-            dataDay(r.createdAt) >= week.start &&
-            dataDay(r.createdAt) <= week.end,
-        );
+    for (const { product, id } of pending) {
+      const operations = weeklyOperations.filter(
+        (op) => op.productId === product.id,
+      );
+      const manualRecords = weeklyRecords.filter(
+        (r) => r.productId === product.id,
+      );
       if (!operations.length && !manualRecords.length) continue;
       const snapshots = this.db.listCampaignSnapshots(product.id);
       const points = new Map<
@@ -153,10 +165,9 @@ export class SkillReviewService implements OnModuleInit, OnModuleDestroy {
         },
       });
     }
-    return this.list();
   }
   claim(now = new Date()) {
-    this.generate(now);
+    this.enqueue(now);
     for (const expired of this.db.listSkillReports()) {
       if (
         expired.status === 'running' &&

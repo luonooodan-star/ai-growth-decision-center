@@ -100,9 +100,16 @@ test('successful adjustments durably capture anchors, periodic data and campaign
     db.saveAdjustmentJob(job);
     expect(db.listOperationObservations('1', '2')).toHaveLength(1);
     const service = new MetaOperationsService(db);
+    const histories = jest.spyOn(db, 'listCampaignSnapshots');
+    const observations = jest.spyOn(db, 'listOperationObservations');
+    const imports = jest.spyOn(db, 'listMetaOperations');
     expect(service.trackingDueProducts()).toEqual([product.id]);
+    expect(histories).not.toHaveBeenCalled();
+    expect(observations).not.toHaveBeenCalled();
+    expect(imports).not.toHaveBeenCalled();
     service.captureSnapshots(product.id);
     service.captureSnapshots(product.id);
+    expect(observations).not.toHaveBeenCalled();
     expect(db.listOperationObservations('1', '2')).toHaveLength(2);
     expect(service.trackingDueProducts()).toEqual([]);
     expect(service.overview(1, 'increase', product.id).total).toBe(1);
@@ -124,11 +131,16 @@ test('successful adjustments durably capture anchors, periodic data and campaign
 });
 test('3h observations require fresh matched snapshots and deduplicate persisted slots', () => {
   expect(
-    periodicObservation(op, [], [snapshot], new Date('2026-09-22T02:59:00Z')),
+    periodicObservation(
+      op,
+      () => false,
+      [snapshot],
+      new Date('2026-09-22T02:59:00Z'),
+    ),
   ).toBeUndefined();
   const point = periodicObservation(
     op,
-    [],
+    () => false,
     [snapshot],
     new Date('2026-09-22T03:02:00Z'),
   )!;
@@ -136,18 +148,23 @@ test('3h observations require fresh matched snapshots and deduplicate persisted 
   expect(
     periodicObservation(
       op,
-      [point],
+      (id) => point.id === id,
       [snapshot],
       new Date('2026-09-22T03:03:00Z'),
     ),
   ).toBeUndefined();
   expect(
-    periodicObservation(op, [], [snapshot], new Date('2026-09-22T06:02:00Z')),
+    periodicObservation(
+      op,
+      () => false,
+      [snapshot],
+      new Date('2026-09-22T06:02:00Z'),
+    ),
   ).toBeUndefined();
   expect(
     periodicObservation(
       op,
-      [],
+      () => false,
       [{ ...snapshot, accountId: 'other' }],
       new Date('2026-09-22T03:02:00Z'),
     ),

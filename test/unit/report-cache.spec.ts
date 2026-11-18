@@ -176,6 +176,47 @@ describe('daily report persistence and 10:00 schedule', () => {
     await schedule.tick();
     expect(bi.part).toHaveBeenCalledTimes(2);
   });
+  it('skips a queued date already refreshed by a foreground query in this cycle', async () => {
+    const { cache, roas, bi } = setup();
+    const earlier = '2026-11-12';
+    await asUser(() => roas.query({ ...query, start: earlier }));
+    jest.setSystemTime(new Date('2026-11-14T02:00:00Z'));
+    const schedule = new ReportScheduleService(
+      cache,
+      { isBusy: () => false } as never,
+      roas,
+      {
+        reportBackgroundBusy: () => false,
+      } as never,
+    );
+    let release!: () => void;
+    let notify!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      notify = resolve;
+    });
+    const original = bi.part.getMockImplementation()!;
+    bi.part.mockClear().mockImplementationOnce(async (args) => {
+      notify();
+      await hold;
+      return original(args);
+    });
+    const scheduled = schedule.tick();
+    await started;
+    try {
+      await asUser(() =>
+        roas.query({ ...query, start: earlier, end: earlier, refresh: true }),
+      );
+    } finally {
+      release();
+      await scheduled;
+    }
+    expect(
+      bi.part.mock.calls.filter(([args]) => args.start_date === earlier),
+    ).toHaveLength(2);
+  });
   it('does not retry a failed automatic refresh repeatedly in the same day', async () => {
     const { cache, roas, bi } = setup();
     await asUser(() => roas.query(query));

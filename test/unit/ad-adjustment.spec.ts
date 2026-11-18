@@ -192,7 +192,7 @@ describe('advertising adjustment workbench', () => {
       dimensions: string[];
     };
     expect(args.dimensions).toContain('campaign_id');
-    expect(args.dimensions).not.toContain('buyer_alias');
+    expect(args.dimensions).toContain('buyer_alias');
     expect(args.dimensions).not.toContain('country_code');
     expect(meta.campaignAccounts).toHaveBeenCalledWith(['123']);
   });

@@ -1,7 +1,3 @@
-import {
-  mergeBuyerChannelOptions,
-  type BuyerChannelOption,
-} from '@shared/buyer-channel-options';
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import {
@@ -11,6 +7,8 @@ import {
 import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { BiCacheStore } from './bi-cache-store';
+import type { BiPart } from '@shared/paid-growth.interface';
 import type { OperationObservation } from '@shared/meta-operations';
 import { adjustmentOperations } from '../modules/growth-decision/adjustment-operations';
 
@@ -120,6 +118,7 @@ const DEFAULT_GROWTH_METRICS: GrowthMetricDefinition[] = [
 export class LocalDatabaseService implements OnModuleDestroy {
   private readonly systemDatabase: DatabaseSync;
   private readonly personalDatabases = new Map<string, DatabaseSync>();
+  private readonly biCaches = new WeakMap<DatabaseSync, BiCacheStore>();
   private readonly databasePath: string;
   private get database(): DatabaseSync {
     if (!personalDataIdentity.getStore()) return this.systemDatabase;
@@ -232,6 +231,12 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .map((row) => this.parsePayload<OperationObservation>(row.payload));
   }
 
+  hasOperationObservation(id: string): boolean {
+    return !!this.database
+      .prepare('SELECT 1 FROM growth_operation_observation WHERE id = ?')
+      .get(id);
+  }
+
   listAdjustmentJobs(): MetaAdjustmentJob[] {
     return this.database
       .prepare('SELECT payload FROM growth_adjustment_job ORDER BY rowid DESC')
@@ -300,25 +305,29 @@ export class LocalDatabaseService implements OnModuleDestroy {
     const products = rows.map((row) =>
       this.parsePayload<GrowthProduct>(row.payload),
     );
-    // Keep products discovered in existing personal spaces reachable without replacing
-    // shared standards with stale private copies.
-    if (personalDataIdentity.getStore()) {
-      for (const row of this.database
-        .prepare('SELECT payload FROM growth_product')
-        .all()) {
-        const product = this.parsePayload<GrowthProduct>(row.payload);
-        if (!products.some((p) => p.id === product.id)) products.push(product);
-      }
+    if (!personalDataIdentity.getStore())
+      return products.map((product) => this.normalizeProduct(product));
+
+    // Each personal row is read and decoded once. Keep legacy personal products
+    // reachable while taking shared standards from the shared catalog.
+    const ownProducts = new Map<string, GrowthProduct>();
+    const sharedIds = new Set(products.map((product) => product.id));
+    for (const row of this.database
+      .prepare('SELECT payload FROM growth_product')
+      .all()) {
+      const own = this.parsePayload<GrowthProduct>(row.payload);
+      ownProducts.set(own.id, own);
+      if (!sharedIds.has(own.id)) products.push(own);
     }
-    return products.map((product) => this.withPersonalProductData(product));
+    return products.map((product) =>
+      this.withPersonalProductData(product, ownProducts.get(product.id)),
+    );
   }
 
-  private withPersonalProductData(product: GrowthProduct): GrowthProduct {
-    if (!personalDataIdentity.getStore()) return this.normalizeProduct(product);
-    const row = this.database
-      .prepare('SELECT payload FROM growth_product WHERE id = ?')
-      .get(product.id);
-    const own = row ? this.parsePayload<GrowthProduct>(row.payload) : undefined;
+  private withPersonalProductData(
+    product: GrowthProduct,
+    own?: GrowthProduct,
+  ): GrowthProduct {
     const visible = this.normalizeProduct({
       ...product,
       accountId: own?.accountId,
@@ -328,7 +337,7 @@ export class LocalDatabaseService implements OnModuleDestroy {
       lastSyncAt: own?.lastSyncAt,
       latestMetricValues: own?.latestMetricValues,
     });
-    if (!row) {
+    if (!own) {
       // Personal records retain their product foreign key, without copying shared
       // account lists or observations into this user's data space.
       this.database
@@ -388,6 +397,14 @@ export class LocalDatabaseService implements OnModuleDestroy {
     }
     return reports;
   }
+  hasSkillReport(id: string): boolean {
+    const sql = 'SELECT 1 FROM growth_skill_report WHERE id = ?';
+    return (
+      !!this.systemDatabase.prepare(sql).get(id) ||
+      (!!personalDataIdentity.getStore() &&
+        !!this.database.prepare(sql).get(id))
+    );
+  }
   saveSkillReport(report: WeeklySkillReport): void {
     this.systemDatabase
       .prepare(
@@ -396,98 +413,40 @@ export class LocalDatabaseService implements OnModuleDestroy {
       .run(report.id, JSON.stringify(report));
   }
 
-  getBiCache(key: string): string | undefined {
-    const row = this.database
-      .prepare('SELECT payload FROM growth_bi_cache WHERE cache_key = ?')
-      .get(key);
-    return row ? String(row.payload) : undefined;
+  private get biCache(): BiCacheStore {
+    const db = this.database;
+    let store = this.biCaches.get(db);
+    if (!store) {
+      store = new BiCacheStore(db, personalScopeKey());
+      this.biCaches.set(db, store);
+    }
+    return store;
   }
 
-  private buyerChannelKey() {
-    return `${personalScopeKey()}:paid-buyer-channels:v1`;
+  getBiCache(key: string): string | undefined {
+    return this.biCache.read(key);
   }
-  private recordBuyerChannels(key: string, payload: string): void {
-    const prefix = personalScopeKey() + ':';
-    if (
-      !key.startsWith(prefix) ||
-      !key.includes('bi_ads.ads_paid_acquisition_daily')
-    )
-      return;
-    const data = JSON.parse(payload);
-    if (!['fresh', 'cached'].includes(data.state) || !Array.isArray(data.rows))
-      return;
-    const existing = this.getBiCache(this.buyerChannelKey());
-    const previous: BuyerChannelOption[] = existing
-      ? JSON.parse(existing).rows || []
-      : [];
-    const fallback =
-      key.match(/"end_date":"(\d{4}-\d{2}-\d{2})"/)?.[1] ||
-      String(data.updatedAt || '').slice(0, 10);
-    const rows = mergeBuyerChannelOptions(previous, data.rows, fallback);
-    if (JSON.stringify(previous) === JSON.stringify(rows)) return;
-    this.database
-      .prepare(
-        'INSERT INTO growth_bi_cache(cache_key,payload) VALUES (?,?) ON CONFLICT(cache_key) DO UPDATE SET payload=excluded.payload',
-      )
-      .run(
-        this.buyerChannelKey(),
-        JSON.stringify({ rows, updatedAt: new Date().toISOString() }),
-      );
+
+  saveBiCache(key: string, payload: string, part?: BiPart): void {
+    this.biCache.save(key, payload, part);
   }
-  getBuyerChannelOptions(): BuyerChannelOption[] {
-    const marker = `${this.buyerChannelKey()}:seeded`;
-    if (!this.getBiCache(marker)) {
-      // One-time, streaming migration of successful source caches, within the
-      // current personal credential space. Never query Doris for dropdowns.
-      const prefix = personalScopeKey() + ':';
-      const statement = this.database.prepare(
-        "SELECT cache_key,payload FROM growth_bi_cache WHERE substr(cache_key,1,length(?))=? AND instr(cache_key,'bi_ads.ads_paid_acquisition_daily')>0",
-      );
-      for (const row of statement.iterate(prefix, prefix))
-        this.recordBuyerChannels(String(row.cache_key), String(row.payload));
-      this.saveBiCache(
-        marker,
-        JSON.stringify({ updatedAt: new Date().toISOString() }),
-      );
-    }
-    const raw = this.getBiCache(this.buyerChannelKey());
-    return mergeBuyerChannelOptions(
-      raw ? JSON.parse(raw).rows || [] : [],
-      [],
-      '',
-    );
-  }
-  saveBiCache(key: string, payload: string): void {
-    this.database
-      .prepare(
-        'INSERT INTO growth_bi_cache (cache_key, payload) VALUES (?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload',
-      )
-      .run(key, payload);
-    this.recordBuyerChannels(key, payload);
-    // Keep shared BI/adjustment data on disk for 90 days per personal scope.
-    // Do not evict recent dates merely because detailed queries exceed 1,500
-    // entries / 128 MiB. Query responses remain lazy and are not all loaded in RAM.
-    this.database
-      .prepare(
-        `DELETE FROM growth_bi_cache
-         WHERE julianday(json_extract(payload, '$.updatedAt')) < julianday('now', '-90 days')`,
-      )
-      .run();
+
+  getBuyerChannelOptions() {
+    return this.biCache.buyerChannels();
   }
 
   getProduct(id: string): GrowthProduct | undefined {
-    const row: Record<string, unknown> | undefined =
-      this.systemDatabase
-        .prepare('SELECT payload FROM growth_product WHERE id = ?')
-        .get(id) ||
-      this.database
-        .prepare('SELECT payload FROM growth_product WHERE id = ?')
-        .get(id);
-    return row
-      ? this.withPersonalProductData(
-          this.parsePayload<GrowthProduct>(row.payload),
-        )
+    const lookup = 'SELECT payload FROM growth_product WHERE id = ?';
+    const shared = this.systemDatabase.prepare(lookup).get(id);
+    const product = shared
+      ? this.parsePayload<GrowthProduct>(shared.payload)
       : undefined;
+    if (!personalDataIdentity.getStore())
+      return product && this.normalizeProduct(product);
+    const row = this.database.prepare(lookup).get(id);
+    const own = row ? this.parsePayload<GrowthProduct>(row.payload) : undefined;
+    const visible = product || own;
+    return visible && this.withPersonalProductData(visible, own);
   }
 
   saveProduct(product: GrowthProduct): void {
@@ -683,6 +642,20 @@ export class LocalDatabaseService implements OnModuleDestroy {
         (row: Record<string, unknown>): CampaignDailySnapshot =>
           this.parsePayload<CampaignDailySnapshot>(row.payload),
       );
+  }
+
+  listCampaignOwners(productIds: string[]) {
+    // Only legacy operations without frozen product evidence need this lookup.
+    // Project ownership in SQLite so historical metrics and breakdowns stay on disk.
+    return this.database
+      .prepare(
+        `SELECT DISTINCT product_id AS productId,
+        json_extract(payload, '$.accountId') AS accountId,
+        json_extract(payload, '$.campaignId') AS campaignId
+        FROM growth_campaign_snapshot
+        WHERE product_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(productIds));
   }
 
   saveCampaignSnapshot(snapshot: CampaignDailySnapshot): void {

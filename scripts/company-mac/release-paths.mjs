@@ -43,6 +43,40 @@ export function verifyRelease(directory) {
     )
       throw new Error('前端静态资源不完整');
   }
+  // Older releases have a single classic script, while module builds also
+  // need the files loaded after a user opens a different page.
+  if (/<script\b(?=[^>]*\btype="module")(?=[^>]*\bsrc=)[^>]*>/.test(html)) {
+    const client = join(directory, 'dist/client');
+    const manifest = JSON.parse(
+      readFileSync(join(client, '.vite/manifest.json'), 'utf8'),
+    );
+    const entry = manifest['client/index.html'];
+    if (
+      !entry?.isEntry ||
+      !assets.some(([, name]) => 'assets/' + name === entry.file)
+    )
+      throw new Error('前端构建清单与入口不匹配');
+    for (const chunk of Object.values(manifest)) {
+      for (const file of [
+        chunk.file,
+        ...(chunk.css || []),
+        ...(chunk.assets || []),
+      ]) {
+        if (
+          !/^assets\/[\w-][\w.-]*$/.test(file) ||
+          !existsSync(join(client, file))
+        )
+          throw new Error(`前端构建清单中的资源缺失或路径无效：${file}`);
+      }
+      for (const key of [
+        ...(chunk.imports || []),
+        ...(chunk.dynamicImports || []),
+      ]) {
+        if (!Object.hasOwn(manifest, key))
+          throw new Error('前端构建清单缺少页面依赖');
+      }
+    }
+  }
 }
 export async function activateRelease(root, next, { restart, healthy }) {
   verifyRelease(releaseDirectory(root, next.id));

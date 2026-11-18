@@ -21,14 +21,20 @@ import { type AdjustmentDrafts } from './AdjustmentEditor';
 import { AdjustmentControls } from './AdjustmentControls';
 import type { AdjustmentDetail } from './useAdjustmentData';
 
+const moneyFormat = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 3,
+  minimumFractionDigits: 2,
+});
+const countFormat = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 0,
+});
+
 export const adjustmentMoney = (v: number | null | undefined) =>
-  v == null
-    ? '—'
-    : `$${v.toLocaleString('en-US', { maximumFractionDigits: 3, minimumFractionDigits: 2 })}`;
+  v == null ? '—' : `$${moneyFormat.format(v)}`;
 export const adjustmentPct = (v: number | null | undefined) =>
   v == null ? '—' : `${v.toFixed(2)}%`;
 export const adjustmentCount = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  v == null ? '—' : countFormat.format(v);
 const colors = {
   good: 'bg-emerald-50 text-emerald-700',
   bad: 'bg-red-50 text-red-700',

@@ -4,8 +4,12 @@ import {
   type AdjustmentDay,
   type AdjustmentQuery,
 } from '@shared/ad-adjustment.interface';
-import { PaidGrowthService, validateBiQuery } from './paid-growth.service';
-import type { BiPart } from '@shared/paid-growth.interface';
+import {
+  PaidGrowthService,
+  validateBiQuery,
+  paidReportDimensions,
+} from './paid-growth.service';
+import type { BiLevel, BiPart } from '@shared/paid-growth.interface';
 import { personalScopeKey } from '../../common/utils/personal-doris';
 import { MetaAdjustmentService } from './meta-adjustment.service';
 import { biNumber } from '@shared/paid-growth';
@@ -54,21 +58,6 @@ export function adjustmentChannelPart(
       .join('；'),
   };
 }
-
-// Verified against Doris list_datasets: both sources expose the same hierarchy.
-export const ADJUSTMENT_DIMENSIONS = [
-  'app_id',
-  'app_name',
-  'media_source',
-  'campaign_id',
-  'campaign_name',
-  'adgroup_id',
-  'adgroup_name',
-  'creative_id',
-  'creative_name',
-  'buyer_alias',
-  'country_code',
-];
 
 @Injectable()
 export class AdAdjustmentService {
@@ -158,19 +147,12 @@ export class AdAdjustmentService {
       ...(q.optimizer ? { buyer_alias: q.optimizer } : {}),
       ...(q.country ? { country_code: q.country } : {}),
     };
-    const base = {
-      start_date: q.date,
-      end_date: q.date,
-      dimensions: q.campaignId
-        ? ADJUSTMENT_DIMENSIONS
-        : ADJUSTMENT_DIMENSIONS.filter(
-            (field) =>
-              !field.startsWith('adgroup_') &&
-              !field.startsWith('creative_') &&
-              (q.localFilters === '1' ||
-                (field !== 'buyer_alias' && field !== 'country_code')),
-          ),
-    };
+    const levels: BiLevel[] = q.campaignId
+      ? ['adgroups', 'creatives', 'optimizers', 'countries']
+      : q.localFilters === '1'
+        ? ['optimizers', 'countries']
+        : ['campaigns'];
+    const base = { start_date: q.date, end_date: q.date };
     const timings: Record<string, number> = {};
     const read = async (
       part: string,
@@ -188,6 +170,7 @@ export class AdAdjustmentService {
     };
     const dailyArgs = {
       ...base,
+      dimensions: paidReportDimensions(levels, true),
       dataset: 'bi_ads.ads_paid_acquisition_daily',
       metrics: [
         'spend',
@@ -201,6 +184,7 @@ export class AdAdjustmentService {
     const dailyTask = read('daily', dailyArgs);
     const revenueTask = read('revenue', {
       ...base,
+      dimensions: paidReportDimensions(levels),
       dataset: 'bi_ads.ads_paid_acquisition_cohort_metric',
       metrics: ['metric_value'],
       filters_json: JSON.stringify({
@@ -220,15 +204,9 @@ export class AdAdjustmentService {
         : !q.media || q.media === 'facebook'
           ? this.personalAccounts(q, {
               ...dailyArgs,
-              // Ownership needs only the campaign manifest, never the country
-              // and buyer cross-product. Reuse the lightweight BI summary cache.
-              dimensions: ADJUSTMENT_DIMENSIONS.filter(
-                (field) =>
-                  !field.startsWith('adgroup_') &&
-                  !field.startsWith('creative_') &&
-                  field !== 'buyer_alias' &&
-                  field !== 'country_code',
-              ),
+              // Match BI's daily campaign data. Verification deduplicates campaign
+              // IDs across buyers and never needs the country cross-product.
+              dimensions: paidReportDimensions(['campaigns'], true),
             })
           : Promise.resolve({ rows: [], state: 'unsupported' as const });
     const optionsTask =

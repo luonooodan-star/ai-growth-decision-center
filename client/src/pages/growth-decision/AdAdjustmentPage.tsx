@@ -117,7 +117,7 @@ export default function AdAdjustmentPage() {
         );
     }
   };
-  const dates = adjustmentDates(today);
+  const dates = useMemo(() => adjustmentDates(today), [today]);
   const current = days.find((d) => d.date === today);
   const options = useMemo(() => {
     const rows = current
@@ -154,17 +154,25 @@ export default function AdAdjustmentPage() {
     options.accounts.map((option) => option.value),
     metadataRevision,
   );
+  const filters = useMemo(
+    () => ({ search, account, optimizer, country }),
+    [search, account, optimizer, country],
+  );
+  const campaigns = useMemo(
+    () => adjustmentTree(days, filters, today),
+    [days, filters, today],
+  );
   const tree = useMemo(
     () =>
       withAdjustmentDetails(
-        adjustmentTree(days, { search, account, optimizer, country }, today),
+        campaigns,
         Object.fromEntries(
           Object.entries(details).map(([id, detail]) => [id, detail.days]),
         ),
-        { search, account, optimizer, country },
+        filters,
         today,
       ),
-    [days, details, search, account, optimizer, country, today],
+    [campaigns, details, filters, today],
   );
   const noSpend = useMemo(
     () =>
@@ -197,20 +205,49 @@ export default function AdAdjustmentPage() {
       ),
     [days, today, optimizer, country],
   );
-  const hiddenCount = tree.filter(noSpend).length;
-  const nodes = tree
-    .filter((n) => !noSpend(n))
-    .filter(
-      (n) =>
-        status === 'all' ||
-        adjustmentSignal(n, today, standards).state === status,
-    );
-  const total = tree.length
-    ? adjustmentReportedTotal(tree.map((n) => n.days[today]))
-    : emptyAdjustmentMetrics();
-  const qualifiedSpend = tree
-    .filter((n) => adjustmentSignal(n, today, standards).state === 'good')
-    .reduce((sum, n) => sum + (n.days[today].spend || 0), 0);
+  const visible = useMemo(
+    () => tree.filter((n) => !noSpend(n)),
+    [tree, noSpend],
+  );
+  const hiddenCount = tree.length - visible.length;
+  const nodes = useMemo(
+    () =>
+      status === 'all'
+        ? visible
+        : visible.filter(
+            (n) => adjustmentSignal(n, today, standards).state === status,
+          ),
+    [visible, status, today, standards],
+  );
+  const { total, qualifiedShare } = useMemo(() => {
+    const total = campaigns.length
+      ? adjustmentReportedTotal(campaigns.map((n) => n.days[today]))
+      : emptyAdjustmentMetrics();
+    let hasStandard = false;
+    let qualifiedSpend = 0;
+    for (const node of campaigns) {
+      const signal = adjustmentSignal(node, today, standards);
+      if (signal.standard !== undefined) hasStandard = true;
+      if (signal.state === 'good')
+        qualifiedSpend += node.days[today].spend || 0;
+    }
+    return {
+      total,
+      qualifiedShare:
+        total.spend !== null && total.spend > 0 && hasStandard
+          ? (qualifiedSpend / total.spend) * 100
+          : null,
+    };
+  }, [campaigns, today, standards]);
+  const channelPart =
+    channelSpend?.appId === appId ? channelSpend.part : undefined;
+  const facebookSpend = useMemo(
+    () => ({
+      facebook: biPartChannelSpend(channelPart, 'facebook'),
+      facebook_web: biPartChannelSpend(channelPart, 'facebook_web'),
+    }),
+    [channelPart],
+  );
   const issues = [
     ...new Set(
       days.flatMap((d) =>
@@ -272,15 +309,7 @@ export default function AdAdjustmentPage() {
     ['eCPM', '—', '变现 eCPM 尚无系列级归因，不以买量 CPM 替代'],
     [
       '达标消耗占比',
-      adjustmentPct(
-        total.spend != null &&
-          total.spend > 0 &&
-          tree.some(
-            (n) => adjustmentSignal(n, today, standards).standard !== undefined,
-          )
-          ? (qualifiedSpend / total.spend) * 100
-          : null,
-      ),
+      adjustmentPct(qualifiedShare),
       '达标消耗 / 全部消耗；缺数不视为达标',
     ],
     ['CPM', adjustmentMoney(total.cpm), '消耗 / 媒体展示 × 1000'],
@@ -422,8 +451,6 @@ export default function AdAdjustmentPage() {
         </h2>
         <div className="mb-3 grid gap-3 sm:grid-cols-2">
           {(['facebook', 'facebook_web'] as const).map((channel) => {
-            const part =
-              channelSpend?.appId === appId ? channelSpend.part : undefined;
             return (
               <div key={channel} className={`${panel} p-4`}>
                 <p className="text-sm text-slate-500">
@@ -431,11 +458,13 @@ export default function AdAdjustmentPage() {
                   今日
                 </p>
                 <p className="mt-2 text-xl font-semibold tabular-nums">
-                  {adjustmentMoney(biPartChannelSpend(part, channel))}
+                  {adjustmentMoney(facebookSpend[channel])}
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
                   产品全量 · 不受下方系列筛选影响
-                  {part?.updatedAt ? ` · ${formatTime(part.updatedAt)}` : ''}
+                  {channelPart?.updatedAt
+                    ? ` · ${formatTime(channelPart.updatedAt)}`
+                    : ''}
                 </p>
               </div>
             );

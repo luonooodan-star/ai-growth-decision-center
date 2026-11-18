@@ -15,14 +15,15 @@ export function biMetricSignal(
   key: keyof BiRow,
   products: MetricStandardProduct[],
 ): MetricSignal {
+  const metricKey = { d0Roas: 'd0_roas', cpi: 'cpi', cpm: 'ecpm' }[
+    key as string
+  ];
+  if (!metricKey) return { state: 'unknown', label: '未配置唯一产品/渠道标准' };
   const matches = products.filter(
     (p) =>
       p.dorisAppId === row.appId &&
       p.channel.toLowerCase() === row.media.toLowerCase(),
   );
-  const metricKey = { d0Roas: 'd0_roas', cpi: 'cpi', cpm: 'ecpm' }[
-    key as string
-  ];
   const metric: GrowthMetricDefinition | undefined =
     matches.length === 1
       ? matches[0].metrics.find((m) => m.key === metricKey)

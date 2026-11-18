@@ -23,16 +23,33 @@ import { readCenterRole } from '../../common/utils/center-role';
 
 const DAILY = 'bi_ads.ads_paid_acquisition_daily';
 const COHORT = 'bi_ads.ads_paid_acquisition_cohort_metric';
-const namedDimensions = (level: BiQuery['level']) => [
-  ...new Set([
-    'app_id',
-    'app_name',
-    'media_source',
-    'campaign_id',
-    'campaign_name',
-    ...BI_DIMENSIONS[level],
-  ]),
-];
+// Stable source grouping lets BI and adjustment share verified raw cache keys,
+// independent of the order of display columns. Campaign names identify W2A.
+export function paidReportDimensions(
+  levels: BiQuery['level'][],
+  includeBuyer = false,
+) {
+  const selected = new Set(levels);
+  if (includeBuyer) selected.add('optimizers');
+  const ordered = [
+    'adgroups',
+    'creatives',
+    'optimizers',
+    'countries',
+    'designers',
+  ] as const;
+  return [
+    ...new Set([
+      'app_id',
+      'app_name',
+      'media_source',
+      ...BI_DIMENSIONS.campaigns,
+      ...ordered
+        .filter((level) => selected.has(level))
+        .flatMap((level) => BI_DIMENSIONS[level]),
+    ]),
+  ];
+}
 export function biQueryLevels(q: BiQuery): BiQuery['level'][] {
   if (!q.levels) return [q.level];
   if (typeof q.levels !== 'string')
@@ -94,16 +111,11 @@ export class PaidGrowthService {
         ? { media_source: q.media }
         : {}),
     };
-    const dimensions = [
-      ...new Set([
-        ...levels.flatMap((level) => namedDimensions(level)),
-        ...(!designer ? ['buyer_alias'] : []),
-      ]),
-    ];
-    const base = { start_date: q.date, end_date: q.date, dimensions };
+    const base = { start_date: q.date, end_date: q.date };
     const dailyRaw = await this.part(
       {
         ...base,
+        dimensions: paidReportDimensions(levels, !designer),
         dataset: DAILY,
         metrics: [
           'spend',
@@ -141,7 +153,12 @@ export class PaidGrowthService {
         events: unsupported,
       };
     }
-    const cohort = { ...base, dataset: COHORT, metrics: ['metric_value'] };
+    const cohort = {
+      ...base,
+      dimensions: paidReportDimensions(levels),
+      dataset: COHORT,
+      metrics: ['metric_value'],
+    };
     const mature = {
       ...filters,
       cohort_index: 0,
@@ -196,12 +213,7 @@ export class PaidGrowthService {
           {
             start_date: date,
             end_date: date,
-            dimensions: [
-              ...new Set([
-                ...namedDimensions('channels'),
-                ...(role !== 'designer' ? ['buyer_alias'] : []),
-              ]),
-            ],
+            dimensions: paidReportDimensions(['channels'], role !== 'designer'),
             dataset: DAILY,
             metrics: [
               'spend',
@@ -272,7 +284,7 @@ export class PaidGrowthService {
           state: 'fresh',
           updatedAt: new Date().toISOString(),
         };
-        this.database.saveBiCache(key, JSON.stringify(part));
+        this.database.saveBiCache(key, JSON.stringify(part), part);
         return part;
       } catch (error: unknown) {
         return {
@@ -357,10 +369,9 @@ export class PaidGrowthService {
     return [...result.values()];
   }
 
-  buyerChannelOptions() {
-    return this.database
-      .getBuyerChannelOptions()
-      .filter((row) => [3, 12].includes(row.appId));
+  async buyerChannelOptions() {
+    const rows = await this.database.getBuyerChannelOptions();
+    return rows.filter((row) => [3, 12].includes(row.appId));
   }
 
   /** Dropdown metadata is local/cached; opening the page never starts Doris work. */

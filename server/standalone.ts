@@ -11,7 +11,7 @@ import {
 } from './common/utils/center-sessions';
 import { __express as hbsExpressEngine } from 'hbs';
 import { authenticateCenterAsync } from './common/utils/center-identity';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import {
   personalDorisStatus,
   runPersonalData,
@@ -245,7 +245,20 @@ async function bootstrap(): Promise<void> {
     },
   );
 
-  app.useStaticAssets(clientDirectory);
+  app.useStaticAssets(clientDirectory, {
+    setHeaders: (response: Response, file: string) => {
+      if (
+        /^assets\/[\w.-]+-[\w-]{8}\.(js|(?:legacy\.)?css)$/.test(
+          relative(clientDirectory, file),
+        )
+      ) {
+        response.setHeader(
+          'Cache-Control',
+          'private, max-age=31536000, immutable',
+        );
+      }
+    },
+  });
   app.setBaseViewsDir(clientDirectory);
   app.setViewEngine('html');
   app.engine('html', hbsExpressEngine);

@@ -72,8 +72,9 @@ export class ReportCacheService {
       ),
     );
   }
-  isTracked(t: ReportTask) {
-    return this.tasks().some((x) => this.key(x) === this.key(t));
+  isDue(t: ReportTask, cycle: string) {
+    const key = this.key(t);
+    return this.tasks().some((x) => this.key(x) === key && x.attempt !== cycle);
   }
   track(t: ReportTask, scheduled = false) {
     const tasks = this.tasks();

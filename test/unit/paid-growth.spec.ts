@@ -7,6 +7,7 @@ import {
   validateBiQuery,
 } from '@server/modules/growth-decision/paid-growth.service';
 import { LocalDatabaseService } from '@server/database/local-database.service';
+import { AdAdjustmentService } from '@server/modules/growth-decision/ad-adjustment.service';
 import { GrowthDecisionService } from '@server/modules/growth-decision/growth-decision.service';
 import { GrowthDataFetchService } from '@server/modules/growth-decision/growth-data-fetch.service';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -404,6 +405,71 @@ describe('BI persistence and product registration', () => {
     expect(query).not.toHaveBeenCalled();
     expect(() => s.channelSpend(date, '')).toThrow('请先选择产品');
   });
+  test.each([false, true])(
+    'adjustment reuses BI spend and D0 campaign slices (buyer and country: %s)',
+    async (localFilters) => {
+      const query = jest.fn(async (args: Record<string, unknown>) => {
+        const dims = args.dimensions as string[];
+        const values =
+          args.dataset === 'bi_ads.ads_paid_acquisition_daily'
+            ? { spend: 8 }
+            : { metric_value: 4 };
+        return {
+          rows: [
+            dims.length
+              ? {
+                  ...dimension,
+                  campaign_id: '123',
+                  campaign_name: 'example_W2A',
+                  ...(dims.includes('buyer_alias')
+                    ? { buyer_alias: 'lzx' }
+                    : {}),
+                  ...(dims.includes('country_code')
+                    ? { country_code: 'US' }
+                    : {}),
+                  ...values,
+                }
+              : values,
+          ],
+        };
+      });
+      const s = service(query);
+      const q = {
+        date: new Date().toLocaleDateString('en-CA', {
+          timeZone: 'Asia/Shanghai',
+        }),
+        appId: '11',
+        media: 'facebook_web',
+      };
+      await s.day({
+        ...q,
+        level: 'campaigns',
+        levels: localFilters ? 'campaigns,countries,optimizers' : 'campaigns',
+      });
+      query.mockClear();
+      const adjusted = await new AdAdjustmentService(s).day({
+        ...q,
+        localFilters: localFilters ? '1' : undefined,
+      });
+      expect(query).not.toHaveBeenCalled();
+      expect(adjusted.daily).toMatchObject({
+        state: 'cached',
+        rows: [{ media_source: 'facebook_web', buyer_alias: 'lzx', spend: 8 }],
+      });
+      expect(adjusted.revenue).toMatchObject({
+        state: 'cached',
+        rows: [{ media_source: 'facebook_web', metric_value: 4 }],
+      });
+      if (localFilters) {
+        expect(adjusted.revenue.rows[0]).toMatchObject({
+          buyer_alias: 'lzx',
+          country_code: 'US',
+        });
+      } else {
+        expect(adjusted.revenue.rows[0]).not.toHaveProperty('buyer_alias');
+      }
+    },
+  );
   test('W2A campaign names split Facebook spend and D0 even when Doris labels both Facebook', async () => {
     const s = service(jest.fn());
     const read = jest.spyOn(s, 'part').mockImplementation(async (args) => {

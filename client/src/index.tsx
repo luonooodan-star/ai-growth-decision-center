@@ -26,6 +26,14 @@ const MainApp = () => {
             <Button className="mt-6" onClick={resetErrorBoundary} type="button">
               重试
             </Button>
+            <Button
+              className="ml-2 mt-6"
+              variant="outline"
+              onClick={() => window.location.reload()}
+              type="button"
+            >
+              重新加载页面
+            </Button>
           </main>
         )}
       >

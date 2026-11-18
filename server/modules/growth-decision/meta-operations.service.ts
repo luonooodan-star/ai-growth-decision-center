@@ -117,12 +117,12 @@ export class MetaOperationsService {
 
   captureSnapshots(productId: string): void {
     const snapshots = this.db.listCampaignSnapshots(productId);
-    for (const op of activeOperationAnchors(this.linkedOperations()).filter(
+    for (const op of this.activeAdjustments().filter(
       (o) => o.productId === productId,
     )) {
       const point = periodicObservation(
         op,
-        this.db.listOperationObservations(op.accountId, op.campaignId!),
+        (id) => this.db.hasOperationObservation(id),
         snapshots,
       );
       if (point) this.db.saveOperationObservation(point);
@@ -257,16 +257,35 @@ export class MetaOperationsService {
   }
 
   linkedOperations(): MetaOperation[] {
-    const products = this.db.listProducts();
+    return this.linkOperations(
+      mergeOperationSources(
+        adjustmentOperations(this.db.listAdjustmentJobs()),
+        this.db.listMetaOperations(),
+      ),
+    );
+  }
+
+  private linkOperations(operations: MetaOperation[]): MetaOperation[] {
+    if (!operations.length) return [];
     const entities = this.db.listMetaEntities();
-    const histories = products.map((p) => ({
-      id: p.id,
-      snapshots: this.db.listCampaignSnapshots(p.id),
-    }));
-    return mergeOperationSources(
-      adjustmentOperations(this.db.listAdjustmentJobs()),
-      this.db.listMetaOperations(),
-    ).map((original) => {
+    const owners = new Map<string, string | null>();
+    if (operations.some((op) => !op.capturedEvidence?.productId)) {
+      const products = this.db.listProducts().map((p) => p.id);
+      for (const row of this.db.listCampaignOwners(products)) {
+        if (
+          typeof row.accountId !== 'string' ||
+          typeof row.campaignId !== 'string'
+        )
+          continue;
+        const key = `${row.accountId}:${row.campaignId}`;
+        const productId = String(row.productId);
+        owners.set(
+          key,
+          owners.has(key) && owners.get(key) !== productId ? null : productId,
+        );
+      }
+    }
+    return operations.map((original) => {
       const entity = entities.find(
         (e) => e.accountId === original.accountId && e.id === original.objectId,
       );
@@ -277,11 +296,10 @@ export class MetaOperationsService {
             ? original.objectId
             : original.campaignId || entity?.campaignId,
       };
-      const matches = histories.filter((h) =>
-        h.snapshots.some(
-          (s) => s.campaignId === o.campaignId && s.accountId === o.accountId,
-        ),
-      );
+      const productId =
+        original.capturedEvidence?.productId ||
+        owners.get(`${o.accountId}:${o.campaignId}`) ||
+        undefined;
       return {
         ...o,
         currentTargets: metaTargets(
@@ -295,20 +313,29 @@ export class MetaOperationsService {
                 (o.objectLevel === 'ad' && e.id === entity?.adsetId)),
           ),
         ),
-        linked: original.capturedEvidence?.productId
-          ? true
-          : matches.length === 1,
-        productId:
-          original.capturedEvidence?.productId ||
-          (matches.length === 1 ? matches[0].id : undefined),
+        linked: !!productId,
+        productId,
       };
     });
+  }
+
+  private activeAdjustments() {
+    const local = adjustmentOperations(this.db.listAdjustmentJobs());
+    const complete = local.every(
+      (op) =>
+        op.productId &&
+        op.campaignId &&
+        (op.objectLevel !== 'campaign' || op.campaignId === op.objectId),
+    );
+    return activeOperationAnchors(
+      complete ? local : this.linkOperations(local),
+    );
   }
 
   trackingDueProducts(now = new Date()): string[] {
     return [
       ...new Set(
-        activeOperationAnchors(this.linkedOperations())
+        this.activeAdjustments()
           .filter((op) => {
             if (!op.productId) return false;
             const slot = Math.floor(
@@ -317,9 +344,7 @@ export class MetaOperationsService {
             );
             return (
               slot >= 1 &&
-              !this.db
-                .listOperationObservations(op.accountId, op.campaignId!)
-                .some((p) => p.id === `${op.id}:periodic:${slot}`)
+              !this.db.hasOperationObservation(`${op.id}:periodic:${slot}`)
             );
           })
           .map((op) => op.productId!),

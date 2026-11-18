@@ -50,29 +50,30 @@ export class ReportScheduleService implements OnModuleInit, OnModuleDestroy {
     )
       return;
     this.running = true;
+    const cycle = reportCycle(now);
     try {
       for (const username of configuredDorisUsers()) {
         if (this.fetcher.reportBackgroundBusy() || this.analysis.isBusy())
           break;
         await runPersonalData(username, () =>
           dorisWorkPriority.run('background', async () => {
-            const tasks = this.cache.tasks();
-            if (!tasks.length) return;
             const due = this.cache
               .tasks()
-              .filter((t) => t.attempt !== reportCycle(now))
+              .filter((t) => t.attempt !== cycle)
               .sort((a, b) => b.date.localeCompare(a.date));
             for (const task of due) {
-              if (!this.cache.isTracked(task)) continue;
               if (this.fetcher.reportBackgroundBusy() || this.analysis.isBusy())
                 break;
-              this.cache.mark(task, reportCycle(now));
+              // A foreground refresh may have finished (or deselected this day)
+              // while the scheduler awaited an earlier slice.
+              if (!this.cache.isDue(task, cycle)) continue;
+              this.cache.mark(task, cycle);
               try {
                 await this.refresh(task);
               } catch (e) {
                 this.cache.mark(
                   task,
-                  reportCycle(now),
+                  cycle,
                   e instanceof Error ? e.message : '更新失败',
                 );
                 this.logger.warn(
@@ -107,11 +108,8 @@ export class ReportScheduleService implements OnModuleInit, OnModuleDestroy {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
       job = this.analysis.status(job.id);
     }
-    if (
-      job.state !== 'completed' ||
-      !this.cache.read(t) ||
-      this.cache.read(t)?.updatedAt === previous
-    )
+    const updatedAt = this.cache.read(t)?.updatedAt;
+    if (job.state !== 'completed' || !updatedAt || updatedAt === previous)
       throw new Error(job.error || '行为报表未完整更新');
   }
 }

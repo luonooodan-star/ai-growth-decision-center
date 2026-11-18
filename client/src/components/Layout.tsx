@@ -8,7 +8,7 @@ import {
   ChartNoAxesCombined,
 } from 'lucide-react';
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { isCenterSessionError } from '@shared/center-session-error';
 import { AuthorizationContext, type Connections } from './AuthorizationContext';
@@ -239,7 +239,15 @@ const Layout = () => {
             !['/data', '/authorization'].includes(location.pathname) ? (
             <Navigate to="/data" replace />
           ) : (
-            <Outlet />
+            <Suspense
+              fallback={
+                <p role="status" className="p-6 text-sm text-slate-500">
+                  正在加载页面…
+                </p>
+              }
+            >
+              <Outlet />
+            </Suspense>
           )}
         </main>
       </div>

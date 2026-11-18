@@ -1,9 +1,12 @@
 import { biNumber, biRows } from './paid-growth';
-import type { BiDay, BiPart } from './paid-growth.interface';
+import type { BiDay, BiPart, BiRow } from './paid-growth.interface';
 
 /** Ratios of additive totals, never averages of product/campaign percentages. */
 export function biSummary(days: BiDay[]) {
-  const rows = biRows(days);
+  return biSummaryFromRows(biRows(days));
+}
+
+export function biSummaryFromRows(rows: BiRow[]) {
   const sum = (field: 'spend' | 'installs' | 'revenue' | 'events') =>
     !rows.length || rows.some((r) => r[field] === null)
       ? null
