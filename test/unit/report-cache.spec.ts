@@ -88,6 +88,9 @@ describe('daily report persistence and 10:00 schedule', () => {
     bi.part.mockResolvedValue({ state: 'missing', rows: [] } as never);
     const result = await asUser(() => roas.query({ ...query, refresh: true }));
     expect(result.rows).toEqual(before.rows);
+    expect(result.coverage).toEqual([
+      { date: query.start, platform: query.platform, complete: true },
+    ]);
     expect(result.issues.join('')).toContain('保留上次成功缓存');
     const calls = bi.part.mock.calls.length;
     await asUser(() => roas.query(query));
@@ -121,6 +124,9 @@ describe('daily report persistence and 10:00 schedule', () => {
     const result = await asUser(() => roas.query(query));
     expect(bi.part).toHaveBeenCalledTimes(calls);
     expect(result.issues.join('')).toContain('手动重新抓取');
+    expect(result.coverage).toEqual([
+      { date: query.start, platform: query.platform, complete: false },
+    ]);
     await asUser(() => roas.query({ ...query, refresh: true }));
     expect(bi.part.mock.calls.length).toBeGreaterThan(calls);
   });

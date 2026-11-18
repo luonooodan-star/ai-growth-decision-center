@@ -18,7 +18,7 @@ import {
 } from '@shared/behavior-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { format, subDays } from 'date-fns';
+import { differenceInCalendarDays, format, subDays } from 'date-fns';
 import { shanghaiCalendarToday } from '@shared/paid-growth-dates';
 import type { RoasReport } from '@shared/roas-report';
 import type {
@@ -45,7 +45,7 @@ const errorText = (e: unknown) =>
     ? String(e.response?.data?.message || e.message)
     : String(e);
 const pct = (n: number | null, d: number) =>
-  n === null || !d ? '—' : `${((100 * n) / d).toFixed(2)}%`;
+  n === null || d <= 0 ? '—' : `${((100 * n) / d).toFixed(2)}%`;
 export function RoasDataPage() {
   return <ReportPage behavior={false} />;
 }
@@ -133,6 +133,11 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     if (!behavior && channel && !availableRoasChannels.includes(channel))
       setChannel('');
   }, [behavior, channel, availableRoasChannels]);
+  const [loadedRoasScope, setLoadedRoasScope] = useState<{
+    start: string;
+    end: string;
+    platform: typeof platform;
+  }>();
   const [hourReport, setHourReport] = useState<CreativeAnalysisReport>();
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(''),
@@ -163,14 +168,14 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     const q = {
       start: hourDate || format(from, 'yyyy-MM-dd'),
       end: hourDate || format(to, 'yyyy-MM-dd'),
-      platform: hourPlatform || ('all' as const),
+      platform: hourPlatform || platform,
       refresh,
       behaviorDetail: behavior,
       hourly: !!hourDate,
       ...(hourDate ? { behaviorEvent } : {}),
     };
     try {
-      if (!behavior)
+      if (!behavior) {
         setRoas(
           (
             await axios.post<RoasReport>(
@@ -180,7 +185,8 @@ function ReportPage({ behavior }: { behavior: boolean }) {
             )
           ).data,
         );
-      else {
+        setLoadedRoasScope(q);
+      } else {
         let job: CreativeAnalysisJob = await startCreativeAnalysis(
           q,
           controller.signal,
@@ -223,12 +229,6 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     if (jobId.current)
       void cancelCreativeAnalysis(jobId.current).catch(() => {});
   };
-  const all = behavior
-    ? (report?.rows || []).map((r) => ({
-        buyer: r.buyer || '未确认归属',
-        channel: r.channel || '未归因',
-      }))
-    : roas?.rows || [];
   const scope = {
     buyer,
     channel,
@@ -236,23 +236,46 @@ function ReportPage({ behavior }: { behavior: boolean }) {
     start: format(from, 'yyyy-MM-dd'),
     end: format(to, 'yyyy-MM-dd'),
   };
-  const rows = (roas?.rows || []).filter((r) => matchesRoasReport(r, scope));
-  const behaviorRows = (report?.rows || []).filter((r) =>
-    matchesReferenceReport({ ...r, buyer: r.buyer || '' }, scope),
+  const loaded = behavior ? report?.scope : loadedRoasScope;
+  const covered =
+    !!loaded &&
+    scope.start >= loaded.start &&
+    scope.end <= loaded.end &&
+    (loaded.platform === 'all' || loaded.platform === scope.platform);
+  const coverage = (roas?.coverage || []).filter(
+    (slice) =>
+      slice.date >= scope.start &&
+      slice.date <= scope.end &&
+      (platform === 'all' || platform === slice.platform),
   );
-  const groups = new Map<string, typeof behaviorRows>();
-  for (const row of behaviorRows) {
-    const key = JSON.stringify([
-      row.platform,
-      row.buyer || '未确认归属',
-      REPORT_CHANNEL_NAMES[reportChannel(row.channel)] || row.channel,
-    ]);
-    groups.set(key, [...(groups.get(key) || []), row]);
-  }
+  const expectedSlices =
+    (differenceInCalendarDays(to, from) + 1) * (platform === 'all' ? 2 : 1);
+  const completeSlices = coverage.filter((slice) => slice.complete).length;
+  const complete = covered && completeSlices === expectedSlices;
+  const rows = covered
+    ? (roas?.rows || []).filter((r) => matchesRoasReport(r, scope))
+    : [];
+  const behaviorRows = covered
+    ? (report?.rows || []).filter((r) =>
+        matchesReferenceReport({ ...r, buyer: r.buyer || '' }, scope),
+      )
+    : [];
   const issues = behavior
     ? [...(report?.issues || []), ...(hourReport?.issues || [])]
     : roas?.issues;
   const exportCsv = () => {
+    const groups = new Map<string, typeof behaviorRows>();
+    for (const row of behaviorRows) {
+      const key = JSON.stringify([
+        row.platform,
+        row.buyer || '未确认归属',
+        REPORT_CHANNEL_NAMES[reportChannel(row.channel)] || row.channel,
+      ]);
+      const group = groups.get(key);
+      if (group) group.push(row);
+      else groups.set(key, [row]);
+    }
+
     const data = behavior
       ? [
           [
@@ -307,7 +330,9 @@ function ReportPage({ behavior }: { behavior: boolean }) {
             roasChannelLabel(r.channel),
             r.date,
             r.spend,
-            ...r.days.map((d) => (d ? (100 * d.revenue) / r.spend : '')),
+            ...r.days.map((d) =>
+              d && r.spend > 0 ? (100 * d.revenue) / r.spend : '',
+            ),
           ]),
         ];
     const url = URL.createObjectURL(
@@ -342,7 +367,7 @@ function ReportPage({ behavior }: { behavior: boolean }) {
         <p className="mt-2 text-sm text-slate-500">
           {behavior
             ? '按日期对比应用内行为：去重用户数、占 D0 首开样本比例、事件次数。最新日期在左，点击某个事件或该事件某日的人数，只下探该事件的东八区小时分布。'
-            : '安装同期群累计收入 ÷ 对应安装日全量媒体消耗。D0—D14，缺失值显示 —。渠道按 Doris 原始 media_source 分开显示。'}
+            : '安装同期群累计收入 ÷ 对应安装日全量媒体消耗。D0—D14，缺失值显示 —。Facebook Web 沿用投放数据的 W2A 系列归属。'}
         </p>
       </div>
       <ReferenceReportFilters
@@ -410,11 +435,13 @@ function ReportPage({ behavior }: { behavior: boolean }) {
           {[
             [
               '当前筛选消耗',
-              '$' + rows.reduce((n, r) => n + r.spend, 0).toFixed(2),
+              complete
+                ? '$' + rows.reduce((n, r) => n + r.spend, 0).toFixed(2)
+                : '—',
             ],
             ...[0, 7, 14].map((day) => [
               `D${day} 加权 ROAS`,
-              rows.length && rows.every((r) => r.days[day] !== null)
+              complete && rows.length && rows.every((r) => r.days[day] !== null)
                 ? pct(
                     rows.reduce((n, r) => n + r.days[day]!.revenue, 0),
                     rows.reduce((n, r) => n + r.spend, 0),
@@ -431,11 +458,17 @@ function ReportPage({ behavior }: { behavior: boolean }) {
       )}
       <section className="rounded-2xl border bg-white p-5">
         <div className="mb-5 flex flex-wrap gap-3">
-          <button className={input} onClick={exportCsv} disabled={!all.length}>
+          <button
+            className={input}
+            onClick={exportCsv}
+            disabled={
+              behavior ? !behaviorRows.length : !complete || !rows.length
+            }
+          >
             导出 CSV
           </button>
           <span className="self-center text-xs text-slate-500">
-            数据时间：
+            {loaded && `已加载 ${loaded.start}～${loaded.end} · `}数据时间：
             {(behavior ? report?.generatedAt : roas?.generatedAt)
               ? new Date(
                   (behavior ? report?.generatedAt : roas?.generatedAt)!,
@@ -443,10 +476,21 @@ function ReportPage({ behavior }: { behavior: boolean }) {
               : '尚未查询'}
           </span>
         </div>
+        {!covered && (
+          <p className="mb-4 text-sm text-slate-500">
+            所选日期或平台尚未查询，请点击查询数据。
+          </p>
+        )}
+        {!behavior && covered && !complete && (
+          <p className="mb-4 text-sm text-amber-700">
+            数据未完整返回 · 已完成 {completeSlices}/{expectedSlices}{' '}
+            个平台日期。下方仅列已返回数据。
+          </p>
+        )}
         {behavior ? (
           <BehaviorComparisonTable
             rows={behaviorRows}
-            hourlyRows={hourReport?.rows || []}
+            hourlyRows={covered ? hourReport?.rows || [] : []}
             busy={busy}
             onDrill={(date, event, app) => void query(false, date, event, app)}
           />
@@ -479,14 +523,14 @@ function ReportPage({ behavior }: { behavior: boolean }) {
                     {r.days.map((d, j) => (
                       <td
                         key={j}
-                        className={`px-3 py-3 ${d?.declining ? 'text-amber-700' : d && d.revenue / r.spend >= 1 ? 'bg-emerald-50 text-emerald-700' : ''}`}
+                        className={`px-3 py-3 ${d?.declining ? 'text-amber-700' : d && r.spend > 0 && d.revenue / r.spend >= 1 ? 'bg-emerald-50 text-emerald-700' : ''}`}
                         title={
                           d
                             ? `累计收入 $${d.revenue.toFixed(4)}；${d.complete ? '观察完成' : '观察未完成'}`
                             : '暂无数据'
                         }
                       >
-                        {d
+                        {d && r.spend > 0
                           ? `${((100 * d.revenue) / r.spend).toFixed(2)}%${d.complete ? '' : '*'}${d.declining ? ' ↓' : ''}`
                           : '—'}
                       </td>
@@ -495,9 +539,9 @@ function ReportPage({ behavior }: { behavior: boolean }) {
                 ))}
               </tbody>
             </table>
-            {!rows.length && (
+            {complete && !rows.length && (
               <p className="py-12 text-center text-sm text-slate-500">
-                {roas ? '当前条件没有正消耗记录' : '选择日期后点击查询数据'}
+                当前条件没有正消耗记录
               </p>
             )}
           </div>

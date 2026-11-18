@@ -56,11 +56,13 @@ function inspect(node: AdjustmentNode, live: () => boolean, scope: string) {
 export function AdjustmentControls({
   node,
   enabled,
+  accountStatus,
   drafts,
   update,
 }: {
   node: AdjustmentNode;
   enabled: boolean;
+  accountStatus: string;
   drafts: ComponentProps<typeof AdjustmentRowEditor>['drafts'];
   update: ComponentProps<typeof AdjustmentRowEditor>['update'];
 }) {
@@ -114,7 +116,9 @@ export function AdjustmentControls({
             ? error
               ? 'Meta 状态读取失败'
               : '读取 Meta 开关 / 预算…'
-            : '账户未确认 / 不支持操作'}
+            : node.media.toLowerCase() !== 'facebook'
+              ? '此渠道不支持操作'
+              : accountStatus}
         </span>
       )}
       {error && (

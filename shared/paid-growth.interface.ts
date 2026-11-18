@@ -14,6 +14,7 @@ export type BiLevel = keyof typeof BI_LEVELS;
 export type BiRawRow = Record<string, unknown>;
 export interface BiPart {
   accountNextOffset?: number;
+  accountCampaignIds?: string[];
   accountTotal?: number;
   accountSession?: string;
   accountOwnerId?: string;

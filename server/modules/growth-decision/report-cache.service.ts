@@ -31,7 +31,7 @@ export class ReportCacheService {
   private key(t: ReportTask) {
     return t.kind === 'behavior'
       ? `${personalScopeKey()}:daily-report-slice:v2:${JSON.stringify([t.kind, t.date, t.platform, t.hourly, t.event])}`
-      : `${personalScopeKey()}:daily-report-slice:v1:${JSON.stringify([t.kind, t.date, t.platform, t.hourly])}`;
+      : `${personalScopeKey()}:daily-report-slice:roas-v2:${JSON.stringify([t.kind, t.date, t.platform, t.hourly])}`;
   }
   tasks(): ReportTask[] {
     const raw = this.db.getBiCache(this.registryKey());

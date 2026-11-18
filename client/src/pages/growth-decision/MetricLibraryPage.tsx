@@ -110,10 +110,13 @@ const draftsFromProduct = (product?: GrowthProduct): MetricDrafts => {
 };
 
 const MetricLibraryPage = () => {
-  const [dashboard, setDashboard] =
-    useState<GrowthDashboardResponse | null>(null);
+  const [dashboard, setDashboard] = useState<GrowthDashboardResponse | null>(
+    null,
+  );
   const [productId, setProductId] = useState<string>('');
-  const [drafts, setDrafts] = useState<MetricDrafts>(EMPTY_DRAFTS);
+  const [draftsByProduct, setDraftsByProduct] = useState<
+    Record<string, MetricDrafts>
+  >({});
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -126,7 +129,6 @@ const MetricLibraryPage = () => {
         const firstProduct: GrowthProduct | undefined = result.products[0];
         setDashboard(result);
         setProductId(firstProduct?.id || '');
-        setDrafts(draftsFromProduct(firstProduct));
       })
       .catch((requestError: unknown): void => {
         setError(
@@ -146,12 +148,9 @@ const MetricLibraryPage = () => {
     [dashboard, productId],
   );
 
+  const drafts = draftsByProduct[productId] ?? draftsFromProduct(product);
   const changeProduct = (nextProductId: string): void => {
-    const nextProduct: GrowthProduct | undefined = dashboard?.products.find(
-      (item: GrowthProduct): boolean => item.id === nextProductId,
-    );
     setProductId(nextProductId);
-    setDrafts(draftsFromProduct(nextProduct));
     setError('');
     setSuccess('');
   };
@@ -161,10 +160,13 @@ const MetricLibraryPage = () => {
     field: keyof MetricDraft,
     value: string,
   ): void => {
-    setDrafts((current: MetricDrafts): MetricDrafts => ({
-      ...current,
-      [key]: { ...current[key], [field]: value },
-    }));
+    setDraftsByProduct((current) => {
+      const edited = current[productId] ?? drafts;
+      return {
+        ...current,
+        [productId]: { ...edited, [key]: { ...edited[key], [field]: value } },
+      };
+    });
     setSuccess('');
   };
 
@@ -181,7 +183,7 @@ const MetricLibraryPage = () => {
   };
 
   const saveStandards = async (): Promise<void> => {
-    if (!product) return;
+    if (!product || saving) return;
     setSaving(true);
     setError('');
     setSuccess('');
@@ -189,22 +191,15 @@ const MetricLibraryPage = () => {
       const metrics: UpdateMetricStandardItem[] = product.metrics.map(
         (metric: GrowthMetricDefinition): UpdateMetricStandardItem => ({
           key: metric.key,
-          standardValue: parseInput(
-            metric,
-            drafts[metric.key].standardValue,
-          ),
-          lowerBound: parseInput(
-            metric,
-            drafts[metric.key].lowerBound,
-          ),
-          upperBound: parseInput(
-            metric,
-            drafts[metric.key].upperBound,
-          ),
+          standardValue: parseInput(metric, drafts[metric.key].standardValue),
+          lowerBound: parseInput(metric, drafts[metric.key].lowerBound),
+          upperBound: parseInput(metric, drafts[metric.key].upperBound),
         }),
       );
-      const updated: GrowthProduct =
-        await growthDecision.updateMetricStandards(product.id, { metrics });
+      const updated: GrowthProduct = await growthDecision.updateMetricStandards(
+        product.id,
+        { metrics },
+      );
       setDashboard((current: GrowthDashboardResponse | null) =>
         current
           ? {
@@ -216,10 +211,8 @@ const MetricLibraryPage = () => {
             }
           : current,
       );
-      setDrafts(draftsFromProduct(updated));
-      setSuccess(
-        '指标标准已保存，下一次 Doris 抓取会按上下界自动比对。',
-      );
+      setDraftsByProduct(({ [updated.id]: saved, ...remaining }) => remaining);
+      setSuccess('指标标准已保存，下一次 Doris 抓取会按上下界自动比对。');
     } catch (requestError: unknown) {
       setError(
         requestError instanceof Error
@@ -251,11 +244,16 @@ const MetricLibraryPage = () => {
             产品指标标准库
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            人工录入产品标准值、正常下界和正常上界。Doris 每次抓取后按 Campaign、广告组实际值交叉比对，低于下界或高于上界的记录进入异常队列。
+            人工录入产品标准值、正常下界和正常上界。Doris 每次抓取后按
+            Campaign、广告组实际值交叉比对，低于下界或高于上界的记录进入异常队列。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={productId} onValueChange={changeProduct}>
+          <Select
+            value={productId}
+            onValueChange={changeProduct}
+            disabled={saving}
+          >
             <SelectTrigger className="w-64 bg-white">
               <SelectValue placeholder="选择产品" />
             </SelectTrigger>
@@ -263,6 +261,7 @@ const MetricLibraryPage = () => {
               {dashboard?.products.map((item: GrowthProduct) => (
                 <SelectItem key={item.id} value={item.id}>
                   {item.name}
+                  {draftsByProduct[item.id] ? ' · 有草稿' : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -330,6 +329,7 @@ const MetricLibraryPage = () => {
                   <label className="text-xs font-medium text-slate-600">
                     标准值（{metricUnit(metric)}）
                     <Input
+                      disabled={saving}
                       className="mt-2"
                       type="number"
                       min="0"
@@ -348,6 +348,7 @@ const MetricLibraryPage = () => {
                   <label className="text-xs font-medium text-slate-600">
                     正常下界（{metricUnit(metric)}）
                     <Input
+                      disabled={saving}
                       className="mt-2"
                       type="number"
                       min="0"
@@ -366,6 +367,7 @@ const MetricLibraryPage = () => {
                   <label className="text-xs font-medium text-slate-600">
                     正常上界（{metricUnit(metric)}）
                     <Input
+                      disabled={saving}
                       className="mt-2"
                       type="number"
                       min="0"

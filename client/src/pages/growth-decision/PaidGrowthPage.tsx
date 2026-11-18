@@ -254,6 +254,7 @@ export default function PaidGrowthPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [progress, setProgress] = useState('');
+  const [failedDates, setFailedDates] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [metaEntities, setMetaEntities] = useState<MetaAdEntity[]>([]);
   const [metaFilter, setMetaFilter] = useState<MetaFilter>(null);
@@ -293,6 +294,7 @@ export default function PaidGrowthPage() {
     refresh = false,
     requestedLevels: BiLevel[] = levels,
     range = { from: start, to: end },
+    retryOnly = false,
   ) => {
     if (!validSelection) {
       setError('所选渠道不在当前产品范围内');
@@ -310,67 +312,76 @@ export default function PaidGrowthPage() {
     setBusy(true);
     setError('');
     setNotice('');
-    setDays([]);
-    setMellowScope(
-      appId === '3'
-        ? {
-            start: format(range.from, 'yyyy-MM-dd'),
-            end: format(range.to, 'yyyy-MM-dd'),
-            refresh,
-            revision: Date.now(),
-          }
-        : null,
+    const scope = `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevels.join(',')}`;
+    const sameScope = loadedScope === scope;
+    if (!sameScope) setDays([]);
+    const dates = Array.from({ length: dayCount }, (_, i) =>
+      format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd'),
     );
-    setTrendScope((previous) => {
-      const next = {
-        start: format(range.from, 'yyyy-MM-dd'),
-        end: format(range.to, 'yyyy-MM-dd'),
-        appId,
-        media,
-        refresh,
-        revision: Date.now(),
-      };
-      return !refresh &&
-        previous &&
-        previous.start === next.start &&
-        previous.end === next.end &&
-        previous.appId === next.appId &&
-        previous.media === next.media
-        ? previous
-        : next;
-    });
-    setExpectedDates(
-      Array.from({ length: dayCount }, (_, i) =>
-        format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd'),
-      ),
-    );
+    const requestedDates = retryOnly && sameScope ? failedDates : dates;
+    setFailedDates([]);
+    if (!retryOnly) {
+      setMellowScope(
+        appId === '3'
+          ? {
+              start: format(range.from, 'yyyy-MM-dd'),
+              end: format(range.to, 'yyyy-MM-dd'),
+              refresh,
+              revision: Date.now(),
+            }
+          : null,
+      );
+      setTrendScope((previous) => {
+        const next = {
+          start: format(range.from, 'yyyy-MM-dd'),
+          end: format(range.to, 'yyyy-MM-dd'),
+          appId,
+          media,
+          refresh,
+          revision: Date.now(),
+        };
+        return !refresh &&
+          previous &&
+          previous.start === next.start &&
+          previous.end === next.end &&
+          previous.appId === next.appId &&
+          previous.media === next.media
+          ? previous
+          : next;
+      });
+    }
+    setExpectedDates(dates);
     setSelectedCampaign(null);
-    setLoadedScope(
-      `${format(range.from, 'yyyy-MM-dd')} ～ ${format(range.to, 'yyyy-MM-dd')} / ${appId} / ${media} / ${requestedLevels.join(',')}`,
-    );
+    setLoadedScope(scope);
     setLoadedMedia(media);
     setParams(
       { ...(appId ? { appId } : {}), ...(media ? { media } : {}) },
       { replace: true },
     );
-    const next: BiDay[] = [];
+    const failures: string[] = [];
+    const next = new Map((sameScope ? days : []).map((day) => [day.date, day]));
+    const parts = designer
+      ? (['daily'] as const)
+      : (['daily', 'revenue', 'events'] as const);
+    let updated = 0;
     try {
-      for (let i = 0; i < dayCount; i++) {
-        const date = format(subDays(range.to, dayCount - i - 1), 'yyyy-MM-dd');
-        setProgress(`读取 ${date} · ${i + 1}/${dayCount} 天`);
+      for (const date of requestedDates) {
+        if (abort.signal.aborted) break;
+        setProgress(
+          `已更新 ${updated}/${requestedDates.length} 天 · 正在读取 ${date}`,
+        );
+        let value: BiDay;
         try {
-          next.push(
-            await getBiDay(
-              {
-                date,
-                level: requestedLevels[0],
-                levels: requestedLevels.join(','),
-                appId,
-                media,
-                refresh: refresh ? '1' : undefined,
-              },
-              abort.signal,
-            ),
+          value = await getBiDay(
+            {
+              date,
+              level: requestedLevels[0],
+              levels: requestedLevels.join(','),
+              appId,
+              media,
+              refresh: refresh ? '1' : undefined,
+            },
+            abort.signal,
           );
         } catch (e) {
           if (abort.signal.aborted) throw e;
@@ -379,16 +390,36 @@ export default function PaidGrowthPage() {
             rows: [],
             message: errorText(e),
           };
-          next.push({
+          value = {
             date,
             level: requestedLevels[0],
             levels: requestedLevels,
             daily: part,
             revenue: part,
             events: part,
-          });
+          };
         }
-        if (!abort.signal.aborted) setDays([...next]);
+        if (abort.signal.aborted) break;
+        const previous = next.get(date);
+        const failed = parts.filter((part) =>
+          ['missing', 'stale'].includes(value[part].state),
+        );
+        if (failed.length) {
+          failures.push(date);
+          for (const part of failed) {
+            const cached = previous?.[part];
+            if (cached?.updatedAt && !value[part].updatedAt)
+              value[part] = {
+                ...cached,
+                state: 'stale',
+                message: value[part].message || '读取失败，保留上次结果',
+              };
+          }
+        } else updated++;
+        next.set(date, value);
+        setDays(
+          dates.flatMap((key) => (next.has(key) ? [next.get(key)!] : [])),
+        );
       }
     } catch (e) {
       if (!abort.signal.aborted) setError(errorText(e));
@@ -396,6 +427,7 @@ export default function PaidGrowthPage() {
       if (!abort.signal.aborted) {
         setBusy(false);
         setProgress('');
+        setFailedDates(failures);
       }
     }
   };
@@ -527,6 +559,10 @@ export default function PaidGrowthPage() {
       badRows,
     ],
   );
+  const dataTime = days
+    .map((day) => day.daily.updatedAt)
+    .filter(Boolean)
+    .sort()[0];
   const issues = days.flatMap((day) =>
     (designer
       ? (['daily'] as const)
@@ -810,8 +846,26 @@ export default function PaidGrowthPage() {
       )}
       {busy && (
         <p role="status" className="text-sm text-blue-600">
-          {progress} · 按日串行读取，避免公司 Mac 和 Doris 过载
+          {progress} · 保留同范围已加载数据
         </p>
+      )}
+      {dataTime && (
+        <p className="text-xs text-slate-500">
+          表中消耗最早抓取于{' '}
+          {new Date(dataTime).toLocaleString('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+          })}
+        </p>
+      )}
+      {!busy && loadedScope === queryScope && failedDates.length > 0 && (
+        <Button
+          variant="outline"
+          onClick={() =>
+            void load(true, levels, { from: start, to: end }, true)
+          }
+        >
+          仅重试失败的 {failedDates.length} 天
+        </Button>
       )}
       {loadedScope && loadedScope !== queryScope && (
         <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">

@@ -120,12 +120,10 @@ test('resolves only personal Doris visible campaign IDs, never queries forbidden
 });
 test('no credential/permission fallback when personal Meta fails or Doris is incomplete', async () => {
   const bi = {
-    part: jest
-      .fn()
-      .mockResolvedValue({
-        state: 'fresh',
-        rows: [{ campaign_id: '1', app_id: 11, media_source: 'facebook' }],
-      }),
+    part: jest.fn().mockResolvedValue({
+      state: 'fresh',
+      rows: [{ campaign_id: '1', app_id: 11, media_source: 'facebook' }],
+    }),
   };
   const meta = {
     campaignAccounts: jest.fn().mockRejectedValue(new Error('个人授权已失效')),
@@ -196,4 +194,51 @@ test('ownership is paginated and includes identity for client-side switch detect
       })
     ).accounts.state,
   ).toBe('missing');
+});
+
+test('a failed first batch can be retried by session without rereading Doris or losing the next batch', async () => {
+  const bi = {
+    part: jest.fn().mockResolvedValue({
+      state: 'fresh',
+      rows: Array.from({ length: 11 }, (_, i) => ({
+        campaign_id: String(i + 1),
+        app_id: 11,
+        media_source: 'facebook',
+      })),
+    }),
+  };
+  const meta = {
+    campaignAccounts: jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Meta 账户核验超时'))
+      .mockResolvedValue({
+        ownerId: 'owner',
+        campaigns: [{ campaignId: '1', accountId: '101' }],
+      }),
+  };
+  const service = new AdAdjustmentService(bi as never, meta as never);
+  const { accounts: failed } = await service.day(q);
+  expect(failed).toMatchObject({
+    state: 'missing',
+    accountNextOffset: 10,
+    accountSession: expect.any(String),
+  });
+  expect(failed.accountCampaignIds).toHaveLength(10);
+  const { accounts: retried } = await service.day({
+    ...q,
+    accountOffset: '0',
+    accountSession: failed.accountSession,
+  });
+  expect(retried).toMatchObject({
+    state: 'fresh',
+    accountSession: failed.accountSession,
+    accountNextOffset: 10,
+  });
+  expect(retried.rows).toEqual([
+    { app_id: 11, campaign_id: '1', advertiser_id: '101' },
+  ]);
+  expect(bi.part).toHaveBeenCalledTimes(1);
+  expect(meta.campaignAccounts.mock.calls[0]).toEqual(
+    meta.campaignAccounts.mock.calls[1],
+  );
 });

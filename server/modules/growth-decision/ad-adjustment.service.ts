@@ -284,7 +284,7 @@ export class AdAdjustmentService {
       const offset = Number(q.accountOffset || 0);
       let session = q.accountSession;
       let ids: string[];
-      if (offset > 0) {
+      if (session || offset > 0) {
         const saved = session && this.accountSessions.get(session);
         if (
           !saved ||
@@ -292,7 +292,7 @@ export class AdAdjustmentService {
           saved.scope !== personalScopeKey() ||
           saved.query !== JSON.stringify(args)
         )
-          throw new Error('本轮账户核验已过期或筛选已变化，请重新抓取');
+          throw new Error('本轮账户核验已过期或筛选已变化');
         ids = saved.ids;
       } else {
         // Only resolve IDs visible through this user's Doris key. No DWD/admin key fallback.
@@ -325,20 +325,35 @@ export class AdAdjustmentService {
           );
       }
       const rows: BiPart['rows'] = [];
-      let unavailable = 0;
+      const batch = ids.slice(offset, offset + 10);
+      const pagination = {
+        accountCampaignIds: batch,
+        accountTotal: ids.length,
+        accountSession: session,
+        accountNextOffset: offset + 10 < ids.length ? offset + 10 : undefined,
+      };
       let ownerId: string | undefined;
-      // One bounded page per HTTP request. Previously all campaigns were held
-      // until the last batch finished, discarding successes after a timeout.
-      if (offset < ids.length) {
-        const batch = ids.slice(offset, offset + 10);
-        const result = await this.meta.campaignAccounts(batch);
+      if (batch.length) {
+        let result: Awaited<ReturnType<typeof this.meta.campaignAccounts>>;
+        try {
+          result = await this.meta.campaignAccounts(batch);
+        } catch (error) {
+          return {
+            ...pagination,
+            rows,
+            state: 'missing',
+            message:
+              error instanceof Error
+                ? error.message
+                : '个人 Meta 账户归属核验失败',
+          };
+        }
         if (!result.ownerId || !Array.isArray(result.campaigns))
           throw new Error('请更新原工具适配器并重新授权');
         ownerId = result.ownerId;
         const valid = result.campaigns.filter(
           (c) => batch.includes(c.campaignId) && /^\d{1,40}$/.test(c.accountId),
         );
-        unavailable += batch.length - valid.length;
         rows.push(
           ...valid.map((c) => ({
             app_id: Number(q.appId),
@@ -350,14 +365,13 @@ export class AdAdjustmentService {
       return {
         rows,
         accountOwnerId: ownerId,
-        accountTotal: ids.length,
-        accountSession: session,
-        accountNextOffset: offset + 10 < ids.length ? offset + 10 : undefined,
+        ...pagination,
         state: 'fresh',
         updatedAt: new Date().toISOString(),
-        message: unavailable
-          ? `${unavailable} 个系列无法通过当前个人 Meta 身份确认归属，其操作继续禁用；其他系列已核验。`
-          : '账户归属已通过当前用户个人 Meta 授权核验',
+        message:
+          batch.length > rows.length
+            ? `${batch.length - rows.length} 个系列无法通过当前个人 Meta 身份确认归属，其操作继续禁用；其他系列已核验。`
+            : '账户归属已通过当前用户个人 Meta 授权核验',
       };
     } catch (error) {
       return {

@@ -20,6 +20,7 @@ export class RoasReportService {
         q.end,
         q.platform === 'all' ? ['android', 'ios'] : [q.platform],
       );
+    const coverage: NonNullable<RoasReport['coverage']> = [];
     const rows: RoasReport['rows'] = [],
       issues = new Set<string>(),
       times: string[] = [];
@@ -34,6 +35,8 @@ export class RoasReportService {
         const task = { kind: 'roas' as const, date, platform, hourly: false };
         this.cache.track(task);
         const old = this.cache.read<RoasReport>(task);
+        const slice = { date, platform, complete: !!old };
+        coverage.push(slice);
         let report = old?.data;
         if (!q.refresh && !report && this.cache.error(task)) {
           issues.add(
@@ -51,6 +54,7 @@ export class RoasReportService {
           if (next.cacheable) {
             this.cache.save(task, next);
             report = next;
+            slice.complete = true;
           } else {
             const message = next.issues.join('；');
             this.cache.mark(task, reportCycle(), message);
@@ -61,7 +65,7 @@ export class RoasReportService {
         }
         rows.push(...report!.rows);
         report!.issues.forEach((i) => issues.add(i));
-        times.push(report!.generatedAt);
+        if (report!.generatedAt) times.push(report!.generatedAt);
         const error = this.cache.error(task);
         if (error) issues.add(`${date} 上次更新失败：${error}`);
       }
@@ -71,7 +75,8 @@ export class RoasReportService {
           b.date.localeCompare(a.date) || a.buyer.localeCompare(b.buyer),
       ),
       issues: [...issues],
-      generatedAt: times.sort()[0] || new Date().toISOString(),
+      coverage,
+      generatedAt: times.sort()[0] || '',
     };
   }
   private async fetchDay(
@@ -89,6 +94,8 @@ export class RoasReportService {
           'app_id',
           'buyer_alias',
           'media_source',
+          'campaign_id',
+          'campaign_name',
           'report_date',
           'media_report_date_timezone',
         ],
@@ -97,7 +104,7 @@ export class RoasReportService {
       },
       !!q.refresh,
       300000,
-      'roas-report:v1',
+      'roas-report:v2',
     );
     const cohort = await this.bi.part(
       {
@@ -107,6 +114,8 @@ export class RoasReportService {
           'app_id',
           'buyer_alias',
           'media_source',
+          'campaign_id',
+          'campaign_name',
           'install_date',
           'cohort_index',
           'observation_complete',
@@ -121,7 +130,7 @@ export class RoasReportService {
       },
       !!q.refresh,
       300000,
-      'roas-report:v1',
+      'roas-report:v2',
     );
     const issues = [
       '收入沿用 Doris 同期群表时区；未独立核实。* 表示观察未完成；↓ 表示源累计收入较前一日回落。',
@@ -146,7 +155,11 @@ export class RoasReportService {
             ['fresh', 'cached'].includes(cohort.state) ? cohort.rows : [],
           )
         : [],
-      generatedAt: new Date().toISOString(),
+      generatedAt:
+        [daily, cohort]
+          .filter((part) => ['fresh', 'cached'].includes(part.state))
+          .flatMap((part) => (part.updatedAt ? [part.updatedAt] : []))
+          .sort()[0] || '',
       issues,
     };
   }

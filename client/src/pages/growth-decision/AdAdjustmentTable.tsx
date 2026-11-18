@@ -42,6 +42,8 @@ const colors = {
 };
 interface Props {
   accountsReady: boolean;
+  accountStatuses: Record<string, string>;
+  checkingAccounts: boolean;
   details: Record<string, AdjustmentDetail>;
   loadDetail: (campaignId: string) => Promise<void>;
   drafts: AdjustmentDrafts;
@@ -64,6 +66,8 @@ export function AdAdjustmentTable({
   details,
   loadDetail,
   accountsReady,
+  accountStatuses,
+  checkingAccounts,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -101,6 +105,10 @@ export function AdAdjustmentTable({
                 <AdjustmentControls
                   node={node}
                   enabled={accountsReady}
+                  accountStatus={
+                    accountStatuses[node.campaignId || node.id] ||
+                    (checkingAccounts ? '账户待核验' : '账户未确认')
+                  }
                   drafts={drafts}
                   update={updateDraft}
                 />

@@ -6,7 +6,7 @@ import { SearchableFilter as FilterSelect } from './SearchableFilter';
 import { useAccountNames } from './useAccountNames';
 import {
   getBiChannelSpend,
-  getBiProducts,
+  getBiProductOptions,
   getBiStandards,
 } from '@/api/paid-growth';
 import type { BiPart, BiProduct } from '@shared/paid-growth.interface';
@@ -69,23 +69,35 @@ export default function AdAdjustmentPage() {
     loadDetail,
     options: filterData,
     accountsReady,
+    accountError,
+    accountStatuses,
+    checkingAccounts,
+    retryAccounts,
   } = useAdjustmentData(appId, media);
   useEffect(() => {
     let live = true;
     setSetupError('');
-    void Promise.all([getBiProducts(), getBiStandards()])
-      .then(([p, s]) => {
-        if (live) {
-          setProducts(p);
-          setStandards(s);
-        }
+    const failed = (label: string, e: unknown) => {
+      if (live)
+        setSetupError((previous) =>
+          [
+            previous,
+            `${label}读取失败：${e instanceof Error ? e.message : '请重试'}`,
+          ]
+            .filter(Boolean)
+            .join('；'),
+        );
+    };
+    void getBiProductOptions()
+      .then((p) => {
+        if (live) setProducts(p);
       })
-      .catch((e) => {
-        if (live)
-          setSetupError(
-            `筛选项或指标标准读取失败：${e instanceof Error ? e.message : '请重试'}`,
-          );
-      });
+      .catch((e) => failed('筛选项', e));
+    void getBiStandards()
+      .then((s) => {
+        if (live) setStandards(s);
+      })
+      .catch((e) => failed('指标标准', e));
     return () => {
       live = false;
     };
@@ -364,14 +376,14 @@ export default function AdAdjustmentPage() {
             />
           </div>
         </div>
-        {loading && (
+        {(loading || checkingAccounts) && (
           <Button variant="ghost" onClick={cancel}>
             停止等待
           </Button>
         )}
         <Button
           variant="outline"
-          disabled={loading || !appId || !media}
+          disabled={loading || checkingAccounts || !appId || !media}
           onClick={() => {
             void refresh();
             void loadChannelSpend();
@@ -395,6 +407,23 @@ export default function AdAdjustmentPage() {
         >
           重试加载产品与渠道
         </Button>
+      )}
+      {checkingAccounts && (
+        <p role="status" className="text-sm text-slate-500">
+          个人 Meta 账户分批核验中，已确认的系列可操作。
+        </p>
+      )}
+      {accountError && (
+        <div className="flex flex-wrap items-center gap-3 text-sm text-amber-800">
+          <p role="alert">{accountError}</p>
+          <Button
+            variant="outline"
+            disabled={loading || checkingAccounts}
+            onClick={() => void retryAccounts()}
+          >
+            仅重试账户核验
+          </Button>
+        </div>
       )}
       {draftState.error && (
         <p role="alert" className="text-red-700">
@@ -592,6 +621,8 @@ export default function AdAdjustmentPage() {
           </p>
           <AdAdjustmentTable
             accountsReady={accountsReady}
+            accountStatuses={accountStatuses}
+            checkingAccounts={checkingAccounts}
             details={details}
             loadDetail={loadDetail}
             drafts={draftState.drafts}
