@@ -6,9 +6,6 @@ import Layout from './components/Layout';
 const AuthorizationPage = lazy(
   () => import('./pages/growth-decision/AuthorizationPage'),
 );
-const PaidGrowthPage = lazy(
-  () => import('./pages/growth-decision/PaidGrowthPage'),
-);
 const ProductOverviewPage = lazy(
   () => import('./pages/growth-decision/ProductOverviewPage'),
 );
@@ -47,7 +44,7 @@ const RoutesComponent = () => {
       <Route element={<Layout />}>
         <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
-        <Route path="data" element={<PaidGrowthPage />} />
+        <Route path="data" />
         <Route path="roas" element={<RoasDataPage />} />
         <Route path="analysis/behavior" element={<BehaviorDataPage />} />
         <Route path="analysis" element={<CreativeAnalysisPage />} />

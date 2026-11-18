@@ -7,14 +7,42 @@ import {
   SlidersHorizontal,
   ChartNoAxesCombined,
 } from 'lucide-react';
-import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  NavLink,
+  Outlet,
+  Navigate,
+  useLocation,
+  useMatch,
+} from 'react-router-dom';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import axios from 'axios';
 import { isCenterSessionError } from '@shared/center-session-error';
 import { AuthorizationContext, type Connections } from './AuthorizationContext';
 
+const PaidGrowthPage = lazy(
+  () => import('../pages/growth-decision/PaidGrowthPage'),
+);
+const pageLoading = (
+  <p role="status" className="p-6 text-sm text-slate-500">
+    正在加载页面…
+  </p>
+);
+
 const Layout = () => {
   const location = useLocation();
+  const paidActive = !!useMatch('/data');
+  const [openedPaid, setOpenedPaid] = useState(false);
+  useEffect(() => {
+    if (paidActive) setOpenedPaid(true);
+  }, [paidActive]);
+  const [paidScope, setPaidScope] = useState('');
   const [username, setUsername] = useState('');
   const [authError, setAuthError] = useState('');
   const [connection, setConnection] = useState<
@@ -70,6 +98,14 @@ const Layout = () => {
       if (data.sessionId)
         axios.defaults.headers.common['X-Center-Session'] = data.sessionId;
       setUsername(data.username || '');
+      setPaidScope(
+        JSON.stringify([
+          data.username,
+          data.sessionId,
+          data.role,
+          data.doris?.revision,
+        ]),
+      );
       setConnection((old) => ({
         ...old,
         role: data.role === 'designer' ? 'designer' : 'operator',
@@ -236,18 +272,24 @@ const Layout = () => {
           {!username ? (
             <p className="p-6 text-sm text-slate-500">正在确认访问权限…</p>
           ) : connection.role === 'designer' &&
-            !['/data', '/authorization'].includes(location.pathname) ? (
+            !paidActive &&
+            location.pathname !== '/authorization' ? (
             <Navigate to="/data" replace />
           ) : (
-            <Suspense
-              fallback={
-                <p role="status" className="p-6 text-sm text-slate-500">
-                  正在加载页面…
-                </p>
-              }
-            >
-              <Outlet />
-            </Suspense>
+            <>
+              {(paidActive || openedPaid) && (
+                <div hidden={!paidActive}>
+                  <Suspense fallback={pageLoading}>
+                    <PaidGrowthPage key={paidScope} active={paidActive} />
+                  </Suspense>
+                </div>
+              )}
+              {!paidActive && (
+                <Suspense fallback={pageLoading}>
+                  <Outlet />
+                </Suspense>
+              )}
+            </>
           )}
         </main>
       </div>

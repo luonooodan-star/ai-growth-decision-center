@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   Database,
   Download,
@@ -127,18 +127,23 @@ function DateRangeFilter({
   to,
   change,
   disabled,
+  active,
 }: {
   from: Date;
   to: Date;
   change: (range: { from: Date; to: Date }) => void;
   disabled?: boolean;
+  active: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<DateRange>();
   const [rangeError, setRangeError] = useState('');
+  useEffect(() => {
+    if (!active) setOpen(false);
+  }, [active]);
   return (
     <Popover
-      open={open}
+      open={active && open}
       onOpenChange={(next) => {
         setOpen(next);
         if (next) {
@@ -192,7 +197,15 @@ function DateRangeFilter({
   );
 }
 
-export default function PaidGrowthPage() {
+export default function PaidGrowthPage({ active }: { active: boolean }) {
+  const location = useLocation();
+  const activeRef = useRef(active);
+  const lastEntry = useRef<string | undefined>(undefined);
+  const [overlay, setOverlay] = useState<'product' | 'channel' | 'sync'>();
+  useEffect(() => {
+    activeRef.current = active;
+    if (!active) setOverlay(undefined);
+  }, [active]);
   const { role } = useAuthorization();
   const designer = role === 'designer';
   const columns = designer ? designerColumns : allColumns;
@@ -232,14 +245,14 @@ export default function PaidGrowthPage() {
         setError(`指标标准读取失败：${errorText(e)}`);
       });
   useEffect(() => {
-    if (designer) return;
+    if (designer || !active) return;
     void refreshStandards();
     const refresh = () => {
       void refreshStandards();
     };
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
-  }, []);
+  }, [active, designer]);
   const [appId, setAppId] = useState(params.get('appId') || '');
   const [media, setMedia] = useState(params.get('media') || '');
   const [start, setStart] = useState(shanghaiCalendarToday);
@@ -262,6 +275,20 @@ export default function PaidGrowthPage() {
   const [sort, setSort] = useState<keyof BiRow>('spend');
   const [loadedScope, setLoadedScope] = useState('');
   const [loadedMedia, setLoadedMedia] = useState('');
+  useEffect(() => {
+    if (!active) {
+      setSelectedCampaign(null);
+      return;
+    }
+    if (lastEntry.current === location.key) return;
+    lastEntry.current = location.key;
+    const requested = new URLSearchParams(location.search);
+    if (!requested.has('appId') && !requested.has('media')) return;
+    const product = requested.get('appId') || '';
+    setAppId(product);
+    setMedia(requested.get('media') || '');
+    if (product !== '3') setMellowScope(null);
+  }, [active, location.key, location.search]);
   const controller = useRef<AbortController | null>(null);
   const availableMedia = useMemo(
     () =>
@@ -494,7 +521,13 @@ export default function PaidGrowthPage() {
     let pending = false;
     let lastRead = -Infinity;
     const refresh = async () => {
-      if (document.hidden || pending || Date.now() - lastRead < 60_000) return;
+      if (
+        !activeRef.current ||
+        document.hidden ||
+        pending ||
+        Date.now() - lastRead < 60_000
+      )
+        return;
       pending = true;
       lastRead = Date.now();
       try {
@@ -622,7 +655,10 @@ export default function PaidGrowthPage() {
           </p>
         </div>
         {!designer && (
-          <AlertDialog>
+          <AlertDialog
+            open={active && overlay === 'sync'}
+            onOpenChange={(open) => setOverlay(open ? 'sync' : undefined)}
+          >
             <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={syncing}>
                 同步有投放的产品
@@ -689,6 +725,8 @@ export default function PaidGrowthPage() {
             </label>
             <Select
               value={appId || 'all'}
+              open={active && overlay === 'product'}
+              onOpenChange={(open) => setOverlay(open ? 'product' : undefined)}
               onValueChange={(value) => {
                 const nextAppId = value === 'all' ? '' : value;
                 if (nextAppId !== appId) setMellowScope(null);
@@ -727,6 +765,8 @@ export default function PaidGrowthPage() {
             </label>
             <Select
               value={media || 'all'}
+              open={active && overlay === 'channel'}
+              onOpenChange={(open) => setOverlay(open ? 'channel' : undefined)}
               onValueChange={(value) => {
                 setMedia(value === 'all' ? '' : value);
               }}
@@ -750,6 +790,7 @@ export default function PaidGrowthPage() {
               日期范围
             </label>
             <DateRangeFilter
+              active={active}
               from={start}
               to={end}
               disabled={busy}
@@ -1188,7 +1229,7 @@ export default function PaidGrowthPage() {
           </span>
         </div>
       </section>
-      {selectedCampaign && (
+      {active && selectedCampaign && (
         <BiCampaignDetail
           key={`${selectedCampaign.appId}:${selectedCampaign.media}:${selectedCampaign.campaignId}`}
           row={selectedCampaign}
