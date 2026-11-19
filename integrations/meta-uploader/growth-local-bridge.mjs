@@ -270,12 +270,23 @@ export function install(server, configFile) {
   });
   bridge.requestTimeout = 45000;
   bridge.headersTimeout = 10000;
-  bridge.listen(Number(endpoint.port), '127.0.0.1');
-  bridge.on('error', () =>
+  bridge.on('error', (error) =>
     server.config.logger.error(
-      '广告本机桥启动失败，请检查端口占用；不会回退到公开接口',
+      error.code === 'EADDRINUSE'
+        ? `广告本机桥端口 ${endpoint.port} 已占用，请检查原工具进程`
+        : '广告本机桥启动失败，请检查本机监听状态',
     ),
   );
-  server.httpServer?.once('close', () => bridge.close());
+  // Vite constructs the replacement server before closing the old one.
+  // Register consent middleware immediately, but wait to bind the bridge
+  // until this instance owns the uploader's HTTP(S) listener.
+  const httpServer = server.httpServer;
+  const listen = () => bridge.listen(Number(endpoint.port), '127.0.0.1');
+  if (httpServer?.listening === false) httpServer.once('listening', listen);
+  else listen();
+  httpServer?.once('close', () => {
+    httpServer.removeListener('listening', listen);
+    bridge.close();
+  });
   return bridge;
 }

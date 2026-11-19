@@ -150,6 +150,68 @@ test('HTTP/2 authorization page accepts :authority and still rejects wrong origi
   }
 });
 
+test('Vite reload hands the loopback port to the new instance after the old one closes', async () => {
+  const reserve = createServer();
+  reserve.listen(0, '127.0.0.1');
+  await once(reserve, 'listening');
+  const port = reserve.address().port;
+  await new Promise((resolve) => reserve.close(resolve));
+  const directory = mkdtempSync(join(tmpdir(), 'growth-bridge-reload-'));
+  const config = join(directory, 'bridge.json');
+  const origin = `http://127.0.0.1:${port}`;
+  writeFileSync(
+    config,
+    JSON.stringify({
+      origin,
+      workspaceOrigin: 'https://127.0.0.1:3001',
+      secret: 'a'.repeat(64),
+    }),
+    { mode: 0o600 },
+  );
+  const errors = [];
+  const instance = () => {
+    const httpServer = createServer();
+    const bridge = install(
+      {
+        httpServer,
+        middlewares: { use() {} },
+        config: { logger: { error: (error) => errors.push(error) } },
+      },
+      config,
+    );
+    return { httpServer, bridge };
+  };
+  const first = instance();
+  let next;
+  try {
+    assert.equal(first.bridge.listening, false);
+    const ready = once(first.bridge, 'listening');
+    first.httpServer.listen(0, '127.0.0.1');
+    await ready;
+    next = instance();
+    assert.equal(next.bridge.listening, false);
+    const closed = once(first.bridge, 'close');
+    await new Promise((resolve) => first.httpServer.close(resolve));
+    await closed;
+    const nextReady = once(next.bridge, 'listening');
+    next.httpServer.listen(0, '127.0.0.1');
+    await nextReady;
+    const response = await fetch(origin);
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get('x-growth-identity-version'), '2');
+    await response.body.cancel();
+    assert.deepEqual(errors, []);
+  } finally {
+    for (const entry of [first, next]) {
+      if (!entry?.httpServer.listening) continue;
+      const closed = once(entry.bridge, 'close');
+      entry.bridge.closeAllConnections();
+      await new Promise((resolve) => entry.httpServer.close(resolve));
+      await closed;
+    }
+  }
+});
+
 test('installer is repeatable and preserves original credential implementation', () => {
   const base = mkdtempSync(join(tmpdir(), 'growth-bridge-install-'));
   const center = join(base, 'center'),
