@@ -377,6 +377,63 @@ describe('BI persistence and product registration', () => {
     ]);
     expect(query).not.toHaveBeenCalled();
   });
+  test('uses Beijing-day delivery and distinct D0 users for product conversion metrics', async () => {
+    const query = jest.fn();
+    const s = service(query);
+    const date = '2026-11-17';
+    const part = jest.spyOn(s, 'part').mockImplementation(async (args) => {
+      const filters = JSON.parse(String(args.filters_json));
+      if (args.dataset === 'bi_dwd.dwd_app_event') {
+        expect(filters.first_open_date).toBe(date);
+        expect(args.start_date).toBe(date);
+        expect(args.end_date).toBe(date);
+        expect(args.metrics).toEqual(['unique_resolved_users']);
+        const firstOpen = filters.event_name === 'first_open';
+        if (!firstOpen)
+          expect(filters.event_name).toEqual(['pur_succ', 'sub_success']);
+        return {
+          state: 'fresh',
+          rows: [{ app_id: 11, unique_resolved_users: firstOpen ? 80 : 4 }],
+        };
+      }
+      if (filters.media_report_date_timezone) {
+        expect(filters.media_report_date_timezone).toEqual([
+          'Asia/Shanghai',
+          'Asia/Hong_Kong',
+        ]);
+        return {
+          state: 'fresh',
+          rows: [{ ...dimension, media_clicks: 100, media_installs: 20 }],
+        };
+      }
+      return day(date).daily;
+    });
+    const q = {
+      date,
+      level: 'products' as const,
+      appId: '11',
+      conversionMetrics: '1',
+    };
+    const result = await s.day(q);
+    expect(biRows([result])[0]).toMatchObject({ cvr: 20, newUserPayRate: 5 });
+    expect(
+      biRows([
+        result,
+        {
+          ...result,
+          date: '2026-11-18',
+          payments: { state: 'missing', rows: [] },
+        },
+      ])[0],
+    ).toMatchObject({ cvr: 20, newUserPayRate: null });
+    part.mockClear();
+    const filtered = await s.day({ ...q, media: 'facebook' });
+    expect(biRows([filtered])[0].newUserPayRate).toBeNull();
+    expect(
+      part.mock.calls.some(([args]) => args.dataset === 'bi_dwd.dwd_app_event'),
+    ).toBe(false);
+  });
+
   test('combined levels request all selected grouping dimensions', async () => {
     const query = jest.fn(async () => ({ rows: [] }));
     const result = await service(query).day({
