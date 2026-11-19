@@ -115,14 +115,12 @@ const allColumns: Array<{
   { key: 'mediaInstalls', label: '媒体安装', decimals: 0 },
   { key: 'mediaCpi', label: '媒体 CPI ($)', decimals: 3 },
   { key: 'cpm', label: '买量 CPM ($)', decimals: 3 },
-  { key: 'cvr', label: 'CVR · 安装转化率 (%)' },
-  { key: 'newUserPayRate', label: '新用户付费率 (%)' },
   { key: 'revenue', label: '当前 D0 收入 ($)' },
   { key: 'd0Roas', label: 'D0 收入 / 全部消耗 (%)' },
   { key: 'events', label: 'D0 收入事件数', decimals: 0 },
 ];
 const designerColumns = allColumns.filter(
-  (c) => !['revenue', 'd0Roas', 'events', 'newUserPayRate'].includes(c.key),
+  (c) => !['revenue', 'd0Roas', 'events'].includes(c.key),
 );
 function DateRangeFilter({
   from,
@@ -390,8 +388,8 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
     const failures: string[] = [];
     const next = new Map((sameScope ? days : []).map((day) => [day.date, day]));
     const parts = designer
-      ? (['daily', 'conversion'] as const)
-      : (['daily', 'revenue', 'events', 'conversion', 'payments'] as const);
+      ? (['daily'] as const)
+      : (['daily', 'revenue', 'events'] as const);
     let updated = 0;
     try {
       for (const date of requestedDates) {
@@ -409,7 +407,6 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
               appId,
               media,
               refresh: refresh ? '1' : undefined,
-              conversionMetrics: '1',
             },
             abort.signal,
           );
@@ -427,29 +424,22 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
             daily: part,
             revenue: part,
             events: part,
-            conversion: part,
-            ...(!designer &&
-            !media &&
-            requestedLevels.length === 1 &&
-            requestedLevels[0] === 'products'
-              ? { payments: part }
-              : {}),
           };
         }
         if (abort.signal.aborted) break;
         const previous = next.get(date);
         const failed = parts.filter((part) =>
-          ['missing', 'stale'].includes(value[part]?.state ?? ''),
+          ['missing', 'stale'].includes(value[part].state),
         );
         if (failed.length) {
           failures.push(date);
           for (const part of failed) {
             const cached = previous?.[part];
-            if (cached?.updatedAt && !value[part]?.updatedAt)
+            if (cached?.updatedAt && !value[part].updatedAt)
               value[part] = {
                 ...cached,
                 state: 'stale',
-                message: value[part]?.message || '读取失败，保留上次结果',
+                message: value[part].message || '读取失败，保留上次结果',
               };
           }
         } else updated++;
@@ -606,18 +596,17 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
     .map((day) => day.daily.updatedAt)
     .filter(Boolean)
     .sort()[0];
-  const partLabels = {
-    daily: '投放',
-    revenue: 'D0 收入',
-    events: 'D0 事件',
-    conversion: '安装转化率',
-    payments: '新用户付费率',
-  } as const;
   const issues = days.flatMap((day) =>
-    (Object.keys(partLabels) as (keyof typeof partLabels)[]).flatMap((key) => {
-      const message = day[key]?.message;
-      return message ? [`${day.date} · ${partLabels[key]}：${message}`] : [];
-    }),
+    (designer
+      ? (['daily'] as const)
+      : (['daily', 'revenue', 'events'] as const)
+    ).flatMap((key) =>
+      day[key].message
+        ? [
+            `${day.date} · ${{ daily: '投放', revenue: 'D0 收入', events: 'D0 事件' }[key]}：${day[key].message}`,
+          ]
+        : [],
+    ),
   );
   const exportCsv = () => {
     const cell = (v: unknown) =>
@@ -1047,15 +1036,7 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
             />
             <Button
               variant="outline"
-              disabled={
-                busy ||
-                !rows.length ||
-                days.some(
-                  (day) =>
-                    day.daily.message ||
-                    (!designer && (day.revenue.message || day.events.message)),
-                )
-              }
+              disabled={busy || !rows.length || issues.length > 0}
               onClick={exportCsv}
             >
               <Download className="mr-2 size-4" />
@@ -1097,11 +1078,6 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
             </span>
           </div>
         )}
-        <p className="border-t px-5 py-2 text-xs text-slate-500">
-          北京时间（UTC+8）安装转化率 = 媒体安装 ÷ 媒体点击。
-          {!designer &&
-            ' 新用户付费率 = 当天购买或订阅成功的当日首开用户 ÷ 当日首开用户，两边均按用户去重。选择「产品」维度和「全部渠道」查看。'}
-        </p>
         <div>
           <Table
             containerClassName="max-h-[65vh] overflow-auto"
@@ -1232,7 +1208,7 @@ export default function PaidGrowthPage({ active }: { active: boolean }) {
               {!filtered.length && (
                 <TableRow>
                   <TableCell
-                    colSpan={columns.length + 2}
+                    colSpan={14}
                     className="py-14 text-center text-slate-500"
                   >
                     {busy

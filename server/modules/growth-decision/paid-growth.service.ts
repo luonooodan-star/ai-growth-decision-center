@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { LocalDatabaseService } from '@server/database/local-database.service';
-import { BI_DIMENSIONS, biNumber } from '@shared/paid-growth';
+import { BI_DIMENSIONS } from '@shared/paid-growth';
 import {
   campaignMediaById,
   classifiedMediaPart,
@@ -112,7 +112,7 @@ export class PaidGrowthService {
         : {}),
     };
     const base = { start_date: q.date, end_date: q.date };
-    const dailyTask = this.part(
+    const dailyRaw = await this.part(
       {
         ...base,
         dimensions: paidReportDimensions(levels, !designer),
@@ -128,45 +128,6 @@ export class PaidGrowthService {
       },
       q.refresh === '1',
     );
-    const conversionTask =
-      q.conversionMetrics === '1'
-        ? this.part(
-            {
-              ...base,
-              dimensions: paidReportDimensions(levels, !designer),
-              dataset: DAILY,
-              metrics: ['media_clicks', 'media_installs'],
-              filters_json: JSON.stringify({
-                ...filters,
-                // Hong Kong shares Beijing's UTC+8 reporting-day boundary for modern data.
-                media_report_date_timezone:
-                  q.date >= '1992-01-01'
-                    ? ['Asia/Shanghai', 'Asia/Hong_Kong']
-                    : 'Asia/Shanghai',
-              }),
-            },
-            q.refresh === '1',
-          )
-        : undefined;
-    const paymentTask =
-      q.conversionMetrics === '1' &&
-      !designer &&
-      levels.length === 1 &&
-      levels[0] === 'products' &&
-      !q.media
-        ? this.newUserPayments(q)
-        : undefined;
-    const dailyRaw = await dailyTask;
-    const extraParts = async () => ({
-      ...(conversionTask && {
-        conversion: classifiedMediaPart(
-          await conversionTask,
-          q.media,
-          campaignMediaById(dailyRaw.rows),
-        ),
-      }),
-      ...(paymentTask && { payments: await paymentTask }),
-    });
     const daily = classifiedMediaPart(dailyRaw, q.media);
     const campaignChannels = ['fresh', 'cached'].includes(dailyRaw.state)
       ? campaignMediaById(dailyRaw.rows)
@@ -190,7 +151,6 @@ export class PaidGrowthService {
         daily,
         revenue: unsupported,
         events: unsupported,
-        ...(await extraParts()),
       };
     }
     const cohort = {
@@ -237,68 +197,6 @@ export class PaidGrowthService {
       daily,
       revenue,
       events,
-      ...(await extraParts()),
-    };
-  }
-
-  private async newUserPayments(q: BiQuery): Promise<BiPart> {
-    // Doris event_date and first_open_date use the Beijing calendar day.
-    // COUNT(DISTINCT resolved_user_id) deduplicates purchase and subscription events together.
-    const read = (eventName: string | string[]) =>
-      this.part(
-        {
-          start_date: q.date,
-          end_date: q.date,
-          dataset: 'bi_dwd.dwd_app_event',
-          dimensions: ['app_id'],
-          metrics: ['unique_resolved_users'],
-          filters_json: JSON.stringify({
-            ...(q.appId ? { app_id: Number(q.appId) } : {}),
-            first_open_date: q.date,
-            event_name: eventName,
-          }),
-        },
-        q.refresh === '1',
-      );
-    const [first, paid] = await Promise.all([
-      read('first_open'),
-      read(['pur_succ', 'sub_success']),
-    ]);
-    const usable = (part: BiPart) =>
-      part.state === 'fresh' || part.state === 'cached';
-    if (!usable(first) || !usable(paid))
-      return {
-        state: 'missing',
-        rows: [],
-        message:
-          '新用户付费率未返回：' +
-          [first, paid]
-            .filter((part) => !usable(part))
-            .map((part) => part.message || '应用事件数据不可用')
-            .join('；'),
-      };
-    const payers = new Map(
-      paid.rows.map((row) => [String(row.app_id), row.unique_resolved_users]),
-    );
-    return {
-      state:
-        first.state === 'cached' && paid.state === 'cached'
-          ? 'cached'
-          : 'fresh',
-      updatedAt: [first.updatedAt, paid.updatedAt].filter(Boolean).sort()[0],
-      rows: first.rows.map((row) => {
-        const appId = String(row.app_id);
-        const newUsers = biNumber(row.unique_resolved_users);
-        const payingUsers = payers.has(appId) ? biNumber(payers.get(appId)) : 0;
-        return {
-          app_id: row.app_id,
-          new_users: newUsers,
-          paying_users:
-            newUsers !== null && payingUsers !== null && payingUsers <= newUsers
-              ? payingUsers
-              : null,
-        };
-      }),
     };
   }
 

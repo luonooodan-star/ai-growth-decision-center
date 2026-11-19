@@ -33,8 +33,6 @@ export interface BiDay {
   daily: BiPart;
   revenue: BiPart;
   events: BiPart;
-  conversion?: BiPart;
-  payments?: BiPart;
 }
 export interface BiProduct {
   appId: number;
@@ -51,7 +49,6 @@ export interface BiQuery {
   appId?: string;
   media?: string;
   refresh?: string;
-  conversionMetrics?: string;
 }
 export interface BiRow {
   key: string;
@@ -71,8 +68,6 @@ export interface BiRow {
   cpi: number | null;
   mediaCpi: number | null;
   cpm: number | null;
-  cvr: number | null;
-  newUserPayRate: number | null;
   ctr: number | null;
   d0Roas: number | null;
   missingDays: number;

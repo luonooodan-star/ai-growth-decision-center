@@ -77,62 +77,9 @@ const fields = [
   'events',
 ] as const;
 
-function aggregateRates(
-  days: BiDay[],
-  partKey: 'conversion' | 'payments',
-  keyOf: (day: BiDay, row: BiRawRow) => string,
-  numerator: string,
-  denominator: string,
-) {
-  const totals = new Map<
-    string,
-    { numerator: number | null; denominator: number | null }
-  >();
-  if (
-    days.some(
-      (day) =>
-        !day[partKey] ||
-        !['fresh', 'cached', 'stale'].includes(day[partKey]!.state),
-    )
-  )
-    return () => null;
-  const add = (total: number | null, value: unknown) => {
-    const count = biNumber(value);
-    return total === null || count === null || count < 0 ? null : total + count;
-  };
-  for (const day of days)
-    for (const row of day[partKey]!.rows) {
-      const key = keyOf(day, row);
-      const total = totals.get(key) ?? { numerator: 0, denominator: 0 };
-      total.numerator = add(total.numerator, row[numerator]);
-      total.denominator = add(total.denominator, row[denominator]);
-      totals.set(key, total);
-    }
-  return (key: string) => {
-    const total = totals.get(key);
-    return total ? ratio(total.numerator, total.denominator, 100) : null;
-  };
-}
-
 /** Strict, weighted aggregation. Missing values stay unknown; never average ratios. */
 export function biRows(days: BiDay[]): BiRow[] {
   const result = new Map<string, BiRow>();
-  const rowKey = (day: BiDay, raw: BiRawRow) =>
-    day.levels ? groupedIdentity(raw, day.levels) : identity(raw, day.level);
-  const cvr = aggregateRates(
-    days,
-    'conversion',
-    rowKey,
-    'media_installs',
-    'media_clicks',
-  );
-  const paymentRate = aggregateRates(
-    days,
-    'payments',
-    (_day, raw) => String(raw.app_id),
-    'paying_users',
-    'new_users',
-  );
   for (const day of days) {
     const joined = new Map<string, Partial<BiRow> & { raw: BiRawRow }>();
     for (const [part, field] of [
@@ -141,7 +88,9 @@ export function biRows(days: BiDay[]): BiRow[] {
       [day.events, 'events'],
     ] as const) {
       for (const raw of part.rows) {
-        const key = rowKey(day, raw);
+        const key = day.levels
+          ? groupedIdentity(raw, day.levels)
+          : identity(raw, day.level);
         const item = joined.get(key) || { raw };
         if (field === 'daily') {
           const values = {
@@ -239,8 +188,6 @@ export function biRows(days: BiDay[]): BiRow[] {
         cpi: null,
         mediaCpi: null,
         cpm: null,
-        cvr: null,
-        newUserPayRate: null,
         ctr: null,
         d0Roas: null,
         missingDays: 0,
@@ -270,8 +217,6 @@ export function biRows(days: BiDay[]): BiRow[] {
     row.cpi = ratio(row.spend, row.installs);
     row.mediaCpi = ratio(row.spend, row.mediaInstalls);
     row.cpm = ratio(row.spend, row.impressions, 1000);
-    row.cvr = cvr(row.key);
-    row.newUserPayRate = paymentRate(String(row.appId));
     row.ctr = ratio(row.clicks, row.impressions, 100);
     row.d0Roas = ratio(row.revenue, row.spend, 100);
   }
