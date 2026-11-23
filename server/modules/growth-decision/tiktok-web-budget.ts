@@ -132,7 +132,9 @@ async function readCard(
     if (!navigating(error))
       throw new BudgetReadError('打开付款页失败：' + chromeFailure(error));
   }
-  const deadline = Date.now() + (interactive ? 120000 : 35000);
+  const deadline =
+    Date.now() +
+    (interactive || process.platform === 'darwin' ? 120000 : 35000);
   do {
     // Read identity and visible text from the same document.
     const view = await page
@@ -190,7 +192,8 @@ export async function collectWebBudgets(
         channel: 'chrome',
         // Match the macOS Keychain used by the interactive Google Chrome login.
         ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic'],
-        headless: !interactive,
+        // The signed-in billing page on the company Mac renders in a Chrome window.
+        headless: process.platform !== 'darwin' && !interactive,
         chromiumSandbox: true,
         timeout: 30000,
       },
