@@ -79,43 +79,66 @@ async function pages<T>(
 }
 
 async function loadBalances(token: string) {
-  const centers = await pages<{ bc_info: { bc_id: string } }>(
+  const centers = await pages<{ bc_info: { bc_id: string; name?: string } }>(
     token,
     'bc/get/',
     'list',
   );
   const rows = new Map<string, Balance>();
-  for (const id of new Set(centers.map((c) => c.bc_info.bc_id))) {
+  const failures: string[] = [];
+  const directory = new Map(
+    centers.map(({ bc_info }) => [bc_info.bc_id, bc_info.name]),
+  );
+  for (const [id, name] of directory) {
     if (typeof id !== 'string' || !/^\d+$/.test(id))
       throw new Error('TikTok 返回无效的 BC ID');
-    const accounts = await pages<{
-      advertiser_id: string;
-      advertiser_name?: string;
-      currency?: string;
-      valid_account_balance?: number | string | null;
-      balance_reminder?: boolean;
-    }>(token, 'advertiser/balance/get/', 'advertiser_account_list', {
-      bc_id: id,
-    });
-    for (const item of accounts) {
-      if (
-        typeof item.advertiser_id !== 'string' ||
-        !/^\d+$/.test(item.advertiser_id)
-      )
-        throw new Error('TikTok 返回无效的账户 ID');
-      rows.set(item.advertiser_id, {
-        id: item.advertiser_id,
-        name: item.advertiser_name ?? '',
-        currency: item.currency ?? '',
-        balance:
-          item.valid_account_balance == null
-            ? null
-            : String(item.valid_account_balance),
-        reminder: item.balance_reminder === true,
+    try {
+      const accounts = await pages<{
+        advertiser_id: string;
+        advertiser_name?: string;
+        currency?: string;
+        valid_account_balance?: number | string | null;
+        balance_reminder?: boolean;
+      }>(token, 'advertiser/balance/get/', 'advertiser_account_list', {
+        bc_id: id,
       });
+      const batch: Balance[] = [];
+      for (const item of accounts) {
+        if (
+          typeof item.advertiser_id !== 'string' ||
+          !/^\d+$/.test(item.advertiser_id)
+        )
+          throw new Error('TikTok 返回无效的账户 ID');
+        batch.push({
+          id: item.advertiser_id,
+          name: item.advertiser_name ?? '',
+          currency: item.currency ?? '',
+          balance:
+            item.valid_account_balance == null
+              ? null
+              : String(item.valid_account_balance),
+          reminder: item.balance_reminder === true,
+        });
+      }
+      for (const item of batch) rows.set(item.id, item);
+    } catch (error) {
+      failures.push(
+        (name || id) +
+          '：' +
+          (error instanceof Error ? error.message : '余额查询失败'),
+      );
     }
   }
-  return Array.from(rows.values());
+  const error = failures.length
+    ? '成功读取 ' +
+      (directory.size - failures.length) +
+      '/' +
+      directory.size +
+      ' 个 BC。' +
+      failures.join('；')
+    : undefined;
+  if (error && failures.length === directory.size) throw new Error(error);
+  return { rows: Array.from(rows.values()), error };
 }
 
 @Controller('api/center/tiktok')
@@ -175,9 +198,10 @@ export class TikTokBalanceController {
       state.error = '本轮抓取未完成，可手动刷新';
       await save();
       try {
-        state.rows = await loadBalances(token);
+        const result = await loadBalances(token);
+        state.rows = result.rows;
         state.updatedAt = new Date().toISOString();
-        delete state.error;
+        state.error = result.error;
       } catch (e) {
         state.error = e instanceof Error ? e.message : 'TikTok 查询失败';
       }
