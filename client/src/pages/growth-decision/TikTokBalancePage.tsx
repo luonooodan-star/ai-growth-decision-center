@@ -32,6 +32,15 @@ type Report =
       }[];
     };
 
+function remainingBudget(row: {
+  webBudget?: { remaining: string };
+  remaining?: string;
+}) {
+  const raw = row.webBudget?.remaining ?? row.remaining;
+  const value = raw?.trim() ? Number(raw.replace(/,/g, '')) : NaN;
+  return Number.isFinite(value) ? value : -Infinity;
+}
+
 export default function TikTokBalancePage() {
   const [report, setReport] = useState<Report>();
   const [keyword, setKeyword] = useState('');
@@ -81,14 +90,16 @@ export default function TikTokBalancePage() {
   }, [refresh]);
   const query = keyword.trim().toLowerCase();
   const matches = report?.configured
-    ? report.rows.filter(
-        (row) =>
-          row.id.includes(query) ||
-          row.assignee?.includes(query) ||
-          row.name.toLowerCase().includes(query) ||
-          row.owner?.toLowerCase().includes(query) ||
-          row.centers?.some((c) => c.toLowerCase().includes(query)),
-      )
+    ? report.rows
+        .filter(
+          (row) =>
+            row.id.includes(query) ||
+            row.assignee?.includes(query) ||
+            row.name.toLowerCase().includes(query) ||
+            row.owner?.toLowerCase().includes(query) ||
+            row.centers?.some((c) => c.toLowerCase().includes(query)),
+        )
+        .sort((a, b) => remainingBudget(b) - remainingBudget(a))
     : [];
   return (
     <section className="mx-auto max-w-6xl space-y-5 px-5 py-8">
@@ -153,8 +164,13 @@ export default function TikTokBalancePage() {
                   '余额',
                   '账户剩余预算',
                 ].map((h) => (
-                  <th key={h} className="p-3">
+                  <th
+                    key={h}
+                    className="p-3"
+                    aria-sort={h === '账户剩余预算' ? 'descending' : undefined}
+                  >
                     {h}
+                    {h === '账户剩余预算' && ' ↓'}
                   </th>
                 ))}
               </tr>

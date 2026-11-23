@@ -29,11 +29,31 @@ function money(raw: string | null, currency: string) {
   );
 }
 function remaining(row: FacebookBalanceRow) {
-  if (row.spend_cap === null) return '未返回';
+  if (row.spend_cap === null) return null;
   if (BigInt(row.spend_cap) === BigInt(0)) return '无上限';
-  if (row.amount_spent === null) return '未返回';
+  if (row.amount_spent === null) return null;
   const left = BigInt(row.spend_cap) - BigInt(row.amount_spent);
-  return money(left > BigInt(0) ? String(left) : '0', row.currency);
+  return left > BigInt(0) ? left : BigInt(0);
+}
+
+function compareRemaining(a: FacebookBalanceRow, b: FacebookBalanceRow) {
+  const left = remaining(a);
+  const right = remaining(b);
+  if (left === '无上限' || right === '无上限')
+    return Number(right === '无上限') - Number(left === '无上限');
+  if (left === null || right === null)
+    return Number(left === null) - Number(right === null);
+  // Compare the displayed face values in hundredths, preserving integer precision.
+  const x = centCurrencies.has(a.currency) ? left : left * BigInt(100);
+  const y = centCurrencies.has(b.currency) ? right : right * BigInt(100);
+  return x > y ? -1 : x < y ? 1 : 0;
+}
+
+function remainingLabel(row: FacebookBalanceRow) {
+  const value = remaining(row);
+  return value === '无上限'
+    ? value
+    : money(value?.toString() ?? null, row.currency);
 }
 
 function FacebookBalances() {
@@ -86,11 +106,13 @@ function FacebookBalances() {
   }, []);
   const query = keyword.trim().toLowerCase();
   const rows =
-    report?.rows.filter(
-      (row) =>
-        row.name.toLowerCase().includes(query) ||
-        ('act_' + row.id).includes(query),
-    ) || [];
+    report?.rows
+      .filter(
+        (row) =>
+          row.name.toLowerCase().includes(query) ||
+          ('act_' + row.id).includes(query),
+      )
+      .sort(compareRemaining) || [];
   return (
     <section className="mx-auto max-w-6xl space-y-5 px-5 py-8">
       <div className="flex items-center justify-between gap-4">
@@ -141,8 +163,13 @@ function FacebookBalances() {
                 '已花费',
                 '剩余额度',
               ].map((h) => (
-                <th className="border-b p-3" key={h}>
+                <th
+                  className="border-b p-3"
+                  key={h}
+                  aria-sort={h === '剩余额度' ? 'descending' : undefined}
+                >
                   {h}
+                  {h === '剩余额度' && ' ↓'}
                 </th>
               ))}
             </tr>
@@ -161,7 +188,7 @@ function FacebookBalances() {
                     ? '无上限'
                     : money(r.spend_cap, r.currency),
                   money(r.amount_spent, r.currency),
-                  remaining(r),
+                  remainingLabel(r),
                 ].map((v, i) => (
                   <td className="border-b p-3 tabular-nums" key={i}>
                     {v}
