@@ -4,6 +4,7 @@ import {
   adjustmentBudgetUnits,
   resolveCampaignAccounts,
   probeMetaAccountBilling,
+  readFacebookBalancePage,
   createMetaDisplayReader,
   metaFailure,
   adjustmentSnapshotMatches,
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       target: MetaAdjustmentTarget;
       change: MetaAdjustmentChange;
       ownerId?: string;
+      after?: string;
       accountIds?: string[];
       campaignIds?: string[];
     };
@@ -67,6 +69,11 @@ export async function POST(request: Request) {
     if (!ownerId || (body.ownerId && body.ownerId !== ownerId))
       throw new Error('Meta 登录用户已变化，请重新预检');
     if (body.action === 'identity') return Response.json({ ownerId });
+    if (body.action === 'account-balances')
+      return Response.json({
+        ownerId,
+        ...(await readFacebookBalancePage(direct, body.after)),
+      });
     if (body.action === 'account-billing-probe')
       return Response.json(await probeMetaAccountBilling(direct));
     if (body.action === 'campaign-accounts')

@@ -1,3 +1,4 @@
+import { FacebookBalanceController } from './facebook-balance.controller';
 import { TikTokBalanceController } from './tiktok-balance.controller';
 import { RoasReportService } from './roas-report.service';
 import { ReportCacheService } from './report-cache.service';
@@ -37,6 +38,7 @@ import { MetaAdjustmentService } from './meta-adjustment.service';
     CreativeAnalysisController,
     PersonalDorisController,
     TikTokBalanceController,
+    FacebookBalanceController,
     MetaAdjustmentController,
     MetaWorkspaceController,
     MetaOperationsController,

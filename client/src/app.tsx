@@ -3,8 +3,8 @@ import React, { lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
 
-const TikTokBalancePage = lazy(
-  () => import('./pages/growth-decision/TikTokBalancePage'),
+const AccountBalancePage = lazy(
+  () => import('./pages/growth-decision/AccountBalancePage'),
 );
 const AuthorizationPage = lazy(
   () => import('./pages/growth-decision/AuthorizationPage'),
@@ -45,7 +45,7 @@ const RoutesComponent = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="balances" element={<TikTokBalancePage />} />
+        <Route path="balances" element={<AccountBalancePage />} />
         <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" />

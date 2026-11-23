@@ -15,6 +15,7 @@ import {
   validateAdjustmentChange,
   sanitizeMetaFailure,
   validateAdjustmentTarget,
+  type FacebookBalanceRow,
   type MetaAdjustmentChange,
   type MetaAdjustmentJob,
   type MetaAdjustmentSnapshot,
@@ -129,6 +130,15 @@ export class MetaAdjustmentService {
       }
       throw error;
     }
+  }
+  billingPage(after?: string, ownerId?: string) {
+    if (!readMetaLocalBridge())
+      throw new BadRequestException('尚未配置个人 Meta 桥接');
+    return this.relay<{
+      ownerId: string;
+      rows: FacebookBalanceRow[];
+      next?: string | null;
+    }>('', { action: 'account-balances', after, ownerId });
   }
   async authorizationStatus(cookie: string) {
     if (!centerIdentity.getStore())

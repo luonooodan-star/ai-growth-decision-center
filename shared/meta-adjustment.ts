@@ -308,6 +308,84 @@ export type MetaGraphCall = (
   post?: boolean,
 ) => Promise<Record<string, unknown>>;
 
+export type FacebookBalanceRow = {
+  id: string;
+  name: string;
+  currency: string;
+  balance: string | null;
+  spend_cap: string | null;
+  amount_spent: string | null;
+};
+
+export async function readFacebookBalancePage(
+  graph: MetaGraphCall,
+  after?: string,
+) {
+  if (after !== undefined && (typeof after !== 'string' || after.length > 8192))
+    throw new Error('Meta 分页游标无效');
+  const fields = ['balance', 'spend_cap', 'amount_spent'] as const;
+  const read = async (extra: readonly string[]) => {
+    const result = await graph('me/adaccounts', {
+      fields: ['account_id', 'name', 'currency', ...extra].join(','),
+      limit: '50',
+      ...(after ? { after } : {}),
+    });
+    if (!Array.isArray(result.data)) throw new Error('Meta 账户目录格式无效');
+    return {
+      data: result.data,
+      paging: result.paging as
+        | { next?: string; cursors?: { after?: string } }
+        | undefined,
+    };
+  };
+  let page;
+  try {
+    page = await read(fields);
+  } catch (e) {
+    if (!['permission', 'validation'].includes(metaFailure(e).category))
+      throw e;
+    page = await read([]);
+    const byId = new Map(page.data.map((row) => [row.account_id, row]));
+    await Promise.all(
+      fields.map(async (field) => {
+        try {
+          for (const row of (await read([field])).data) {
+            const entry = byId.get(row.account_id);
+            if (entry) entry[field] = row[field];
+          }
+        } catch (e) {
+          if (!['permission', 'validation'].includes(metaFailure(e).category))
+            throw e;
+        }
+      }),
+    );
+  }
+  const next = page.paging?.next ? page.paging.cursors?.after : null;
+  if (page.paging?.next && !next)
+    throw new Error('Meta 账户目录缺少下一页游标');
+  const amount = (v: unknown) =>
+    (typeof v === 'string' || Number.isSafeInteger(v)) &&
+    /^-?\d+$/.test(String(v))
+      ? String(v)
+      : null;
+  const rows: FacebookBalanceRow[] = page.data.map((row) => {
+    if (
+      typeof row.account_id !== 'string' ||
+      !/^\d{1,40}$/.test(row.account_id)
+    )
+      throw new Error('Meta 账户 ID 无效');
+    return {
+      id: row.account_id,
+      name: String(row.name || ''),
+      currency: String(row.currency || ''),
+      balance: amount(row.balance),
+      spend_cap: amount(row.spend_cap),
+      amount_spent: amount(row.amount_spent),
+    };
+  });
+  return { rows, next };
+}
+
 /** Sample one account using only the signed-in user's Graph reader. Amounts stay in Graph units. */
 export async function probeMetaAccountBilling(graph: MetaGraphCall) {
   const page = await graph('me/adaccounts', {
