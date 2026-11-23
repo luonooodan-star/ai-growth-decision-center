@@ -6,11 +6,13 @@ type Report =
   | { configured: false }
   | {
       configured: true;
+      summaries?: string[];
       error?: string;
       updatedAt?: string;
       rows: {
         id: string;
         name: string;
+        centers?: string[];
         currency: string;
         reminder: boolean;
         balance: string | null;
@@ -68,7 +70,9 @@ export default function TikTokBalancePage() {
   const matches = report?.configured
     ? report.rows.filter(
         (row) =>
-          row.id.includes(query) || row.name.toLowerCase().includes(query),
+          row.id.includes(query) ||
+          row.name.toLowerCase().includes(query) ||
+          row.centers?.some((c) => c.toLowerCase().includes(query)),
       )
     : [];
   return (
@@ -105,7 +109,7 @@ export default function TikTokBalancePage() {
         <div className="overflow-x-auto rounded-xl border bg-white">
           <input
             aria-label="筛选账户"
-            placeholder="输入账户名称关键词或账户 ID"
+            placeholder="输入账户名称、BC 或账户 ID"
             className="m-3 w-72 rounded-md border p-2 text-sm"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
@@ -116,19 +120,27 @@ export default function TikTokBalancePage() {
               ? new Date(report.updatedAt).toLocaleString('zh-CN')
               : '尚无成功抓取'}
           </p>
+          {report.summaries?.map((summary, i) => (
+            <p className="px-4 py-1 text-sm" key={i}>
+              {summary}
+            </p>
+          ))}
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {['广告账户', '账户 ID', '币种', '可用余额'].map((h) => (
-                  <th key={h} className="p-3">
-                    {h}
-                  </th>
-                ))}
+                {['可见 BC', '广告账户', '账户 ID', '币种', '可用余额'].map(
+                  (h) => (
+                    <th key={h} className="p-3">
+                      {h}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
               {matches.map((row) => (
                 <tr key={row.id} className="border-t">
+                  <td className="p-3">{row.centers?.join('、') || '—'}</td>
                   <td className="p-3">{row.name || '—'}</td>
                   <td className="p-3">{row.id}</td>
                   <td className="p-3">{row.currency || '—'}</td>

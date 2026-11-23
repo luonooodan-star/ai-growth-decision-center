@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { centerIdentity } from '../../common/utils/center-identity';
 
 type Balance = {
+  centers?: string[];
   id: string;
   name: string;
   currency: string;
@@ -18,6 +19,7 @@ type Balance = {
   reminder: boolean;
 };
 type Snapshot = {
+  summaries?: string[];
   slot: number;
   rows: Balance[];
   updatedAt?: string;
@@ -86,12 +88,47 @@ async function loadBalances(token: string) {
   );
   const rows = new Map<string, Balance>();
   const failures: string[] = [];
+  const summaries: string[] = [];
+  let successes = 0;
   const directory = new Map(
     centers.map(({ bc_info }) => [bc_info.bc_id, bc_info.name]),
   );
   for (const [id, name] of directory) {
     if (typeof id !== 'string' || !/^\d+$/.test(id))
       throw new Error('TikTok 返回无效的 BC ID');
+    const label = name || id;
+    const visible = new Set<string>();
+    const funded = new Set<string>();
+    let assetsRead = false;
+    let financesRead = false;
+    try {
+      const assets = await pages<{ asset_id: string; asset_name?: string }>(
+        token,
+        'bc/asset/get/',
+        'list',
+        { bc_id: id, asset_type: 'ADVERTISER' },
+      );
+      for (const asset of assets) {
+        if (typeof asset.asset_id !== 'string' || !/^\d+$/.test(asset.asset_id))
+          throw new Error('TikTok 返回无效的资产 ID');
+        visible.add(asset.asset_id);
+        if (!rows.has(asset.asset_id))
+          rows.set(asset.asset_id, {
+            id: asset.asset_id,
+            name: asset.asset_name || '',
+            balance: null,
+            currency: '',
+            reminder: false,
+          });
+      }
+      assetsRead = true;
+    } catch (error) {
+      failures.push(
+        label +
+          ' 账户目录：' +
+          (error instanceof Error ? error.message : '读取失败'),
+      );
+    }
     try {
       const accounts = await pages<{
         advertiser_id: string;
@@ -120,7 +157,19 @@ async function loadBalances(token: string) {
           reminder: item.balance_reminder === true,
         });
       }
-      for (const item of batch) rows.set(item.id, item);
+      for (const item of batch) {
+        visible.add(item.id);
+        const prior = rows.get(item.id);
+        if (item.balance !== null) funded.add(item.id);
+        if (!prior || item.balance !== null || prior.balance === null)
+          rows.set(item.id, {
+            ...item,
+            name: item.name || prior?.name || '',
+            centers: prior?.centers,
+          });
+      }
+      financesRead = true;
+      successes++;
     } catch (error) {
       failures.push(
         (name || id) +
@@ -128,17 +177,22 @@ async function loadBalances(token: string) {
           (error instanceof Error ? error.message : '余额查询失败'),
       );
     }
+    for (const key of visible) {
+      const row = rows.get(key)!;
+      row.centers = Array.from(new Set([...(row.centers || []), label]));
+    }
+    summaries.push(
+      label +
+        ' · ' +
+        visible.size +
+        ' 个可见账户 · ' +
+        (financesRead ? funded.size + ' 个返回余额' : '余额查询失败') +
+        (assetsRead ? '' : ' · 目录查询失败'),
+    );
   }
-  const error = failures.length
-    ? '成功读取 ' +
-      (directory.size - failures.length) +
-      '/' +
-      directory.size +
-      ' 个 BC。' +
-      failures.join('；')
-    : undefined;
-  if (error && failures.length === directory.size) throw new Error(error);
-  return { rows: Array.from(rows.values()), error };
+  const error = failures.length ? failures.join('；') : undefined;
+  if (error && !successes && !rows.size) throw new Error(error);
+  return { rows: Array.from(rows.values()), error, summaries };
 }
 
 @Controller('api/center/tiktok')
@@ -200,6 +254,7 @@ export class TikTokBalanceController {
       try {
         const result = await loadBalances(token);
         state.rows = result.rows;
+        state.summaries = result.summaries;
         state.updatedAt = new Date().toISOString();
         state.error = result.error;
       } catch (e) {
@@ -210,6 +265,7 @@ export class TikTokBalanceController {
     return {
       configured: true,
       rows: state.rows,
+      summaries: state.summaries,
       updatedAt: state.updatedAt,
       error: state.error,
     };
