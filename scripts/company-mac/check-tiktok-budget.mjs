@@ -16,7 +16,12 @@ if (!(await webBudgetAccounts(folder)).includes(id))
   throw new Error(
     '这个账户尚未配置网页预算采集。请先运行 login-tiktok-budget.mjs 并传入账户 ID。',
   );
-const result = (await collectWebBudgets(folder, [id])).get(id);
+const visible = process.argv[3] === '--visible';
+if (visible)
+  console.log(
+    '正在用同一专用配置打开 Chrome。如需登录或选账户，请在两分钟内进入目标账户的预算页，保持窗口打开。',
+  );
+const result = (await collectWebBudgets(folder, [id], visible)).get(id);
 if (result?.budget) {
   const { period, total, spent, remaining, currency } = result.budget;
   console.log(

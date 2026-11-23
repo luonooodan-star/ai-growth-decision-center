@@ -92,7 +92,33 @@ function navigating(error: unknown) {
   );
 }
 
-async function readCard(page: Page, id: string): Promise<WebBudget> {
+export function budgetPageAddress(url: URL) {
+  // Only expose known route words. Paths as well as query strings may contain credentials.
+  const route = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) =>
+      /^(i18n|business|account|accounts|payment|payments|billing|budget|finance|dashboard|home|login|auth|passport|challenge|captcha|select|error|manage|en|en-US|zh|zh-CN)$/i.test(
+        part,
+      )
+        ? part
+        : '…',
+    )
+    .join('/');
+  const aid = url.searchParams.get('aadvid');
+  return (
+    url.hostname +
+    '/' +
+    route +
+    (aid && /^\d{1,24}$/.test(aid) ? ' · aadvid=' + aid : '')
+  );
+}
+
+async function readCard(
+  page: Page,
+  id: string,
+  interactive: boolean,
+): Promise<WebBudget> {
   const target = new URL('https://ads.tiktok.com/i18n/account/payment');
   target.searchParams.set('aadvid', id);
   try {
@@ -106,7 +132,7 @@ async function readCard(page: Page, id: string): Promise<WebBudget> {
     if (!navigating(error))
       throw new BudgetReadError('打开付款页失败：' + chromeFailure(error));
   }
-  const deadline = Date.now() + 35000;
+  const deadline = Date.now() + (interactive ? 120000 : 35000);
   do {
     // Read identity and visible text from the same document.
     const view = await page
@@ -123,13 +149,9 @@ async function readCard(page: Page, id: string): Promise<WebBudget> {
       continue;
     }
     const url = new URL(view.url);
-    if (/login|passport|challenge|captcha/i.test(url.pathname))
+    if (!interactive && /login|passport|challenge|captcha/i.test(url.pathname))
       throw new LoginRequired(loginHint);
-    if (
-      url.origin === target.origin &&
-      url.pathname.replace(/\/$/, '') === target.pathname &&
-      url.searchParams.get('aadvid') === id
-    ) {
+    if (url.origin === target.origin && url.searchParams.get('aadvid') === id) {
       const card = parseBudgetCard(view.text);
       if (card) return { ...card, updatedAt: new Date().toISOString() };
     }
@@ -140,15 +162,23 @@ async function readCard(page: Page, id: string): Promise<WebBudget> {
     last.origin !== target.origin ||
     last.pathname.replace(/\/$/, '') !== target.pathname
   )
-    throw new BudgetReadError('付款页跳转到了其他页面，未取得预算');
+    throw new BudgetReadError(
+      '付款页最终位置：' +
+        budgetPageAddress(last) +
+        '；未识别到账户匹配的预算卡片',
+    );
   if (last.searchParams.get('aadvid') !== id)
-    throw new BudgetReadError('当前付款页的账户 ID 与目标账户不符');
-  throw new BudgetReadError(
-    '已打开目标账户付款页，等待 35 秒仍未识别到完整预算卡片',
-  );
+    throw new BudgetReadError(
+      '付款页账户与目标不匹配：' + budgetPageAddress(last),
+    );
+  throw new BudgetReadError('已打开目标账户付款页，未识别到完整预算卡片');
 }
 
-export async function collectWebBudgets(folder: string, ids: string[]) {
+export async function collectWebBudgets(
+  folder: string,
+  ids: string[],
+  interactive = false,
+) {
   const results = new Map<string, { budget?: WebBudget; error?: string }>();
   if (!ids.length) return results;
   let context: BrowserContext;
@@ -160,7 +190,7 @@ export async function collectWebBudgets(folder: string, ids: string[]) {
         channel: 'chrome',
         // Match the macOS Keychain used by the interactive Google Chrome login.
         ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic'],
-        headless: true,
+        headless: !interactive,
         chromiumSandbox: true,
         timeout: 30000,
       },
@@ -168,7 +198,7 @@ export async function collectWebBudgets(folder: string, ids: string[]) {
     for (const id of ids) {
       const page = await context.newPage();
       try {
-        results.set(id, { budget: await readCard(page, id) });
+        results.set(id, { budget: await readCard(page, id, interactive) });
       } catch (error) {
         if (error instanceof LoginRequired) throw error;
         results.set(id, {
