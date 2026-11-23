@@ -194,6 +194,9 @@ const Layout = () => {
               </NavLink>
               {username && connection.role !== 'designer' && (
                 <>
+                  <NavLink to="/balances" className={navClass}>
+                    账户余额
+                  </NavLink>
                   <NavLink to="/roas" className={navClass}>
                     <ChartNoAxesCombined className="size-3.5" />
                     ROAS数据查看

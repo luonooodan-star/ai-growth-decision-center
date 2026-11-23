@@ -3,6 +3,9 @@ import React, { lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
 
+const TikTokBalancePage = lazy(
+  () => import('./pages/growth-decision/TikTokBalancePage'),
+);
 const AuthorizationPage = lazy(
   () => import('./pages/growth-decision/AuthorizationPage'),
 );
@@ -42,6 +45,7 @@ const RoutesComponent = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
+        <Route path="balances" element={<TikTokBalancePage />} />
         <Route path="authorization" element={<AuthorizationPage />} />
         <Route index element={<ProductOverviewPage />} />
         <Route path="data" />
