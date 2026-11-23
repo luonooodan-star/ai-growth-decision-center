@@ -12,6 +12,8 @@ import { centerIdentity } from '../../common/utils/center-identity';
 
 type Balance = {
   centers?: string[];
+  owner?: string;
+  detailBalance?: boolean;
   id: string;
   name: string;
   currency: string;
@@ -29,6 +31,38 @@ const folder = () => join(process.cwd(), 'runtime/tiktok');
 const halfDay = 12 * 3600000;
 const slotNow = () => Math.floor((Date.now() + 8 * 3600000) / halfDay);
 
+async function queryTikTok(
+  token: string,
+  path: string,
+  params: Record<string, string>,
+) {
+  const url = new URL('https://business-api.tiktok.com/open_api/v1.3/' + path);
+  url.search = new URLSearchParams(params).toString();
+  const response = await fetch(url, {
+    headers: { 'Access-Token': token },
+    signal: AbortSignal.timeout(30000),
+    redirect: 'error',
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.code !== 0) {
+    const detail = [
+      path,
+      '错误码 ' + String(payload.code ?? response.status),
+      ...(params.page ? ['第 ' + params.page + ' 页'] : []),
+    ];
+    if (params.bc_id) detail.push('BC ' + params.bc_id);
+    if (typeof payload.message === 'string') detail.push(payload.message);
+    if (typeof payload.request_id === 'string')
+      detail.push('Request ID ' + payload.request_id);
+    throw new Error(
+      'TikTok 请求失败（' +
+        detail.join(' · ').split(token).join('[已隐藏]').slice(0, 1200) +
+        '）',
+    );
+  }
+  return payload;
+}
+
 async function pages<T>(
   token: string,
   path: string,
@@ -37,36 +71,11 @@ async function pages<T>(
 ): Promise<T[]> {
   const rows: T[] = [];
   for (let page = 1; page <= 10000; page++) {
-    const url = new URL(
-      'https://business-api.tiktok.com/open_api/v1.3/' + path,
-    );
-    url.search = new URLSearchParams({
+    const payload = await queryTikTok(token, path, {
       ...params,
       page: String(page),
       page_size: '50',
-    }).toString();
-    const response = await fetch(url, {
-      headers: { 'Access-Token': token },
-      signal: AbortSignal.timeout(30000),
-      redirect: 'error',
     });
-    const payload = await response.json();
-    if (!response.ok || payload.code !== 0) {
-      const detail = [
-        path,
-        '错误码 ' + String(payload.code ?? response.status),
-        '第 ' + page + ' 页',
-      ];
-      if (params.bc_id) detail.push('BC ' + params.bc_id);
-      if (typeof payload.message === 'string') detail.push(payload.message);
-      if (typeof payload.request_id === 'string')
-        detail.push('Request ID ' + payload.request_id);
-      throw new Error(
-        'TikTok 请求失败（' +
-          detail.join(' · ').split(token).join('[已隐藏]').slice(0, 1200) +
-          '）',
-      );
-    }
     const batch = payload.data?.[field];
     if (!Array.isArray(batch)) throw new Error('TikTok 返回的账户列表格式异常');
     rows.push(...batch);
@@ -88,7 +97,12 @@ async function loadBalances(token: string) {
   );
   const rows = new Map<string, Balance>();
   const failures: string[] = [];
-  const summaries: string[] = [];
+  const coverage: {
+    label: string;
+    visible: Set<string>;
+    assetsRead: boolean;
+    financesRead: boolean;
+  }[] = [];
   let successes = 0;
   const directory = new Map(
     centers.map(({ bc_info }) => [bc_info.bc_id, bc_info.name]),
@@ -98,16 +112,18 @@ async function loadBalances(token: string) {
       throw new Error('TikTok 返回无效的 BC ID');
     const label = name || id;
     const visible = new Set<string>();
-    const funded = new Set<string>();
+
     let assetsRead = false;
     let financesRead = false;
     try {
-      const assets = await pages<{ asset_id: string; asset_name?: string }>(
-        token,
-        'bc/asset/get/',
-        'list',
-        { bc_id: id, asset_type: 'ADVERTISER' },
-      );
+      const assets = await pages<{
+        asset_id: string;
+        asset_name?: string;
+        owner_bc_name?: string;
+      }>(token, 'bc/asset/get/', 'list', {
+        bc_id: id,
+        asset_type: 'ADVERTISER',
+      });
       for (const asset of assets) {
         if (typeof asset.asset_id !== 'string' || !/^\d+$/.test(asset.asset_id))
           throw new Error('TikTok 返回无效的资产 ID');
@@ -120,6 +136,8 @@ async function loadBalances(token: string) {
             currency: '',
             reminder: false,
           });
+        if (asset.owner_bc_name)
+          rows.get(asset.asset_id)!.owner = asset.owner_bc_name;
       }
       assetsRead = true;
     } catch (error) {
@@ -160,12 +178,13 @@ async function loadBalances(token: string) {
       for (const item of batch) {
         visible.add(item.id);
         const prior = rows.get(item.id);
-        if (item.balance !== null) funded.add(item.id);
+
         if (!prior || item.balance !== null || prior.balance === null)
           rows.set(item.id, {
             ...item,
             name: item.name || prior?.name || '',
             centers: prior?.centers,
+            owner: prior?.owner,
           });
       }
       financesRead = true;
@@ -181,15 +200,54 @@ async function loadBalances(token: string) {
       const row = rows.get(key)!;
       row.centers = Array.from(new Set([...(row.centers || []), label]));
     }
-    summaries.push(
-      label +
+    coverage.push({ label, visible, assetsRead, financesRead });
+  }
+  const missing = Array.from(rows.values()).filter(
+    (row) => row.balance === null,
+  );
+  async function fill(row: Balance) {
+    try {
+      const payload = await queryTikTok(token, 'advertiser/info/', {
+        advertiser_ids: JSON.stringify([row.id]),
+        fields: JSON.stringify(['advertiser_id', 'currency', 'balance']),
+      });
+      const item = payload.data?.list?.find(
+        (entry: { advertiser_id: string }) => entry.advertiser_id === row.id,
+      );
+      if (
+        item &&
+        (typeof item.balance === 'number' ||
+          (typeof item.balance === 'string' && item.balance.trim()))
+      ) {
+        row.balance = String(item.balance);
+        row.currency = item.currency || '';
+        row.detailBalance = true;
+      }
+    } catch (e) {
+      failures.push(
+        row.id + ' 账户详情：' + (e instanceof Error ? e.message : '查询失败'),
+      );
+    }
+  }
+  for (let i = 0; i < missing.length; i += 2)
+    await Promise.all(missing.slice(i, i + 2).map(fill));
+  const summaries = coverage.map(
+    ({ label, visible, assetsRead, financesRead }) => {
+      const count = Array.from(visible).filter(
+        (id) => rows.get(id)!.balance !== null,
+      ).length;
+      return (
+        label +
         ' · ' +
         visible.size +
         ' 个可见账户 · ' +
-        (financesRead ? funded.size + ' 个返回余额' : '余额查询失败') +
-        (assetsRead ? '' : ' · 目录查询失败'),
-    );
-  }
+        count +
+        ' 个返回金额' +
+        (assetsRead ? '' : ' · 目录查询失败') +
+        (financesRead ? '' : ' · BC 财务查询失败')
+      );
+    },
+  );
   const error = failures.length ? failures.join('；') : undefined;
   if (error && !successes && !rows.size) throw new Error(error);
   return { rows: Array.from(rows.values()), error, summaries };

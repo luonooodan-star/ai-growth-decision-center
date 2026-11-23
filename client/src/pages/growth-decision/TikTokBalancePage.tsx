@@ -13,6 +13,8 @@ type Report =
         id: string;
         name: string;
         centers?: string[];
+        owner?: string;
+        detailBalance?: boolean;
         currency: string;
         reminder: boolean;
         balance: string | null;
@@ -72,6 +74,7 @@ export default function TikTokBalancePage() {
         (row) =>
           row.id.includes(query) ||
           row.name.toLowerCase().includes(query) ||
+          row.owner?.toLowerCase().includes(query) ||
           row.centers?.some((c) => c.toLowerCase().includes(query)),
       )
     : [];
@@ -128,24 +131,35 @@ export default function TikTokBalancePage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {['可见 BC', '广告账户', '账户 ID', '币种', '可用余额'].map(
-                  (h) => (
-                    <th key={h} className="p-3">
-                      {h}
-                    </th>
-                  ),
-                )}
+                {[
+                  '可见 BC',
+                  '所属 BC',
+                  '广告账户',
+                  '账户 ID',
+                  '币种',
+                  '余额',
+                ].map((h) => (
+                  <th key={h} className="p-3">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {matches.map((row) => (
                 <tr key={row.id} className="border-t">
                   <td className="p-3">{row.centers?.join('、') || '—'}</td>
+                  <td className="p-3">{row.owner || '—'}</td>
                   <td className="p-3">{row.name || '—'}</td>
                   <td className="p-3">{row.id}</td>
                   <td className="p-3">{row.currency || '—'}</td>
                   <td className="p-3 tabular-nums">
                     {row.balance ?? '未返回'}{' '}
+                    {row.balance !== null && (
+                      <small>
+                        {row.detailBalance ? '账户详情' : 'BC 可用余额'}
+                      </small>
+                    )}{' '}
                     {row.reminder && (
                       <span className="ml-2 text-amber-700">需补款</span>
                     )}
