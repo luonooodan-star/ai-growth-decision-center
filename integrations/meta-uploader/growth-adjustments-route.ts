@@ -3,6 +3,7 @@ import { getMetaToken, graph, requestOrigin } from '../../../../lib/meta';
 import {
   adjustmentBudgetUnits,
   resolveCampaignAccounts,
+  probeMetaAccountBilling,
   createMetaDisplayReader,
   metaFailure,
   adjustmentSnapshotMatches,
@@ -66,6 +67,8 @@ export async function POST(request: Request) {
     if (!ownerId || (body.ownerId && body.ownerId !== ownerId))
       throw new Error('Meta 登录用户已变化，请重新预检');
     if (body.action === 'identity') return Response.json({ ownerId });
+    if (body.action === 'account-billing-probe')
+      return Response.json(await probeMetaAccountBilling(direct));
     if (body.action === 'campaign-accounts')
       return Response.json({
         ownerId,

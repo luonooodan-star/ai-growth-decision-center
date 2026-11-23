@@ -308,6 +308,50 @@ export type MetaGraphCall = (
   post?: boolean,
 ) => Promise<Record<string, unknown>>;
 
+/** Sample one account using only the signed-in user's Graph reader. Amounts stay in Graph units. */
+export async function probeMetaAccountBilling(graph: MetaGraphCall) {
+  const page = await graph('me/adaccounts', {
+    fields: 'account_id,name,currency',
+    limit: '1',
+  });
+  if (!Array.isArray(page.data)) throw new Error('Meta 账户目录格式无效');
+  if (!page.data.length) return { account: null };
+  const { account_id: id, name, currency } = page.data[0];
+  if (typeof id !== 'string' || !/^\d{1,40}$/.test(id))
+    throw new Error('Meta 账户 ID 无效');
+  const fields = [
+    'is_prepay_account',
+    'balance',
+    'spend_cap',
+    'amount_spent',
+  ] as const;
+  const values: Record<string, unknown> = {};
+  const errors: Record<string, MetaFailure> = {};
+  try {
+    const info = await graph('act_' + id, { fields: fields.join(',') });
+    for (const field of fields) values[field] = info[field] ?? null;
+  } catch (error) {
+    if (!['permission', 'validation'].includes(metaFailure(error).category))
+      throw error;
+    for (const field of fields) {
+      try {
+        values[field] =
+          (await graph('act_' + id, { fields: field }))[field] ?? null;
+      } catch (e) {
+        const failure = metaFailure(e);
+        if (!['permission', 'validation'].includes(failure.category)) throw e;
+        values[field] = null;
+        errors[field] = failure;
+      }
+    }
+  }
+  return {
+    account: { id, name, currency },
+    graphFields: values,
+    fieldErrors: errors,
+  };
+}
+
 /** Runs in the original uploader process, using its existing session and Graph client. */
 export async function readAdjustmentSnapshot(
   target: MetaAdjustmentTarget,

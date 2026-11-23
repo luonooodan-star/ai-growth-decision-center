@@ -209,6 +209,9 @@ export class MetaAdjustmentService {
       url: `${origin}/growth-center-link?ticket=${payload}.${signature}`,
     };
   }
+  billingProbe(cookie: string) {
+    return this.relay(cookie, { action: 'account-billing-probe' });
+  }
   async accountNames(cookie: string, ids: string[]) {
     if (
       !Array.isArray(ids) ||

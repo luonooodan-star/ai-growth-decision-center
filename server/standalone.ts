@@ -228,6 +228,7 @@ async function bootstrap(): Promise<void> {
             request.method === 'GET' &&
             [
               '/api/growth-decision/dashboard',
+              '/api/growth-decision/adjustments/account-billing-probe',
               '/api/growth-decision/meta-operations/weekly',
             ].includes(request.path)
           ) &&

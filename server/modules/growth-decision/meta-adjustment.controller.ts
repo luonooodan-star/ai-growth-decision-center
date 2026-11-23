@@ -34,6 +34,9 @@ export class MetaAdjustmentController {
       throw new BadRequestException('仅允许本站确认提交');
     return req.headers.cookie || '';
   }
+  @Get('account-billing-probe') billingProbe(@Req() req: Request) {
+    return this.service.billingProbe(req.headers.cookie || '');
+  }
   @Post('account-names') accountNames(
     @Req() req: Request,
     @Body() body: { accountIds: string[] },
