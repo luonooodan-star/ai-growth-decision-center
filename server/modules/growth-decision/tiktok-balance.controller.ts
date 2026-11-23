@@ -16,6 +16,22 @@ import {
   type WebBudget,
 } from './tiktok-web-budget';
 
+const accountAssignees = new Map<string, string>([
+  ['7707161933644070920', 'jsa'],
+  ['7708966116054482965', 'jsa'],
+  ['7708967507062751240', 'jsa'],
+  ['7708967467330338868', 'jsa'],
+  ['7708966031700033557', 'lzx'],
+  ['7686388615521386504', 'lzx'],
+  ['7703780802865446930', 'lzx'],
+  ['7703780764701736968', 'lzx'],
+  ['7699737911520198663', 'lzx'],
+  ['7704571607515299861', 'fjx'],
+  ['7699737926401507346', 'fjx'],
+  ['7686388252760342536', 'fjx'],
+  ['7708966298666958856', 'fjx'],
+]);
+
 type Balance = {
   webBudget?: WebBudget;
   webBudgetError?: string;
@@ -378,7 +394,10 @@ export class TikTokBalanceController {
     }
     return {
       configured: true,
-      rows: state.rows,
+      rows: state.rows.map((row) => ({
+        ...row,
+        assignee: accountAssignees.get(row.id),
+      })),
       summaries: state.summaries,
       updatedAt: state.updatedAt,
       error: state.error,

@@ -14,6 +14,7 @@ type Report =
         name: string;
         centers?: string[];
         owner?: string;
+        assignee?: string;
         detailBalance?: boolean;
         currency: string;
         remaining?: string;
@@ -83,6 +84,7 @@ export default function TikTokBalancePage() {
     ? report.rows.filter(
         (row) =>
           row.id.includes(query) ||
+          row.assignee?.includes(query) ||
           row.name.toLowerCase().includes(query) ||
           row.owner?.toLowerCase().includes(query) ||
           row.centers?.some((c) => c.toLowerCase().includes(query)),
@@ -122,7 +124,7 @@ export default function TikTokBalancePage() {
         <div className="overflow-x-auto rounded-xl border bg-white">
           <input
             aria-label="筛选账户"
-            placeholder="输入账户名称、BC 或账户 ID"
+            placeholder="输入归属人、账户名称、ID 或 BC"
             className="m-3 w-72 rounded-md border p-2 text-sm"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
@@ -144,6 +146,7 @@ export default function TikTokBalancePage() {
                 {[
                   '可见 BC',
                   '所属 BC',
+                  '归属人',
                   '广告账户',
                   '账户 ID',
                   '币种',
@@ -161,6 +164,7 @@ export default function TikTokBalancePage() {
                 <tr key={row.id} className="border-t">
                   <td className="p-3">{row.centers?.join('、') || '—'}</td>
                   <td className="p-3">{row.owner || '—'}</td>
+                  <td className="p-3">{row.assignee || '—'}</td>
                   <td className="p-3">{row.name || '—'}</td>
                   <td className="p-3">{row.id}</td>
                   <td className="p-3">{row.currency || '—'}</td>
