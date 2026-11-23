@@ -18,6 +18,7 @@ type Balance = {
   name: string;
   currency: string;
   balance: string | null;
+  remaining?: string;
   reminder: boolean;
 };
 type Snapshot = {
@@ -153,9 +154,12 @@ async function loadBalances(token: string) {
         advertiser_name?: string;
         currency?: string;
         valid_account_balance?: number | string | null;
+        budget_remaining?: number | string | null;
+        budget_mode?: string;
         balance_reminder?: boolean;
       }>(token, 'advertiser/balance/get/', 'advertiser_account_list', {
         bc_id: id,
+        fields: JSON.stringify(['budget_remaining']),
       });
       const batch: Balance[] = [];
       for (const item of accounts) {
@@ -172,6 +176,12 @@ async function loadBalances(token: string) {
             item.valid_account_balance == null
               ? null
               : String(item.valid_account_balance),
+          remaining:
+            item.budget_mode === 'UNLIMITED'
+              ? '不限额'
+              : item.budget_remaining == null
+                ? undefined
+                : String(item.budget_remaining),
           reminder: item.balance_reminder === true,
         });
       }
@@ -179,13 +189,16 @@ async function loadBalances(token: string) {
         visible.add(item.id);
         const prior = rows.get(item.id);
 
-        if (!prior || item.balance !== null || prior.balance === null)
-          rows.set(item.id, {
-            ...item,
-            name: item.name || prior?.name || '',
-            centers: prior?.centers,
-            owner: prior?.owner,
-          });
+        rows.set(item.id, {
+          ...item,
+          balance: item.balance ?? prior?.balance ?? null,
+          remaining: item.remaining ?? prior?.remaining,
+          currency: item.currency || prior?.currency || '',
+          reminder: item.reminder || !!prior?.reminder,
+          name: item.name || prior?.name || '',
+          centers: prior?.centers,
+          owner: prior?.owner,
+        });
       }
       financesRead = true;
       successes++;

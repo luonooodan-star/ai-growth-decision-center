@@ -16,6 +16,7 @@ type Report =
         owner?: string;
         detailBalance?: boolean;
         currency: string;
+        remaining?: string;
         reminder: boolean;
         balance: string | null;
       }[];
@@ -138,6 +139,7 @@ export default function TikTokBalancePage() {
                   '账户 ID',
                   '币种',
                   '余额',
+                  '账户剩余预算',
                 ].map((h) => (
                   <th key={h} className="p-3">
                     {h}
@@ -163,6 +165,9 @@ export default function TikTokBalancePage() {
                     {row.reminder && (
                       <span className="ml-2 text-amber-700">需补款</span>
                     )}
+                  </td>
+                  <td className="p-3 tabular-nums">
+                    {row.remaining ?? '未返回'}
                   </td>
                 </tr>
               ))}
