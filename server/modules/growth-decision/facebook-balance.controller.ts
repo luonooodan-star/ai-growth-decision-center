@@ -1,3 +1,4 @@
+import { facebookBalanceSource } from '@shared/facebook-balances';
 import {
   Controller,
   Get,
@@ -5,6 +6,7 @@ import {
   Post,
   Logger,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   existsSync,
@@ -66,6 +68,7 @@ export class FacebookBalanceController {
       this.scanning = true;
       try {
         for (const user of bindings().keys()) {
+          if (facebookBalanceSource(user) !== user) continue;
           try {
             if ((await readCenterRole(user)) === 'operator')
               await centerIdentity.run(user, () => this.report(false));
@@ -96,12 +99,30 @@ export class FacebookBalanceController {
   @Get()
   @Header('Cache-Control', 'private, no-store')
   list() {
-    return this.report(false);
+    return this.viewerReport(false);
   }
   @Post('refresh')
   @Header('Cache-Control', 'private, no-store')
   refresh() {
-    return this.report(true);
+    return this.viewerReport(true);
+  }
+
+  private async viewerReport(force: boolean) {
+    const viewer = centerIdentity.getStore();
+    if (!viewer) throw new UnauthorizedException('请登录决策中心');
+    const source = facebookBalanceSource(viewer);
+    if (source === viewer) return this.report(force);
+    if ((await readCenterRole(source).catch(() => null)) !== 'operator')
+      throw new BadRequestException('growth 当前无法提供共享 FB 余额');
+    try {
+      return await centerIdentity.run(source, () => this.report(force));
+    } catch (error) {
+      if (error instanceof UnauthorizedException)
+        throw new BadRequestException(
+          'growth 的 Meta 授权已过期或发生变化，请由 growth 检查授权后刷新余额',
+        );
+      throw error;
+    }
   }
 
   private async report(force: boolean) {

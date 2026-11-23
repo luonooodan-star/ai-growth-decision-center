@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { FacebookBalanceController } from '../../server/modules/growth-decision/facebook-balance.controller';
 import type { MetaAdjustmentService } from '../../server/modules/growth-decision/meta-adjustment.service';
 import { centerIdentity } from '../../server/common/utils/center-identity';
+import { facebookBalanceProduct } from '../../shared/facebook-balances';
 import { readFacebookBalancePage } from '../../shared/meta-adjustment';
 
 test('keeps accessible accounts and distinguishes missing amounts from zero', async () => {
@@ -61,6 +62,8 @@ test('paginates by personal identity, persists half-day slots and allows manual 
       file,
       JSON.stringify({
         sessions: {
+          growth: { until: now + 7 * 86400000 },
+          fjx: { until: now - 1000 },
           alice: { until: now + 7 * 86400000 },
           bob: { until: now + 7 * 86400000 },
         },
@@ -95,7 +98,21 @@ test('paginates by personal identity, persists half-day slots and allows manual 
     expect(
       (await centerIdentity.run('bob', () => controller.list())).rows[0].id,
     ).toBe('bob1');
+    billingPage.mockClear();
+    for (const viewer of ['fjx', 'jsa', 'growth']) {
+      const data = await centerIdentity.run(viewer, () => controller.list());
+      expect(data.rows.map((row) => row.id)).toEqual(['growth1', 'growth2']);
+    }
+    expect(billingPage).toHaveBeenCalledTimes(2);
+    await centerIdentity.run('fjx', () => controller.refresh());
+    expect(billingPage).toHaveBeenCalledTimes(4);
+    await expect(
+      centerIdentity.run('someone', () => controller.list()),
+    ).rejects.toThrow('绑定');
     writeFileSync(file, JSON.stringify({ sessions: {} }));
+    await expect(
+      centerIdentity.run('jsa', () => controller.list()),
+    ).rejects.toThrow('growth');
     await expect(
       centerIdentity.run('alice', () => controller.list()),
     ).rejects.toThrow('绑定');
@@ -103,4 +120,11 @@ test('paginates by personal identity, persists half-day slots and allows manual 
     jest.restoreAllMocks();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('identifies the product and platform independently of account name case', () => {
+  expect(facebookBalanceProduct('agency-Mellow-iOS-01')).toBe('mellow iOS');
+  expect(facebookBalanceProduct('MELLOW-andr-UK')).toBe('mellow 安卓');
+  expect(facebookBalanceProduct('agency-Milo-and-01')).toBe('milo 安卓');
+  expect(facebookBalanceProduct('agency-Mellow-andrew')).toBe('');
 });

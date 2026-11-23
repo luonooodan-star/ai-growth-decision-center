@@ -3,6 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import type { FacebookBalanceRow } from '@shared/meta-adjustment';
 import { Button } from '@/components/ui/button';
+import {
+  facebookBalanceProduct,
+  facebookBalanceSource,
+} from '@shared/facebook-balances';
+import { useAuthorization } from '@/components/AuthorizationContext';
 import TikTokBalancePage from './TikTokBalancePage';
 
 type Report = {
@@ -60,6 +65,9 @@ function FacebookBalances() {
   const [report, setReport] = useState<Report>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const { username } = useAuthorization();
+  const shared = facebookBalanceSource(username) !== username;
+  const [product, setProduct] = useState('');
   const [keyword, setKeyword] = useState('');
   const pending = useRef<AbortController | null>(null);
   async function load(manual = false) {
@@ -105,12 +113,20 @@ function FacebookBalances() {
     };
   }, []);
   const query = keyword.trim().toLowerCase();
+  const products = [
+    ...new Set(
+      (report?.rows ?? [])
+        .map((row) => facebookBalanceProduct(row.name))
+        .filter(Boolean),
+    ),
+  ].sort();
   const rows =
     report?.rows
       .filter(
         (row) =>
-          row.name.toLowerCase().includes(query) ||
-          ('act_' + row.id).includes(query),
+          (!product || facebookBalanceProduct(row.name) === product) &&
+          (row.name.toLowerCase().includes(query) ||
+            ('act_' + row.id).includes(query)),
       )
       .sort(compareRemaining) || [];
   return (
@@ -119,7 +135,8 @@ function FacebookBalances() {
         <div>
           <h1 className="text-2xl font-semibold">Facebook 账户余额</h1>
           <p className="mt-2 text-sm text-slate-500">
-            使用我的 Meta 授权，北京时间上午、下午各自动刷新一次。
+            {shared ? '余额由 growth 的 Meta 授权同步' : '使用我的 Meta 授权'}
+            ，北京时间上午、下午各自动刷新一次。
           </p>
         </div>
         <Button
@@ -132,19 +149,47 @@ function FacebookBalances() {
       </div>
       {error && (
         <p role="alert" className="text-red-700">
-          {error} ·{' '}
-          <Link className="underline" to="/authorization">
-            查看授权与连接
-          </Link>
+          {error}
+          {!shared && (
+            <>
+              {' '}
+              ·{' '}
+              <Link className="underline" to="/authorization">
+                查看授权与连接
+              </Link>
+            </>
+          )}
         </p>
       )}
-      <input
-        className="w-full max-w-md rounded-md border px-3 py-2"
-        aria-label="搜索 FB 账户"
-        placeholder="搜索账户名称或账户 ID"
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-      />
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-sm">
+          产品
+          <select
+            className="rounded-md border px-3 py-2"
+            value={product}
+            onChange={(event) => setProduct(event.target.value)}
+          >
+            <option value="">全部产品</option>
+            {[...new Set([...products, ...(product ? [product] : [])])].map(
+              (value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+        <label className="grid flex-1 gap-1 text-sm">
+          关键词
+          <input
+            className="w-full max-w-md rounded-md border px-3 py-2"
+            aria-label="搜索 FB 账户"
+            placeholder="搜索账户名称或账户 ID"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </label>
+      </div>
       {report?.updatedAt && (
         <p className="text-sm text-slate-500">
           显示 {rows.length} / {report.rows.length} 个账户 · 最近更新{' '}
@@ -200,7 +245,13 @@ function FacebookBalances() {
         </table>
       </div>
       {!busy && !error && !rows.length && (
-        <p>{query ? '没有匹配的账户' : '当前个人授权未返回广告账户'}</p>
+        <p>
+          {query || product
+            ? '没有匹配的账户'
+            : shared
+              ? 'growth 的 Meta 授权未返回广告账户'
+              : '当前个人授权未返回广告账户'}
+        </p>
       )}
       <p className="text-sm text-slate-500">
         剩余额度按账户花费上限减去已花费计算。Meta 未提供的金额显示为“未返回”。
