@@ -49,14 +49,22 @@ async function pages<T>(
       redirect: 'error',
     });
     const payload = await response.json();
-    if (!response.ok || payload.code !== 0)
+    if (!response.ok || payload.code !== 0) {
+      const detail = [
+        path,
+        '错误码 ' + String(payload.code ?? response.status),
+        '第 ' + page + ' 页',
+      ];
+      if (params.bc_id) detail.push('BC ' + params.bc_id);
+      if (typeof payload.message === 'string') detail.push(payload.message);
+      if (typeof payload.request_id === 'string')
+        detail.push('Request ID ' + payload.request_id);
       throw new Error(
         'TikTok 请求失败（' +
-          path +
-          '，错误码 ' +
-          String(payload.code ?? response.status) +
+          detail.join(' · ').split(token).join('[已隐藏]').slice(0, 1200) +
           '）',
       );
+    }
     const batch = payload.data?.[field];
     if (!Array.isArray(batch)) throw new Error('TikTok 返回的账户列表格式异常');
     rows.push(...batch);
