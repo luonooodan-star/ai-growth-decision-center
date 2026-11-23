@@ -78,3 +78,60 @@ test('limits automatic web reads across service restarts, refreshes manually and
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('selects current Sinox advertiser names across BCs plus explicit IDs exactly once', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'budget-targets-'));
+  const token = process.env.TIKTOK_ACCESS_TOKEN;
+  process.env.TIKTOK_ACCESS_TOKEN = 'fixture';
+  try {
+    jest.spyOn(process, 'cwd').mockReturnValue(root);
+    jest.spyOn(web, 'webBudgetAccounts').mockResolvedValue(['1', '9']);
+    const collect = jest
+      .spyOn(web, 'collectWebBudgets')
+      .mockResolvedValue(new Map());
+    let newName = 'other';
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      const accounts = [
+        'Sinox-A',
+        '  SINOX-B',
+        'BFI-SINOX',
+        'unrelated',
+        newName,
+      ].map((asset_name, i) => ({
+        asset_id: String(i + 1),
+        asset_name,
+        owner_bc_name: 'SINOX OWNER',
+      }));
+      const data = path.endsWith('/bc/get/')
+        ? {
+            list: [
+              { bc_info: { bc_id: '111' } },
+              { bc_info: { bc_id: '222' } },
+            ],
+          }
+        : path.endsWith('/bc/asset/get/')
+          ? { list: accounts }
+          : {
+              advertiser_account_list: accounts.map((a) => ({
+                advertiser_id: a.asset_id,
+                valid_account_balance: 10,
+              })),
+            };
+      return Response.json({ code: 0, data });
+    });
+    await centerIdentity.run('growth', async () => {
+      const c = new TikTokBalanceController();
+      await c.balances();
+      expect(collect.mock.calls[0][1]).toEqual(['1', '9', '2']);
+      newName = 'sinox-new';
+      await c.refresh();
+      expect(collect.mock.calls[1][1]).toEqual(['1', '9', '2', '5']);
+    });
+  } finally {
+    jest.restoreAllMocks();
+    if (token === undefined) delete process.env.TIKTOK_ACCESS_TOKEN;
+    else process.env.TIKTOK_ACCESS_TOKEN = token;
+    rmSync(root, { recursive: true, force: true });
+  }
+});

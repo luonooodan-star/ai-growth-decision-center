@@ -348,7 +348,11 @@ export class TikTokBalanceController {
         state.error = e instanceof Error ? e.message : 'TikTok 查询失败';
       }
       try {
-        const budgets = await collectWebBudgets(folder(), ids);
+        const targets = new Set(ids);
+        for (const row of state.rows) {
+          if (/^sinox/i.test(row.name.trimStart())) targets.add(row.id);
+        }
+        const budgets = await collectWebBudgets(folder(), [...targets]);
         const byId = new Map(state.rows.map((row) => [row.id, row]));
         for (const [id, result] of budgets) {
           let row = byId.get(id);

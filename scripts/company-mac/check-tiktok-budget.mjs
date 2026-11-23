@@ -1,21 +1,18 @@
-// Read exactly one configured account through the active release's normal collector.
+// Read exactly one specified account through the active release's normal collector.
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { readRelease, releaseDirectory } from './release-paths.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const release = readRelease(root);
 const dist = release ? releaseDirectory(root, release.id) : root;
-const { collectWebBudgets, webBudgetAccounts } = await import(
+const { collectWebBudgets } = await import(
   pathToFileURL(
     join(dist, 'dist/server/modules/growth-decision/tiktok-web-budget.js'),
   ).href
 );
 const folder = join(root, 'runtime/tiktok');
 const id = process.argv[2];
-if (!(await webBudgetAccounts(folder)).includes(id))
-  throw new Error(
-    '这个账户尚未配置网页预算采集。请先运行 login-tiktok-budget.mjs 并传入账户 ID。',
-  );
+if (!id || !/^\d{1,24}$/.test(id)) throw new Error('请传入一个广告账户 ID。');
 const visible = process.argv[3] === '--visible';
 if (visible)
   console.log(
