@@ -70,28 +70,58 @@ export async function webBudgetAccounts(folder: string): Promise<string[]> {
 }
 const loginHint =
   '请在公司 Mac 运行 node scripts/company-mac/login-tiktok-budget.mjs，登录后退出专用 Chrome，再手动刷新';
-class LoginRequired extends Error {}
+class BudgetReadError extends Error {}
+class LoginRequired extends BudgetReadError {}
+
+function chromeFailure(error: unknown) {
+  const text = error instanceof Error ? error.message : '';
+  if (/ProcessSingleton|SingletonLock|profile.*in use/i.test(text))
+    return '专用 Chrome 配置正在使用，请先在专用窗口按 ⌘Q 退出';
+  const network = text.match(/net::ERR_[A-Z0-9_]+/);
+  if (network) return 'Chrome 网络错误 ' + network[0];
+  if (/timeout|timed out/i.test(text)) return 'Chrome 等待超时';
+  if (/closed|crashed/i.test(text)) return 'Chrome 页面或进程已关闭';
+  return 'Chrome 操作失败';
+}
+function navigating(error: unknown) {
+  return (
+    error instanceof Error &&
+    /Execution context was destroyed|navigation interrupted|interrupted by another navigation|Cannot find context with specified id/i.test(
+      error.message,
+    )
+  );
+}
 
 async function readCard(page: Page, id: string): Promise<WebBudget> {
   const target = new URL('https://ads.tiktok.com/i18n/account/payment');
   target.searchParams.set('aadvid', id);
   try {
     await page.goto(target.href, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'commit',
       timeout: 35000,
     });
   } catch (error) {
     if (/login|passport|challenge|captcha/i.test(new URL(page.url()).pathname))
       throw new LoginRequired(loginHint);
-    throw error;
+    if (!navigating(error))
+      throw new BudgetReadError('打开付款页失败：' + chromeFailure(error));
   }
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 35000;
   do {
     // Read identity and visible text from the same document.
-    const view = await page.evaluate(() => ({
-      url: location.href,
-      text: document.body?.innerText || '',
-    }));
+    const view = await page
+      .evaluate(() => ({
+        url: location.href,
+        text: document.body?.innerText || '',
+      }))
+      .catch((error) => {
+        if (navigating(error)) return null;
+        throw error;
+      });
+    if (!view) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      continue;
+    }
     const url = new URL(view.url);
     if (/login|passport|challenge|captcha/i.test(url.pathname))
       throw new LoginRequired(loginHint);
@@ -105,7 +135,17 @@ async function readCard(page: Page, id: string): Promise<WebBudget> {
     }
     await new Promise((resolve) => setTimeout(resolve, 600));
   } while (Date.now() < deadline);
-  throw new Error('未读到该账户的预算卡片，请用专用 Chrome 检查付款页');
+  const last = new URL(page.url());
+  if (
+    last.origin !== target.origin ||
+    last.pathname.replace(/\/$/, '') !== target.pathname
+  )
+    throw new BudgetReadError('付款页跳转到了其他页面，未取得预算');
+  if (last.searchParams.get('aadvid') !== id)
+    throw new BudgetReadError('当前付款页的账户 ID 与目标账户不符');
+  throw new BudgetReadError(
+    '已打开目标账户付款页，等待 35 秒仍未识别到完整预算卡片',
+  );
 }
 
 export async function collectWebBudgets(folder: string, ids: string[]) {
@@ -133,9 +173,9 @@ export async function collectWebBudgets(folder: string, ids: string[]) {
         if (error instanceof LoginRequired) throw error;
         results.set(id, {
           error:
-            error instanceof Error && error.message.startsWith('未读到')
+            error instanceof BudgetReadError
               ? error.message
-              : '付款页读取失败，请检查公司 Mac 的网络及账户访问权限',
+              : '读取付款页失败：' + chromeFailure(error),
         });
       } finally {
         await page.close();
@@ -145,7 +185,7 @@ export async function collectWebBudgets(folder: string, ids: string[]) {
     const message =
       error instanceof LoginRequired
         ? loginHint
-        : '专用 Chrome 启动或连接失败。' + loginHint;
+        : '专用 Chrome：' + chromeFailure(error) + '。' + loginHint;
     for (const id of ids)
       if (!results.has(id)) results.set(id, { error: message });
   } finally {
