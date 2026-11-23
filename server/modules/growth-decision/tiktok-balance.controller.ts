@@ -10,7 +10,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { centerIdentity } from '../../common/utils/center-identity';
 
+import {
+  collectWebBudgets,
+  webBudgetAccounts,
+  type WebBudget,
+} from './tiktok-web-budget';
+
 type Balance = {
+  webBudget?: WebBudget;
+  webBudgetError?: string;
   centers?: string[];
   owner?: string;
   detailBalance?: boolean;
@@ -304,8 +312,11 @@ export class TikTokBalanceController {
         if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       }
     }
-    if (!token) return { configured: false };
-    const key = createHash('sha256').update(token).digest('hex');
+    const ids = await webBudgetAccounts(folder());
+    if (!token && !ids.length) return { configured: false };
+    const key = token
+      ? createHash('sha256').update(token).digest('hex')
+      : 'web-only';
     const file = join(folder(), 'balances-' + key + '.json');
     let state: Snapshot = { slot: -1, rows: [] };
     try {
@@ -322,14 +333,42 @@ export class TikTokBalanceController {
       state.slot = slotNow();
       state.error = '本轮抓取未完成，可手动刷新';
       await save();
+      const previous = new Map(
+        state.rows.map((row) => [row.id, row.webBudget]),
+      );
       try {
-        const result = await loadBalances(token);
+        const result = token
+          ? await loadBalances(token)
+          : { rows: [], summaries: [], error: undefined };
         state.rows = result.rows;
         state.summaries = result.summaries;
         state.updatedAt = new Date().toISOString();
         state.error = result.error;
       } catch (e) {
         state.error = e instanceof Error ? e.message : 'TikTok 查询失败';
+      }
+      try {
+        const budgets = await collectWebBudgets(folder(), ids);
+        const byId = new Map(state.rows.map((row) => [row.id, row]));
+        for (const [id, result] of budgets) {
+          let row = byId.get(id);
+          if (!row) {
+            row = {
+              id,
+              name: '',
+              currency: '',
+              balance: null,
+              reminder: false,
+            };
+            state.rows.push(row);
+          }
+          row.webBudget = result.budget ?? previous.get(id);
+          row.webBudgetError = result.error;
+        }
+      } catch {
+        state.error = [state.error, '无法读取公司 Mac 的网页预算配置']
+          .filter(Boolean)
+          .join('；');
       }
       await save();
     }

@@ -17,6 +17,15 @@ type Report =
         detailBalance?: boolean;
         currency: string;
         remaining?: string;
+        webBudget?: {
+          period: string;
+          total: string;
+          spent: string;
+          remaining: string;
+          currency: string;
+          updatedAt: string;
+        };
+        webBudgetError?: string;
         reminder: boolean;
         balance: string | null;
       }[];
@@ -167,7 +176,31 @@ export default function TikTokBalancePage() {
                     )}
                   </td>
                   <td className="p-3 tabular-nums">
-                    {row.remaining ?? '未返回'}
+                    {row.webBudget ? (
+                      <>
+                        <strong>
+                          {row.webBudget.remaining} {row.webBudget.currency}
+                        </strong>
+                        <small className="block text-slate-500">
+                          {row.webBudgetError ? '上次成功读取' : 'Ads Manager'}{' '}
+                          ·{' '}
+                          {new Date(row.webBudget.updatedAt).toLocaleString(
+                            'zh-CN',
+                          )}
+                        </small>
+                        <small className="block text-slate-500">
+                          {row.webBudget.period}预算 {row.webBudget.total} ·
+                          已花费 {row.webBudget.spent}
+                        </small>
+                      </>
+                    ) : (
+                      (row.remaining ?? '未返回')
+                    )}
+                    {row.webBudgetError && (
+                      <small className="block text-amber-700">
+                        {row.webBudgetError}
+                      </small>
+                    )}
                   </td>
                 </tr>
               ))}
