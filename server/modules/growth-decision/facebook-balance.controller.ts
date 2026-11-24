@@ -1,3 +1,4 @@
+import { scheduledBalanceMinute } from '@shared/balance-schedule';
 import { facebookBalanceSource } from '@shared/facebook-balances';
 import {
   Controller,
@@ -64,14 +65,15 @@ export class FacebookBalanceController {
   constructor(private readonly meta: MetaAdjustmentService) {}
   onModuleInit() {
     const tick = async () => {
-      if (this.scanning) return;
+      const slot = scheduledBalanceMinute();
+      if (slot === null || this.scanning) return;
       this.scanning = true;
       try {
         for (const user of bindings().keys()) {
           if (facebookBalanceSource(user) !== user) continue;
           try {
             if ((await readCenterRole(user)) === 'operator')
-              await centerIdentity.run(user, () => this.report(false));
+              await centerIdentity.run(user, () => this.report(false, slot));
           } catch {
             Logger.warn(
               '个人 FB 余额后台检查未完成',
@@ -89,7 +91,7 @@ export class FacebookBalanceController {
       }
     };
     void tick();
-    this.timer = setInterval(() => void tick(), 60000);
+    this.timer = setInterval(() => void tick(), 15000);
     this.timer.unref();
   }
   onModuleDestroy() {
@@ -125,14 +127,13 @@ export class FacebookBalanceController {
     }
   }
 
-  private async report(force: boolean) {
+  private async report(force: boolean, slot = scheduledBalanceMinute()) {
     const user = centerIdentity.getStore();
     if (!user) throw new UnauthorizedException('请登录决策中心');
     const binding = bindings().get(user);
     if (!binding)
       throw new UnauthorizedException('请在「授权与连接」绑定我的 Meta');
     const file = join(folder(), user + '.json');
-    const slot = Math.floor((Date.now() + 8 * 3600000) / (12 * 3600000));
     const current = this.pending.get(user);
     if (current) {
       const result = await current;
@@ -145,12 +146,12 @@ export class FacebookBalanceController {
       const prior: Snapshot = JSON.parse(readFileSync(file, 'utf8'));
       if (prior.binding === binding) snapshot = prior;
       else if (prior.slot === slot) {
-        snapshot.slot = slot;
+        if (slot !== null) snapshot.slot = slot;
         snapshot.error = '个人 Meta 授权已更新，请手动刷新或等待下次自动抓取';
       }
     }
-    if (!force && snapshot.slot === slot) return snapshot;
-    snapshot.slot = slot;
+    if (!force && (slot === null || snapshot.slot === slot)) return snapshot;
+    if (slot !== null) snapshot.slot = slot;
     save(file, { ...snapshot, error: '刷新尚未完成，可手动重试' });
     const task = this.collect(user, binding, file, snapshot).finally(() =>
       this.pending.delete(user),

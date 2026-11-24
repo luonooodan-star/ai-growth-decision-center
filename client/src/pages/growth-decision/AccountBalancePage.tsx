@@ -1,3 +1,4 @@
+import { scheduledBalanceMinute } from '@shared/balance-schedule';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
@@ -104,8 +105,8 @@ function FacebookBalances() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => {
-      if (!document.hidden) void load();
-    }, 12 * 3600000);
+      if (!document.hidden && scheduledBalanceMinute() !== null) void load();
+    }, 60000);
     return () => {
       window.clearInterval(timer);
       pending.current?.abort();
@@ -136,7 +137,7 @@ function FacebookBalances() {
           <h1 className="text-2xl font-semibold">Facebook 账户余额</h1>
           <p className="mt-2 text-sm text-slate-500">
             {shared ? '余额由 growth 的 Meta 授权同步' : '使用我的 Meta 授权'}
-            ，北京时间上午、下午各自动刷新一次。
+            ，每日北京时间 10:00 和 18:00 自动刷新。
           </p>
         </div>
         <Button

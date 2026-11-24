@@ -1,3 +1,4 @@
+import { scheduledBalanceMinute } from '@shared/balance-schedule';
 import {
   Logger,
   Controller,
@@ -53,8 +54,6 @@ type Snapshot = {
   error?: string;
 };
 const folder = () => join(process.cwd(), 'runtime/tiktok');
-const halfDay = 12 * 3600000;
-const slotNow = () => Math.floor((Date.now() + 8 * 3600000) / halfDay);
 
 async function queryTikTok(
   token: string,
@@ -301,12 +300,13 @@ export class TikTokBalanceController {
   }>;
   onModuleInit() {
     const tick = () => {
+      if (scheduledBalanceMinute() === null) return;
       void this.report(false).catch(() =>
         Logger.error('TikTok 余额缓存读写失败', 'TikTokBalanceController'),
       );
     };
     tick();
-    this.timer = setInterval(tick, 60000);
+    this.timer = setInterval(tick, 15000);
     this.timer.unref();
   }
   onModuleDestroy() {
@@ -320,6 +320,7 @@ export class TikTokBalanceController {
     return this.pending;
   }
   private async update(force: boolean) {
+    const slot = scheduledBalanceMinute();
     let token = process.env.TIKTOK_ACCESS_TOKEN?.trim();
     if (!token) {
       try {
@@ -345,8 +346,8 @@ export class TikTokBalanceController {
       await writeFile(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
       await rename(file + '.tmp', file);
     }
-    if (force || state.slot !== slotNow()) {
-      state.slot = slotNow();
+    if (force || (slot !== null && state.slot !== slot)) {
+      if (slot !== null) state.slot = slot;
       state.error = '本轮抓取未完成，可手动刷新';
       await save();
       const previous = new Map(

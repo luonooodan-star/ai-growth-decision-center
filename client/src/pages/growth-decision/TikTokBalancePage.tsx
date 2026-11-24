@@ -1,3 +1,4 @@
+import { scheduledBalanceMinute } from '@shared/balance-schedule';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
@@ -80,8 +81,8 @@ export default function TikTokBalancePage() {
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, 12 * 3600000);
+      if (!document.hidden && scheduledBalanceMinute() !== null) void refresh();
+    }, 60000);
     return () => {
       window.clearInterval(timer);
       pending.current?.abort();
@@ -107,7 +108,7 @@ export default function TikTokBalancePage() {
         <div>
           <h1 className="text-2xl font-semibold">TikTok 账户余额</h1>
           <p className="mt-2 text-sm text-slate-500">
-            每日按北京时间上、下午各自动抓取一次。启用 Payment Portfolio
+            每日北京时间 10:00 和 18:00 自动刷新。启用 Payment Portfolio
             的账户可能共用同一余额。
           </p>
         </div>

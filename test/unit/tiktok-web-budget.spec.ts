@@ -47,7 +47,7 @@ test('limits automatic web reads across service restarts, refreshes manually and
   );
   const budget = {
     ...parseBudgetCard(card)!,
-    updatedAt: '2026-11-23T01:00:00.000Z',
+    updatedAt: '2026-11-23T02:00:00.000Z',
   };
   try {
     jest.spyOn(process, 'cwd').mockReturnValue(root);
@@ -68,7 +68,10 @@ test('limits automatic web reads across service restarts, refreshes manually and
       });
       await c.balances();
       expect(collect).toHaveBeenCalledTimes(2);
-      now += 12 * 3600000;
+      now += 7 * 3600000;
+      await c.balances();
+      expect(collect).toHaveBeenCalledTimes(2);
+      now += 3600000;
       await Promise.all([c.balances(), c.balances()]);
       expect(collect).toHaveBeenCalledTimes(3);
     });
@@ -122,7 +125,7 @@ test('selects current Sinox advertiser names across BCs plus explicit IDs exactl
     });
     await centerIdentity.run('growth', async () => {
       const c = new TikTokBalanceController();
-      await c.balances();
+      await c.refresh();
       expect(collect.mock.calls[0][1]).toEqual(['1', '9', '2']);
       newName = 'sinox-new';
       await c.refresh();

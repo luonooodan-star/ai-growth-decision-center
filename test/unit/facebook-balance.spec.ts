@@ -54,7 +54,7 @@ test('paginates by personal identity, persists half-day slots and allows manual 
   const root = mkdtempSync(join(tmpdir(), 'fb-balances-'));
   try {
     jest.spyOn(process, 'cwd').mockReturnValue(root);
-    let now = Date.now();
+    let now = Date.parse('2026-11-23T02:00:00Z');
     jest.spyOn(Date, 'now').mockImplementation(() => now);
     mkdirSync(join(root, 'runtime'));
     const file = join(root, 'runtime/meta-local-bridge.json.users');
@@ -91,7 +91,10 @@ test('paginates by personal identity, persists half-day slots and allows manual 
       expect(billingPage).toHaveBeenCalledTimes(2);
       await controller.refresh();
       expect(billingPage).toHaveBeenCalledTimes(4);
-      now += 12 * 3600000;
+      now += 7 * 3600000;
+      await controller.list();
+      expect(billingPage).toHaveBeenCalledTimes(4);
+      now += 3600000;
       await controller.list();
       expect(billingPage).toHaveBeenCalledTimes(6);
     });
