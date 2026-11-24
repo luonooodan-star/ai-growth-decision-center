@@ -59,12 +59,16 @@ test('limits automatic web reads across service restarts, refreshes manually and
     await centerIdentity.run('growth', async () => {
       const c = new TikTokBalanceController();
       expect((await c.balances()).rows?.[0].webBudget).toEqual(budget);
+      expect(await c.alert()).toEqual({ alert: null });
       await new TikTokBalanceController().balances();
       expect(collect).toHaveBeenCalledTimes(1);
       collect.mockResolvedValue(new Map([[account, { error: '登录已过期' }]]));
       expect((await c.refresh()).rows?.[0]).toMatchObject({
         webBudget: budget,
         webBudgetError: '登录已过期',
+      });
+      expect(await c.alert()).toMatchObject({
+        alert: { web: true, message: expect.stringContaining('登录已过期') },
       });
       await c.balances();
       expect(collect).toHaveBeenCalledTimes(2);

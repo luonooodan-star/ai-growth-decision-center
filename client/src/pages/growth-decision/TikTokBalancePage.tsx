@@ -61,6 +61,7 @@ export default function TikTokBalancePage() {
       });
       if (!request.signal.aborted) {
         setReport(data);
+        if (manual) window.dispatchEvent(new Event('tiktok-balance-updated'));
         setError(data.configured ? data.error || '' : '');
       }
     } catch (e) {

@@ -24,6 +24,7 @@ import {
 } from 'react';
 import axios from 'axios';
 import { isCenterSessionError } from '@shared/center-session-error';
+import TikTokBalanceAlert from './TikTokBalanceAlert';
 import { AuthorizationContext, type Connections } from './AuthorizationContext';
 
 const PaidGrowthPage = lazy(
@@ -271,6 +272,9 @@ const Layout = () => {
             </div>
           </div>
         </header>
+        {username && connection.role === 'operator' && (
+          <TikTokBalanceAlert key={username} username={username} />
+        )}
         <main>
           {!username ? (
             <p className="p-6 text-sm text-slate-500">正在确认访问权限…</p>

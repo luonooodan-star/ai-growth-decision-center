@@ -48,6 +48,7 @@ type Balance = {
 };
 type Snapshot = {
   summaries?: string[];
+  attemptedAt?: string;
   slot: number;
   rows: Balance[];
   updatedAt?: string;
@@ -293,6 +294,7 @@ async function loadBalances(token: string) {
 export class TikTokBalanceController {
   private timer?: NodeJS.Timeout;
   private pending?: Promise<{
+    attemptedAt?: string;
     configured: boolean;
     rows?: Balance[];
     updatedAt?: string;
@@ -319,7 +321,7 @@ export class TikTokBalanceController {
       });
     return this.pending;
   }
-  private async update(force: boolean) {
+  private async update(force: boolean, cacheOnly = false) {
     const slot = scheduledBalanceMinute();
     let token = process.env.TIKTOK_ACCESS_TOKEN?.trim();
     if (!token) {
@@ -346,8 +348,9 @@ export class TikTokBalanceController {
       await writeFile(file + '.tmp', JSON.stringify(state), { mode: 0o600 });
       await rename(file + '.tmp', file);
     }
-    if (force || (slot !== null && state.slot !== slot)) {
+    if (!cacheOnly && (force || (slot !== null && state.slot !== slot))) {
       if (slot !== null) state.slot = slot;
+      state.attemptedAt = new Date().toISOString();
       state.error = '本轮抓取未完成，可手动刷新';
       await save();
       const previous = new Map(
@@ -400,6 +403,7 @@ export class TikTokBalanceController {
     }
     return {
       configured: true,
+      attemptedAt: state.attemptedAt,
       rows: state.rows.map((row) => ({
         ...row,
         assignee: accountAssignees.get(row.id),
@@ -408,6 +412,42 @@ export class TikTokBalanceController {
       updatedAt: state.updatedAt,
       error: state.error,
     };
+  }
+  @Get('balances/alert') async alert() {
+    if (!centerIdentity.getStore()) throw new UnauthorizedException();
+    try {
+      const report = await (this.pending ?? this.update(false, true));
+      const failed = report.rows?.filter((row) => row.webBudgetError) ?? [];
+      if (!failed.length && !report.error) return { alert: null };
+      const detail =
+        failed.find((row) => row.webBudgetError?.includes('登录')) ?? failed[0];
+      return {
+        alert: {
+          id:
+            report.attemptedAt ??
+            report.updatedAt ??
+            report.error ??
+            'budget-error',
+          message: detail
+            ? failed.length +
+              ' 个账户未取得网页预算。' +
+              detail.id +
+              ' · ' +
+              detail.webBudgetError
+            : report.error,
+          web: failed.length > 0,
+        },
+      };
+    } catch {
+      return {
+        alert: {
+          id: 'balance-read-error',
+          message:
+            '无法读取 TikTok 余额抓取结果，请检查公司 Mac 的服务和配置。',
+          web: false,
+        },
+      };
+    }
   }
   @Get('balances') balances() {
     if (!centerIdentity.getStore()) throw new UnauthorizedException();
