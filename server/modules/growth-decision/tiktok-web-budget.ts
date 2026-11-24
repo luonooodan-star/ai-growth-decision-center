@@ -135,6 +135,8 @@ async function readCard(
   const deadline =
     Date.now() +
     (interactive || process.platform === 'darwin' ? 120000 : 35000);
+  let errorSince = 0;
+  let retried = false;
   do {
     // Read identity and visible text from the same document.
     const view = await page
@@ -157,9 +159,47 @@ async function readCard(
       const card = parseBudgetCard(view.text);
       if (card) return { ...card, updatedAt: new Date().toISOString() };
     }
+    const pageError =
+      url.origin === target.origin &&
+      /^\s*something went wrong[.!！]?\s*$/im.test(view.text);
+    if (pageError) {
+      if (!errorSince) errorSince = Date.now();
+      if (Date.now() - errorSince >= 3000) {
+        if (
+          !retried &&
+          url.pathname === target.pathname &&
+          url.searchParams.get('aadvid') === id
+        ) {
+          retried = true;
+          errorSince = 0;
+          try {
+            await page.reload({ waitUntil: 'commit', timeout: 20000 });
+          } catch (error) {
+            if (!navigating(error))
+              throw new BudgetReadError(
+                '付款页重试失败：' + chromeFailure(error),
+              );
+          }
+        } else if (!interactive) {
+          throw new BudgetReadError(
+            'TikTok 页面显示 Something went wrong（' +
+              budgetPageAddress(url) +
+              '），未取得本次剩余预算',
+          );
+        }
+      }
+    } else {
+      errorSince = 0;
+    }
     await new Promise((resolve) => setTimeout(resolve, 600));
   } while (Date.now() < deadline);
   const last = new URL(page.url());
+  if (errorSince)
+    throw new BudgetReadError(
+      'TikTok 页面显示 Something went wrong（' +
+        budgetPageAddress(last) +
+        '），未取得本次剩余预算',
+    );
   if (
     last.origin !== target.origin ||
     last.pathname.replace(/\/$/, '') !== target.pathname
