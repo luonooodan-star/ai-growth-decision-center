@@ -138,3 +138,13 @@ test('selects current Sinox advertiser names across BCs plus explicit IDs exactl
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('distinguishes expired TikTok sessions from generic page errors', () => {
+  const url = new URL('https://ads.tiktok.com/i18n/account/payment');
+  expect(web.needsTikTokLogin(url, 'Your session has expired')).toBe(true);
+  expect(web.needsTikTokLogin(url, 'Something went wrong')).toBe(false);
+  expect(web.needsTikTokLogin(new URL('/login', url), '')).toBe(true);
+  expect(web.needsTikTokLogin(new URL('https://example.org/login'), '')).toBe(
+    false,
+  );
+});

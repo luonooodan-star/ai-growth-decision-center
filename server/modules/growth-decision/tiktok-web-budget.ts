@@ -114,10 +114,21 @@ export function budgetPageAddress(url: URL) {
   );
 }
 
+export function needsTikTokLogin(url: URL, text: string) {
+  if (!/(^|\.)tiktok\.com$/i.test(url.hostname)) return false;
+  return (
+    /login|passport|challenge|captcha/i.test(url.pathname) ||
+    /(?:your\s+)?session has expired|session expired|please (?:log|sign) in again|登录(?:状态)?已(?:过期|失效)|请重新登录/i.test(
+      text,
+    )
+  );
+}
+
 async function readCard(
   page: Page,
   id: string,
   interactive: boolean,
+  waitForLogin: boolean,
 ): Promise<WebBudget> {
   const target = new URL('https://ads.tiktok.com/i18n/account/payment');
   target.searchParams.set('aadvid', id);
@@ -127,14 +138,17 @@ async function readCard(
       timeout: 35000,
     });
   } catch (error) {
-    if (/login|passport|challenge|captcha/i.test(new URL(page.url()).pathname))
-      throw new LoginRequired(loginHint);
-    if (!navigating(error))
+    if (needsTikTokLogin(new URL(page.url()), '')) {
+      if (!waitForLogin) throw new LoginRequired(loginHint);
+    } else if (!navigating(error))
       throw new BudgetReadError('打开付款页失败：' + chromeFailure(error));
   }
-  const deadline =
+  let deadline =
     Date.now() +
     (interactive || process.platform === 'darwin' ? 120000 : 35000);
+  let awaitingLogin = false;
+  let loginVisible = false;
+  let resumed = false;
   let errorSince = 0;
   let retried = false;
   do {
@@ -153,8 +167,25 @@ async function readCard(
       continue;
     }
     const url = new URL(view.url);
-    if (!interactive && /login|passport|challenge|captcha/i.test(url.pathname))
-      throw new LoginRequired(loginHint);
+    loginVisible = needsTikTokLogin(url, view.text);
+    if (loginVisible) {
+      if (!waitForLogin) throw new LoginRequired(loginHint);
+      if (!awaitingLogin) deadline = Date.now() + 120000;
+      awaitingLogin = true;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      continue;
+    }
+    if (
+      awaitingLogin &&
+      !resumed &&
+      url.origin === target.origin &&
+      url.href !== target.href
+    ) {
+      // Login can land on the account overview instead of the original payment page.
+      resumed = true;
+      await page.goto(target.href, { waitUntil: 'commit', timeout: 35000 });
+      continue;
+    }
     if (url.origin === target.origin && url.searchParams.get('aadvid') === id) {
       const card = parseBudgetCard(view.text);
       if (card) return { ...card, updatedAt: new Date().toISOString() };
@@ -184,7 +215,7 @@ async function readCard(
           throw new BudgetReadError(
             'TikTok 页面显示 Something went wrong（' +
               budgetPageAddress(url) +
-              '），未取得本次剩余预算',
+              '）。若持续报错，请检查专用 Chrome 的 TikTok 登录状态',
           );
         }
       }
@@ -194,11 +225,12 @@ async function readCard(
     await new Promise((resolve) => setTimeout(resolve, 600));
   } while (Date.now() < deadline);
   const last = new URL(page.url());
+  if (loginVisible) throw new LoginRequired(loginHint);
   if (errorSince)
     throw new BudgetReadError(
       'TikTok 页面显示 Something went wrong（' +
         budgetPageAddress(last) +
-        '），未取得本次剩余预算',
+        '）。若持续报错，请检查专用 Chrome 的 TikTok 登录状态',
     );
   if (
     last.origin !== target.origin ||
@@ -220,6 +252,7 @@ export async function collectWebBudgets(
   folder: string,
   ids: string[],
   interactive = false,
+  waitForLogin = interactive,
 ) {
   const results = new Map<string, { budget?: WebBudget; error?: string }>();
   if (!ids.length) return results;
@@ -241,7 +274,9 @@ export async function collectWebBudgets(
     for (const id of ids) {
       const page = await context.newPage();
       try {
-        results.set(id, { budget: await readCard(page, id, interactive) });
+        results.set(id, {
+          budget: await readCard(page, id, interactive, waitForLogin),
+        });
       } catch (error) {
         if (error instanceof LoginRequired) throw error;
         results.set(id, {

@@ -369,7 +369,12 @@ export class TikTokBalanceController {
         for (const row of state.rows) {
           if (/^sinox/i.test(row.name.trimStart())) targets.add(row.id);
         }
-        const budgets = await collectWebBudgets(folder(), [...targets]);
+        const budgets = await collectWebBudgets(
+          folder(),
+          [...targets],
+          false,
+          force && process.platform === 'darwin',
+        );
         const byId = new Map(state.rows.map((row) => [row.id, row]));
         for (const [id, result] of budgets) {
           let row = byId.get(id);
