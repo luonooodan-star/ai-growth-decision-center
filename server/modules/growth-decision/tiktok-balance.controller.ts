@@ -114,12 +114,8 @@ async function pages<T>(
   throw new Error('TikTok 账户分页读取未完成');
 }
 
+const balanceBcId = '7628477892434903041';
 async function loadBalances(token: string) {
-  const centers = await pages<{ bc_info: { bc_id: string; name?: string } }>(
-    token,
-    'bc/get/',
-    'list',
-  );
   const rows = new Map<string, Balance>();
   const failures: string[] = [];
   const coverage: {
@@ -129,13 +125,9 @@ async function loadBalances(token: string) {
     financesRead: boolean;
   }[] = [];
   let successes = 0;
-  const directory = new Map(
-    centers.map(({ bc_info }) => [bc_info.bc_id, bc_info.name]),
-  );
-  for (const [id, name] of directory) {
-    if (typeof id !== 'string' || !/^\d+$/.test(id))
-      throw new Error('TikTok 返回无效的 BC ID');
-    const label = name || id;
+  {
+    const id = balanceBcId;
+    const label = '元陽科技有限公司_bc_820ukb';
     const visible = new Set<string>();
 
     let assetsRead = false;
@@ -228,7 +220,7 @@ async function loadBalances(token: string) {
       successes++;
     } catch (error) {
       failures.push(
-        (name || id) +
+        label +
           '：' +
           (error instanceof Error ? error.message : '余额查询失败'),
       );
@@ -331,12 +323,12 @@ export class TikTokBalanceController {
         if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
       }
     }
-    const ids = await webBudgetAccounts(folder());
-    if (!token && !ids.length) return { configured: false };
-    const key = token
-      ? createHash('sha256').update(token).digest('hex')
-      : 'web-only';
-    const file = join(folder(), 'balances-' + key + '.json');
+    if (!token) return { configured: false };
+    const key = createHash('sha256').update(token).digest('hex');
+    const file = join(
+      folder(),
+      'balances-' + balanceBcId + '-' + key + '.json',
+    );
     let state: Snapshot = { slot: -1, rows: [] };
     try {
       state = JSON.parse(await readFile(file, 'utf8'));
@@ -356,10 +348,10 @@ export class TikTokBalanceController {
       const previous = new Map(
         state.rows.map((row) => [row.id, row.webBudget]),
       );
+      let freshRows: Balance[] = [];
       try {
-        const result = token
-          ? await loadBalances(token)
-          : { rows: [], summaries: [], error: undefined };
+        const result = await loadBalances(token);
+        freshRows = result.rows;
         state.rows = result.rows;
         state.summaries = result.summaries;
         state.updatedAt = new Date().toISOString();
@@ -368,10 +360,13 @@ export class TikTokBalanceController {
         state.error = e instanceof Error ? e.message : 'TikTok 查询失败';
       }
       try {
-        const targets = new Set(ids);
-        for (const row of state.rows) {
-          if (/^sinox/i.test(row.name.trimStart())) targets.add(row.id);
-        }
+        const explicitIds = new Set(await webBudgetAccounts(folder()));
+        const targets = freshRows
+          .filter(
+            (row) =>
+              explicitIds.has(row.id) || /^sinox/i.test(row.name.trimStart()),
+          )
+          .map((row) => row.id);
         const budgets = await collectWebBudgets(
           folder(),
           [...targets],
@@ -380,17 +375,8 @@ export class TikTokBalanceController {
         );
         const byId = new Map(state.rows.map((row) => [row.id, row]));
         for (const [id, result] of budgets) {
-          let row = byId.get(id);
-          if (!row) {
-            row = {
-              id,
-              name: '',
-              currency: '',
-              balance: null,
-              reminder: false,
-            };
-            state.rows.push(row);
-          }
+          const row = byId.get(id);
+          if (!row) continue;
           row.webBudget = result.budget ?? previous.get(id);
           row.webBudgetError = result.error;
         }

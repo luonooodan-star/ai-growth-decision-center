@@ -38,7 +38,7 @@ test('reads a single labelled budget card and preserves zero', () => {
 test('limits automatic web reads across service restarts, refreshes manually and timestamps stale results', async () => {
   const root = mkdtempSync(join(tmpdir(), 'budget-spec-'));
   const token = process.env.TIKTOK_ACCESS_TOKEN;
-  delete process.env.TIKTOK_ACCESS_TOKEN;
+  process.env.TIKTOK_ACCESS_TOKEN = 'test-token';
   const dir = join(root, 'runtime/tiktok');
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -51,6 +51,20 @@ test('limits automatic web reads across service restarts, refreshes manually and
   };
   try {
     jest.spyOn(process, 'cwd').mockReturnValue(root);
+    jest
+      .spyOn(global, 'fetch')
+      .mockImplementation(async (input) =>
+        Response.json({
+          code: 0,
+          data: String(input).includes('bc/asset/get/')
+            ? { list: [{ asset_id: account }] }
+            : {
+                advertiser_account_list: [
+                  { advertiser_id: account, valid_account_balance: 0 },
+                ],
+              },
+        }),
+      );
     let now = Date.parse(budget.updatedAt);
     jest.spyOn(Date, 'now').mockImplementation(() => now);
     const collect = jest
@@ -81,12 +95,13 @@ test('limits automatic web reads across service restarts, refreshes manually and
     });
   } finally {
     jest.restoreAllMocks();
-    if (token !== undefined) process.env.TIKTOK_ACCESS_TOKEN = token;
+    if (token === undefined) delete process.env.TIKTOK_ACCESS_TOKEN;
+    else process.env.TIKTOK_ACCESS_TOKEN = token;
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('selects current Sinox advertiser names across BCs plus explicit IDs exactly once', async () => {
+test('selects current Sinox advertiser names and in-scope explicit IDs exactly once', async () => {
   const root = mkdtempSync(join(tmpdir(), 'budget-targets-'));
   const token = process.env.TIKTOK_ACCESS_TOKEN;
   process.env.TIKTOK_ACCESS_TOKEN = 'fixture';
@@ -98,7 +113,9 @@ test('selects current Sinox advertiser names across BCs plus explicit IDs exactl
       .mockResolvedValue(new Map());
     let newName = 'other';
     jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
-      const path = new URL(String(input)).pathname;
+      const url = new URL(String(input));
+      expect(url.searchParams.get('bc_id')).toBe('7628477892434903041');
+      const path = url.pathname;
       const accounts = [
         'Sinox-A',
         '  SINOX-B',
@@ -110,30 +127,23 @@ test('selects current Sinox advertiser names across BCs plus explicit IDs exactl
         asset_name,
         owner_bc_name: 'SINOX OWNER',
       }));
-      const data = path.endsWith('/bc/get/')
-        ? {
-            list: [
-              { bc_info: { bc_id: '111' } },
-              { bc_info: { bc_id: '222' } },
-            ],
-          }
-        : path.endsWith('/bc/asset/get/')
-          ? { list: accounts }
-          : {
-              advertiser_account_list: accounts.map((a) => ({
-                advertiser_id: a.asset_id,
-                valid_account_balance: 10,
-              })),
-            };
+      const data = path.endsWith('/bc/asset/get/')
+        ? { list: accounts }
+        : {
+            advertiser_account_list: accounts.map((a) => ({
+              advertiser_id: a.asset_id,
+              valid_account_balance: 10,
+            })),
+          };
       return Response.json({ code: 0, data });
     });
     await centerIdentity.run('growth', async () => {
       const c = new TikTokBalanceController();
       await c.refresh();
-      expect(collect.mock.calls[0][1]).toEqual(['1', '9', '2']);
+      expect(collect.mock.calls[0][1]).toEqual(['1', '2']);
       newName = 'sinox-new';
       await c.refresh();
-      expect(collect.mock.calls[1][1]).toEqual(['1', '9', '2', '5']);
+      expect(collect.mock.calls[1][1]).toEqual(['1', '2', '5']);
     });
   } finally {
     jest.restoreAllMocks();
